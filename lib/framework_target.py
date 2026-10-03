@@ -1,0 +1,189 @@
+"""Triton Ascend target identity, runtime probe and cross-framework work guard."""
+
+import ast
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+
+from .handoff import atomic_write_json
+
+
+FRAMEWORK = "Triton"
+BACKEND = "triton-ascend"
+PROGRAMMING_MODEL = "Triton block program (SPMD)"
+TARGET_FILE = "workflow_target.json"
+TARGET_IDENTITY = {"schema_version": 1, "framework": FRAMEWORK, "backend": BACKEND}
+
+
+def validate_device_id(device_id):
+    """The configured ID is logical inside the caller's existing visibility map."""
+    if type(device_id) is not int or device_id < 0:
+        raise ValueError("hardware.device_id must be a nonnegative integer")
+    return device_id
+
+
+def assert_target_implementation(directory):
+    """Reject importing the previous framework; never rewrite an old implementation."""
+    root = Path(directory)
+    if not root.is_dir():
+        return
+    for path in root.rglob("*.py"):
+        if any(part in {".git", "__pycache__", "build", "dist"} for part in path.relative_to(root).parts):
+            continue
+        source = path.read_text(encoding="utf-8-sig")
+        try:
+            tree = ast.parse(source)
+            modules = [name.name for node in ast.walk(tree) if isinstance(node, ast.Import)
+                       for name in node.names]
+            modules += [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+            previous_framework = any(name.split(".", 1)[0] in {"pypto", "pypto_pro"} for name in modules)
+        except SyntaxError:
+            # Partly edited code is handled later by Stage4; identifiable imports
+            # of the previous target must still not enter a Triton run.
+            previous_framework = bool(re.search(r"(?m)^\s*(?:from|import)\s+pypto(?:_pro)?\b", source))
+        if previous_framework:
+            raise ValueError(f"实现仍导入旧 PyPTO 框架：{path}。请先提供 Triton Ascend 实现，并使用新的 work 目录；旧文件未改动。")
+
+
+def ensure_workflow_target(work_dir):
+    """Only new empty runs or explicitly marked Triton runs may proceed."""
+    work = Path(work_dir)
+    marker = work / TARGET_FILE
+    if marker.is_file():
+        try:
+            target = json.loads(marker.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"无法核对工作目录目标框架：{marker}；请使用新的 work 目录") from exc
+        if not isinstance(target, dict) or any(target.get(key) != value for key, value in TARGET_IDENTITY.items()):
+            raise ValueError(f"工作目录不是 Triton Ascend 任务：{marker}。禁止跨框架断点续跑，请使用新的 work 目录。")
+        assert_target_implementation(work / "impl")
+        return marker
+    existing = [work / name for name in (".state.json", "history.json", "device_info.json", "ANALYSIS.md")
+                if (work / name).exists()]
+    for name in ("impl", "eval", "develop", "fusion", "knowledge"):
+        folder = work / name
+        if folder.is_dir() and any(path.is_file() for path in folder.rglob("*")):
+            existing.append(folder)
+    if existing:
+        raise ValueError(f"已有工作目录缺少 {TARGET_FILE}，无法证明其属于 Triton Ascend；禁止把旧 PyPTO 任务直接续跑。请新建 work 目录。已有文件未改动。")
+    work.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(marker, TARGET_IDENTITY)
+    return marker
+
+
+def ensure_example_link(work_dir, cannbench_repo):
+    """Require the declared cann-bench example, never retain an unrelated old link."""
+    source = Path(cannbench_repo).resolve() / "examples" / "triton_ascend_cann_example"
+    link = Path(work_dir) / "example"
+    if not (source / "cann_bench" / "__init__.py").is_file():
+        raise ValueError(f"缺少 Triton Ascend 标准示例：{source}；请更新 paths.cannbench_repo 对应仓库，确认 cann_bench/__init__.py 存在。")
+    assert_target_implementation(source)
+    if os.path.lexists(link):
+        if not link.is_dir() or link.resolve() != source:
+            raise ValueError(f"工作目录 example 来源不匹配：{link}；要求指向 {source}。请使用新 work 目录，不能继续使用旧框架示例。")
+    else:
+        os.symlink(source, link, target_is_directory=True)
+    return source
+
+
+def ensure_task_link(work_dir, task_dir):
+    """The agent's read-only task must be exactly the evaluator's task directory."""
+    source = Path(task_dir).resolve()
+    link = Path(work_dir) / "task"
+    if not source.is_dir():
+        raise ValueError(f"算子 task 目录不存在：{source}")
+    if os.path.lexists(link):
+        if not link.is_dir() or link.resolve() != source:
+            raise ValueError(f"工作目录 task 与 --task-dir 不一致：{link}；本次要求 {source}。请使用对应的 task 或新 work 目录，禁止混用需求与评测用例。")
+    else:
+        os.symlink(source, link, target_is_directory=True)
+    return source
+
+
+def read_cann_toolchain(env):
+    """Fingerprint installed CANN version metadata from the active environment.
+
+    Compiler metadata is the layout used by cann-bench's Docker self-test. A
+    toolkit-level version.info is accepted for other supported CANN layouts.
+    Never derive the version from a directory name or from the current date.
+    """
+    # Preserve an environment's "latest" symlink here so the next comparison
+    # follows a toolkit switch; each version file below records its real path.
+    roots = {key: os.path.abspath(env[key])
+             for key in ("ASCEND_HOME_PATH", "ASCEND_TOOLKIT_HOME", "CANN_PATH")
+             if isinstance(env.get(key), str) and env[key].strip()}
+    files = {}
+    for directory in roots.values():
+        root = Path(directory)
+        for relative in ("compiler/version.info", "version.info"):
+            path = root / relative
+            if not path.is_file():
+                continue
+            raw = path.read_bytes()
+            if not raw.strip():
+                raise RuntimeError(f"CANN 版本信息为空：{path}")
+            content = raw.decode("utf-8-sig", errors="replace")
+            versions = re.findall(r"(?mi)^\s*version\s*=\s*(.+?)\s*$", content)
+            resolved = str(path.resolve())
+            files[resolved] = {"path": resolved, "sha256": hashlib.sha256(raw).hexdigest(),
+                               "version": versions[0] if versions else "see_version_file"}
+    if not files:
+        raise RuntimeError("无法验证 CANN 工具链版本：请核对当前 CANN 环境变量及 compiler/version.info 或 version.info；缺少版本证据时不允许混用性能记录。")
+    return {"verified": True, "cann_roots": roots,
+            "version_files": [files[key] for key in sorted(files)]}
+
+
+def detect_triton_runtime(device_id=0, config_path=None):
+    """Probe the installed active NPU backend, not merely whether Triton imports.
+
+    No CUDA/NPU visibility variable is rewritten. Torch and the evaluator receive
+    the same logical device ID. The subprocess uses the workflow's CANN setup.
+    """
+    validate_device_id(device_id)
+    from .cann_env import build_cann_env
+    script = (
+        "import json, torch, torch_npu, triton\n"
+        "from importlib.metadata import version\n"
+        "from triton.runtime import driver\n"
+        f"torch.npu.set_device({device_id})\n"
+        "target = driver.active.get_current_target()\n"
+        "print('WORKFLOW_TRITON_RUNTIME=' + json.dumps({\n"
+        " 'framework': 'Triton', 'backend': 'triton-ascend',\n"
+        " 'driver_backend': str(target.backend), 'target_arch': str(target.arch),\n"
+        " 'runtime_versions': {'triton': str(triton.__version__),\n"
+        "  'triton_ascend': version('triton-ascend'),\n"
+        "  'torch': str(torch.__version__), 'torch_npu': str(torch_npu.__version__)}}))\n"
+    )
+    env = build_cann_env({"WORKFLOW_NPU_DEVICE_ID": str(device_id)}, config_path=config_path)
+    toolchain = read_cann_toolchain(env)
+    try:
+        result = subprocess.run(["python3", "-c", script], capture_output=True, text=True,
+                                timeout=60, env=env)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"Triton Ascend 运行环境检测无法完成：{exc}") from exc
+    if result.returncode:
+        raise RuntimeError("Triton Ascend 运行环境检测失败；请检查 triton-ascend、torch_npu 与 CANN 的版本兼容性。\n"
+                           + (result.stderr or result.stdout)[-1200:])
+    lines = [line.split("=", 1)[1] for line in result.stdout.splitlines()
+             if line.startswith("WORKFLOW_TRITON_RUNTIME=")]
+    try:
+        runtime = json.loads(lines[-1])
+    except (IndexError, TypeError, ValueError) as exc:
+        raise RuntimeError("Triton Ascend 检测没有返回有效的后端信息") from exc
+    if not isinstance(runtime, dict):
+        raise RuntimeError("Triton Ascend 检测没有返回后端对象")
+    # triton-ascend registers the active compiler target as "npu". This is
+    # distinct from the human-readable distribution/backend label above.
+    if runtime.get("driver_backend") != "npu":
+        raise RuntimeError(f"本项目要求 Triton Ascend，实际活动后端为 {runtime.get('driver_backend', 'unknown')}；不能使用 CUDA/HIP 后端代替。")
+    versions = runtime.get("runtime_versions")
+    if (not isinstance(versions, dict) or any(not isinstance(versions.get(name), str)
+            or not versions[name].strip() or versions[name].lower() == "unknown"
+            for name in ("triton", "triton_ascend", "torch", "torch_npu"))):
+        raise RuntimeError("Triton Ascend 检测缺少实际 triton/triton-ascend/torch/torch_npu 版本")
+    runtime.update(framework=FRAMEWORK, backend=BACKEND, programming_model=PROGRAMMING_MODEL,
+                   toolchain=toolchain)
+    return runtime

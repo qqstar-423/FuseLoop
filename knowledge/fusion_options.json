@@ -1,0 +1,618 @@
+{
+ "schema_version": 1,
+ "source_document": "knowledge/fusion_method.md",
+ "probability_semantics": "Estimate F1-F10 suitability independently for the operator, cases, hardware and compiler. Methods combine; probabilities need not sum to one. Scores are exploration priors, not measured performance guarantees. Variants specify concrete options.",
+ "caveats": [
+  "Source-based catalog; paper claims are unverified and rankings are not universal.",
+  "Verify hardware, resources and Triton Ascend/CANN APIs; capabilities do not transfer automatically across architectures.",
+  "L2 cache is not DSM. Capacity does not guarantee residency or eliminate HBM traffic. F6 needs an expressible, verified communication mechanism.",
+  "Separate kernels, streams and compiler scheduling still require valid ordering, visibility, synchronization and buffer lifetimes.",
+  "Archived measurements from another framework do not prove Triton performance. Verify correctness and measure all required work under one protocol.",
+  "F5 dispatches concrete plans such as F1/F2; it is not a low-level fusion primitive. F7 is a search policy. F8/F9 can overlap with F2.",
+  "Assess live tiles and lifetimes, not only tensor size. Fewer kernels/materializations do not guarantee speed.",
+  "Test fresh input, weight and bias across calls. Reuse allocations without stale contents; cover required cases/dtypes.",
+  "Compatibility is conditional; methods may suit only legal subgraphs or case subsets.",
+  "Target framework is Triton with the triton-ascend NPU backend. GPU-only APIs, warp/SM assumptions and paper prototypes require independent backend verification. Unsupported methods remain candidates for scoring but must not be presented as implementable.",
+  "Use real strides, correct boundary masks and accumulator precision in each Triton plan. Program instances do not imply a global barrier or addressable shared tiles across programs."
+ ],
+ "methods": [
+  {
+   "id": "F1",
+   "name": "Kernel Fission / Partial Fusion",
+   "name_zh": "算子拆分／半融合",
+   "summary": "Split a compound operator into independently tuned kernels, optionally fusing within each partition.",
+   "graph_conditions": [
+    "Stages prefer different schedules, layouts or execution resources.",
+    "Intermediate materialization preserves the operator contract."
+   ],
+   "case_features": [
+    "Full fusion has costly synchronization or resource pressure.",
+    "Compute and epilogue need different tiling or parallelism."
+   ],
+   "hardware_requirements": [
+    "Supported kernels and dependency ordering for every partition.",
+    "Device-memory capacity for intermediate workspaces."
+   ],
+   "execution_organization": "Multiple dependent kernels, each with its own pipeline and a valid completion/dependency mechanism.",
+   "dataflow": "Input -> producer -> device-memory workspace -> consumer -> output; cache hits do not guarantee an HBM-free boundary.",
+   "benefits": [
+    "Tune partitions independently.",
+    "Reduce simultaneous on-chip state and intra-kernel coordination."
+   ],
+   "risks": [
+    "Extra launches and intermediate traffic.",
+    "Workspace and boundary layout-conversion costs."
+   ],
+   "variants": [
+    {
+     "id": "F1.compute_epilogue_split",
+     "name": "Compute / epilogue split",
+     "description": "Materialize compute results; run activation, conversion or layout work in a separately tuned kernel."
+    },
+    {
+     "id": "F1.partial_fusion_partitions",
+     "name": "Partially fused partitions",
+     "description": "Fuse compatible work inside partitions while retaining costly resource or layout boundaries."
+    },
+    {
+     "id": "F1.primitive_orchestration",
+     "name": "Primitive decomposition and orchestration",
+     "description": "Decompose into tensor primitives and compare legal groupings; use F7 for explicit partition search."
+    }
+   ],
+   "implementation_checks": [
+    "Benchmark every partition and mandatory preprocessing.",
+    "Validate intermediate dtype, layout, padding, lifetime and ordering.",
+    "Compare complete-scope launch, memory and conversion costs.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F7",
+    "F8"
+   ],
+   "source_sections": [
+    "F1: Kernel Fission / Partial Fusion（拆分与半融合）"
+   ]
+  },
+  {
+   "id": "F2",
+   "name": "Vertical Fusion",
+   "name_zh": "垂直融合／单 kernel 全融合",
+   "summary": "Fuse a producer-consumer chain and retain legal intermediate tiles on chip within one kernel.",
+   "graph_conditions": [
+    "A consumer depends on a producer.",
+    "Tiling permits consumption of ready intermediate data."
+   ],
+   "case_features": [
+    "Compute plus bias, activation, casting or compatible layout work.",
+    "Traffic/launch savings are material and live tiles fit resources."
+   ],
+   "hardware_requirements": [
+    "Backend supports all operations in one kernel.",
+    "Adequate registers/local memory and supported transfers/synchronization."
+   ],
+   "execution_organization": "One kernel coordinates producer and consumer tiles, possibly across compute and vector sections.",
+   "dataflow": "Producer tile -> registers/local memory -> consumer tile -> output, removing selected intermediate materialization.",
+   "benefits": [
+    "Remove intermediate traffic and launches.",
+    "Reuse locally available producer data."
+   ],
+   "risks": [
+    "Resource pressure, lower parallelism or spills.",
+    "Transfer/synchronization cost and pipeline imbalance."
+   ],
+   "variants": [
+    {
+     "id": "F2.compute_epilogue",
+     "name": "Compute with fused epilogue",
+     "description": "Apply bias, activation and conversion to completed compute tiles before final output stores."
+    },
+    {
+     "id": "F2.loop_chain",
+     "name": "Compatible loop-chain fusion",
+     "description": "Combine compatible dependent loops while preserving reduction boundaries."
+    },
+    {
+     "id": "F2.tiled_pipeline",
+     "name": "Tiled producer-consumer pipeline",
+     "description": "Overlap successive tiles with supported buffering and synchronization; tune live resource use."
+    }
+   ],
+   "implementation_checks": [
+    "Count all live tiles, buffers and compiler storage.",
+    "Verify transfer layout, synchronization and precision.",
+    "Inspect spills, stalls and occupancy; one kernel is not automatically optimal.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F1",
+    "F3",
+    "F4",
+    "F5",
+    "F7",
+    "F8",
+    "F9"
+   ],
+   "source_sections": [
+    "F2: Vertical Fusion（垂直融合）"
+   ]
+  },
+  {
+   "id": "F3",
+   "name": "Horizontal Fusion",
+   "name_zh": "水平融合",
+   "summary": "Run independent operations in a shared kernel to improve utilization and amortize launches.",
+   "graph_conditions": [
+    "Branches are independent during fused execution.",
+    "Input/output and side-effect ordering remain valid."
+   ],
+   "case_features": [
+    "Small independent operations underutilize the device.",
+    "Independent compute/memory workloads may complement each other."
+   ],
+   "hardware_requirements": [
+    "Backend supports independent work regions and legal resource partitioning.",
+    "Enough resources for concurrent regions."
+   ],
+   "execution_organization": "Partition work items or execution resources among independent regions within one kernel.",
+   "dataflow": "Separate inputs -> independent regions -> separate outputs; intermediate elimination is not the primary mechanism.",
+   "benefits": [
+    "Improve utilization of small independent work.",
+    "Amortize launches and overlap complementary resource use."
+   ],
+   "risks": [
+    "Contention, imbalance and combined resource pressure.",
+    "Mistaking dependent auxiliary work for independent work."
+   ],
+   "variants": [
+    {
+     "id": "F3.complementary_regions",
+     "name": "Complementary independent regions",
+     "description": "Combine independent compute-heavy and memory-heavy regions with supported resource partitioning."
+    },
+    {
+     "id": "F3.small_branches",
+     "name": "Independent small branches",
+     "description": "Group independent small operations to increase work per launch."
+    }
+   ],
+   "implementation_checks": [
+    "Prove independence from the graph.",
+    "Verify resource partition, output ownership and race freedom.",
+    "Measure interference and load balance against separate kernels.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F1",
+    "F2",
+    "F4",
+    "F5",
+    "F7"
+   ],
+   "source_sections": [
+    "F3: Horizontal Fusion（水平融合）"
+   ]
+  },
+  {
+   "id": "F4",
+   "name": "Input / Output Fusion",
+   "name_zh": "共享输入／多输出融合",
+   "summary": "Share inputs or a producer among branches while preserving every required output.",
+   "graph_conditions": [
+    "Branches share inputs or consume the same producer.",
+    "Traversal and output ownership can be coordinated."
+   ],
+   "case_features": [
+    "Duplicate reads or producer computation matter.",
+    "Multi-output regions, such as several activations of one result."
+   ],
+   "hardware_requirements": [
+    "Backend supports the required regions and outputs.",
+    "Enough local storage for shared data and branch state."
+   ],
+   "execution_organization": "Coordinate shared traversal or producer tiles across consumers; retain necessary unfused branches.",
+   "dataflow": "Shared input/producer tile -> locally reused data -> multiple branches -> all required outputs.",
+   "benefits": [
+    "Avoid duplicate reads or computation.",
+    "Amortize compatible branch launches."
+   ],
+   "risks": [
+    "Longer shared-data lifetimes and more branch state.",
+    "Incompatible layouts/reductions add coordination costs."
+   ],
+   "variants": [
+    {
+     "id": "F4.shared_input",
+     "name": "Shared-input branches",
+     "description": "Read shared tiles once and apply multiple compatible branches."
+    },
+    {
+     "id": "F4.producer_multi_consumer",
+     "name": "Producer with multiple consumers",
+     "description": "Retain producer tiles for multiple consumers instead of separately materializing and rereading them."
+    },
+    {
+     "id": "F4.multi_output",
+     "name": "Required multi-output execution",
+     "description": "Share work while emitting every observable output, including producer results still needed externally."
+    }
+   ],
+   "implementation_checks": [
+    "Map all consumers and externally visible outputs.",
+    "Check branch-specific dtype, layout and reduction needs.",
+    "Measure sharing gains against storage and scheduling costs.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F1",
+    "F2",
+    "F3",
+    "F5",
+    "F7",
+    "F9"
+   ],
+   "source_sections": [
+    "F4: Input / Output Fusion（输入输出融合）"
+   ]
+  },
+  {
+   "id": "F5",
+   "name": "Hybrid Routing",
+   "name_zh": "混合路由／按 shape 分发",
+   "summary": "Route metadata-defined case groups to validated concrete fusion or tiling variants.",
+   "graph_conditions": [
+    "Several implementations satisfy one complete contract.",
+    "A legal dispatcher can inspect relevant metadata."
+   ],
+   "case_features": [
+    "Shape, dtype, layout or parameters change the best plan.",
+    "A small case group needs specialized tiling or fusion."
+   ],
+   "hardware_requirements": [
+    "Supported dispatch and compilable variants.",
+    "Complete permitted-case coverage or a valid fallback."
+   ],
+   "execution_organization": "Dispatch to a concrete implementation such as F1/F2; routing itself is not a low-level fusion primitive.",
+   "dataflow": "Permitted metadata -> selected variant -> complete variant execution -> contractual outputs.",
+   "benefits": [
+    "Adapt to heterogeneous cases.",
+    "Optimize difficult groups locally."
+   ],
+   "risks": [
+    "Variant growth, compilation cost and fragile boundaries.",
+    "Noise overfitting, benchmark-identity routing or stale cached data."
+   ],
+   "variants": [
+    {
+     "id": "F5.fusion_boundary_routing",
+     "name": "Fusion-boundary routing",
+     "description": "Select plans such as F1/F2 using measured metadata-defined case groups."
+    },
+    {
+     "id": "F5.schedule_routing",
+     "name": "Schedule and tile routing",
+     "description": "Keep the fusion family while selecting tiles, layouts or buffers for different case groups."
+    },
+    {
+     "id": "F5.specialized_with_fallback",
+     "name": "Specializations with fallback",
+     "description": "Use justified specializations plus a correct fallback; record predicates and affected cases."
+    }
+   ],
+   "implementation_checks": [
+    "Document metadata predicates; test routes and boundaries.",
+    "Test fresh tensor values across calls; reuse allocations, not stale contents.",
+    "Measure dispatch and mandatory preprocessing consistently.",
+    "Validate precision on every selected path.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10"
+   ],
+   "source_sections": [
+    "F5: Hybrid Routing（按形状路由）"
+   ]
+  },
+  {
+   "id": "F6",
+   "name": "Multi-stage Pipeline with Inter-core On-chip Sharing",
+   "name_zh": "多阶段流水＋跨核片上共享",
+   "summary": "Exchange producer-consumer tiles through a verified inter-core on-chip sharing mechanism.",
+   "graph_conditions": [
+    "Stages can exchange ready tiles within a supported sharing scope.",
+    "Separate resource roles expose useful pipeline work."
+   ],
+   "case_features": [
+    "Intermediate traffic matters but one local region is inefficient.",
+    "Stages benefit from separate resource assignments."
+   ],
+   "hardware_requirements": [
+    "Verified shared-memory addressing, scope, lifetime and visibility.",
+    "Backend/runtime support; separate launches may not preserve on-chip state.",
+    "Valid synchronization and forward-progress guarantees."
+   ],
+   "execution_organization": "Partition roles within a supported cooperative scope; use separate kernels only with explicit shared-state support.",
+   "dataflow": "Producer tile -> verified shared on-chip storage -> ordered consumer access -> output; L2 caching alone is insufficient.",
+   "benefits": [
+    "Potentially remove intermediate device-memory traffic.",
+    "Separate schedules with a larger shared on-chip working set."
+   ],
+   "risks": [
+    "Required platform primitives may be absent.",
+    "Contention, lifetime errors, synchronization or deadlock.",
+    "Mistaking likely cache reuse for guaranteed sharing."
+   ],
+   "variants": [
+    {
+     "id": "F6.cooperative_shared_tiles",
+     "name": "Cooperative shared-tile stages",
+     "description": "Exchange tiles across execution units within a verified sharing and scheduling scope."
+    },
+    {
+     "id": "F6.cross_kernel_sharing",
+     "name": "Explicitly supported cross-kernel sharing",
+     "description": "Use separate kernels only with proven persistent sharing and ordering support; otherwise reject."
+    }
+   ],
+   "implementation_checks": [
+    "Identify actual memory, API and synchronization support.",
+    "Verify scope, capacity, lifetime, ordering and progress.",
+    "Measure traffic/stalls; cache capacity is not evidence of HBM elimination.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F5",
+    "F7",
+    "F8",
+    "F9"
+   ],
+   "source_sections": [
+    "F6: Multi-stage Pipeline with Inter-core On-chip Sharing（跨核片上共享流水）"
+   ]
+  },
+  {
+   "id": "F7",
+   "name": "Split and Fusion Co-optimization",
+   "name_zh": "拆分与融合协同优化",
+   "summary": "Jointly search legal decompositions and fusion partitions using reuse, resource and measurement evidence.",
+   "graph_conditions": [
+    "Compound operations admit equivalent primitive decompositions.",
+    "Several legal boundaries create a meaningful search space."
+   ],
+   "case_features": [
+    "Long/branching graphs have competing locality and resource needs.",
+    "Fixed all-fused or all-split policies miss bottlenecks."
+   ],
+   "hardware_requirements": [
+    "Backend can express candidate groups.",
+    "Resource constraints and a cost model or measurement budget."
+   ],
+   "execution_organization": "Analyze reuse/dependencies, propose legal partitions, then compare concrete kernel groupings.",
+   "dataflow": "Retain data within selected groups; materialize or explicitly communicate across their boundaries.",
+   "benefits": [
+    "Find better boundaries than the initial plan.",
+    "Balance locality, resources and scheduling."
+   ],
+   "risks": [
+    "Search/compilation cost and model error.",
+    "Invalid decomposition or numerical changes."
+   ],
+   "variants": [
+    {
+     "id": "F7.reuse_guided_partition",
+     "name": "Reuse-guided partition search",
+     "description": "Use locality and graph dependencies to propose split points and fusion groups."
+    },
+    {
+     "id": "F7.cost_guided_search",
+     "name": "Cost-guided legal grouping",
+     "description": "Search legal groupings with a suitable cost model or graph-based procedure, then measure candidates."
+    }
+   ],
+   "implementation_checks": [
+    "Prove decomposition equivalence and precision.",
+    "Bound search and retain a correct incumbent.",
+    "Measure promising plans on all required cases.",
+    "Record the concrete plan, not just the search algorithm.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F8",
+    "F9",
+    "F10"
+   ],
+   "source_sections": [
+    "F7: Split and Fusion Co-optimization（拆分融合协同搜索）"
+   ]
+  },
+  {
+   "id": "F8",
+   "name": "Joint Compute-Memory Fusion",
+   "name_zh": "计算与访存联合融合",
+   "summary": "Jointly schedule compute-heavy stages and memory-heavy subgraphs to reduce materialization or overlap work.",
+   "graph_conditions": [
+    "Compute connects to elementwise, reduction or layout subgraphs.",
+    "Tile dependencies allow a staged schedule."
+   ],
+   "case_features": [
+    "Alternating compute/memory stages leave traffic or idle resources.",
+    "Back-to-back compute has a transformable intervening subgraph."
+   ],
+   "hardware_requirements": [
+    "Backend supports the proposed staged operations/schedule.",
+    "Supported overlap, buffers and dependency synchronization."
+   ],
+   "execution_organization": "Assign compute and memory work to supported stages/streams; compiler scheduling still enforces dependencies.",
+   "dataflow": "Ready tiles feed memory and later compute stages through valid buffers; distinguish removed from merely overlapped materialization.",
+   "benefits": [
+    "Reduce intermediates or idle resources.",
+    "Jointly optimize layout, reuse and overlap."
+   ],
+   "risks": [
+    "Unsupported schedule or hidden materialization.",
+    "Buffering, contention and synchronization exceed gains.",
+    "Serial dependencies limit concurrency."
+   ],
+   "variants": [
+    {
+     "id": "F8.compute_memory_pipeline",
+     "name": "Compute / memory-subgraph pipeline",
+     "description": "Pipeline compute tiles with connected elementwise, layout or reduction work and valid dependencies."
+    },
+    {
+     "id": "F8.back_to_back_compute",
+     "name": "Back-to-back compute stages",
+     "description": "Jointly schedule consecutive compute stages and transforms when layouts/reductions permit."
+    }
+   ],
+   "implementation_checks": [
+    "Inspect generated execution and traffic, not stream names.",
+    "Verify buffer lifetime and all dependencies.",
+    "Compare utilization and complete-scope latency with F1/F2.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F1",
+    "F2",
+    "F5",
+    "F6",
+    "F7",
+    "F9"
+   ],
+   "source_sections": [
+    "F8: Joint Compute-Memory Fusion（计算访存联合融合）"
+   ]
+  },
+  {
+   "id": "F9",
+   "name": "Deep Kernel Fusion",
+   "name_zh": "深度多算子融合",
+   "summary": "Fuse a longer multi-operation region when a legal tiled schedule efficiently retains its live state.",
+   "graph_conditions": [
+    "A region contains multiple dependent compute/transform stages.",
+    "Dependencies, reductions and outputs admit one kernel schedule."
+   ],
+   "case_features": [
+    "Long chains or MLP-like graphs repeatedly materialize activations.",
+    "Ordinary two-operation chains generally fit F2."
+   ],
+   "hardware_requirements": [
+    "Backend supports the entire selected region.",
+    "Enough live tiled-state capacity and valid synchronization."
+   ],
+   "execution_organization": "One kernel schedules multiple stages, with tiling, pipelining or justified recomputation to bound live state.",
+   "dataflow": "Input -> locally retained live tiles across stages -> outputs; full tensors need not all reside on chip together.",
+   "benefits": [
+    "Remove traffic and launches across a larger region.",
+    "Expose reuse beyond pairwise boundaries."
+   ],
+   "risks": [
+    "Spills, reduced occupancy and complex reductions.",
+    "Coordination or recomputation exceeds traffic savings.",
+    "Deeper fusion can be slower."
+   ],
+   "variants": [
+    {
+     "id": "F9.long_chain",
+     "name": "Deep dependent chain",
+     "description": "Fuse a multi-stage compute/activation chain with explicit live-state analysis."
+    },
+    {
+     "id": "F9.branched_region",
+     "name": "Deep region with shared branches",
+     "description": "Fuse a larger shared-branch region with legal output scheduling; combine F4 where applicable."
+    }
+   ],
+   "implementation_checks": [
+    "Analyze dependencies and live state stage by stage.",
+    "Inspect spills, recomputation, reduction precision and synchronization.",
+    "Compare sensible partial-fusion plans on all cases.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F2",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8"
+   ],
+   "source_sections": [
+    "F9: Deep Kernel Fusion（长链深度融合）"
+   ]
+  },
+  {
+   "id": "F10",
+   "name": "Multi-device Compute-Communication Fusion",
+   "name_zh": "多卡／多节点通算融合",
+   "summary": "Jointly schedule distributed compute and communication with supported tile-level overlap.",
+   "graph_conditions": [
+    "The contract includes communication across devices/nodes.",
+    "Tiles have well-defined distributed readiness and ordering."
+   ],
+   "case_features": [
+    "Communication materially affects distributed latency.",
+    "Single-device compute-only tasks give no direct reason to select F10."
+   ],
+   "hardware_requirements": [
+    "Relevant topology and communication primitives.",
+    "Supported device-side progress or another valid overlap mechanism.",
+    "Cross-device ordering and visibility guarantees."
+   ],
+   "execution_organization": "Assign compute/communication roles in a supported distributed model; persistent execution is optional and capability-dependent.",
+   "dataflow": "Local tiles <-> supported transport <-> remote compute -> distributed outputs with valid communication semantics.",
+   "benefits": [
+    "Overlap communication and independent compute.",
+    "Potentially reduce launches or global stage barriers."
+   ],
+   "risks": [
+    "Missing device-side support, topology limits and contention.",
+    "Deadlock, progress failure or collective-order errors.",
+    "Hidden transfer/preprocessing costs."
+   ],
+   "variants": [
+    {
+     "id": "F10.single_node",
+     "name": "Intra-node compute / communication pipeline",
+     "description": "Overlap intra-node transport and compute using the actual supported communication API."
+    },
+    {
+     "id": "F10.multi_node",
+     "name": "Inter-node compute / communication pipeline",
+     "description": "Pipeline across nodes only with verified transport, progress and synchronization support."
+    }
+   ],
+   "implementation_checks": [
+    "Confirm task communication and participating devices.",
+    "Validate distributed correctness, ordering and progress.",
+    "Benchmark the full workload with consistent topology and scope.",
+    "Verify the required Triton Ascend operations and compiler options on the installed backend; preserve the task interface, strides, masks, dtype and measured work scope."
+   ],
+   "compatible_with": [
+    "F5",
+    "F7"
+   ],
+   "source_sections": [
+    "F10: Multi-device Compute-Communication Fusion（多设备通算融合）"
+   ]
+  }
+ ]
+}

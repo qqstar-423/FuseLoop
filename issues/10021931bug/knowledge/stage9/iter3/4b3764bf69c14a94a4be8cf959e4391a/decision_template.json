@@ -1,0 +1,109 @@
+{
+  "plan_version": 2,
+  "iteration": 3,
+  "request_id": "4b3764bf69c14a94a4be8cf959e4391a",
+  "ledger_entry": {
+    "evaluation_summary": "",
+    "direction": "",
+    "readonly_files": [],
+    "case_analysis": [
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_15",
+        "observation": "",
+        "explanation": "",
+        "evidence": "",
+        "next_action": ""
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_18",
+        "observation": "",
+        "explanation": "",
+        "evidence": "",
+        "next_action": ""
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_16",
+        "observation": "",
+        "explanation": "",
+        "evidence": "",
+        "next_action": ""
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_12",
+        "observation": "",
+        "explanation": "",
+        "evidence": "",
+        "next_action": ""
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_17",
+        "observation": "",
+        "explanation": "",
+        "evidence": "",
+        "next_action": ""
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_13",
+        "observation": "",
+        "explanation": "",
+        "evidence": "",
+        "next_action": ""
+      }
+    ]
+  },
+  "suggest_next": [
+    {
+      "task_id": "T1",
+      "priority": "P1",
+      "task_type": "modify",
+      "action": "",
+      "reason": "",
+      "case_scope": "cases",
+      "target_cases": [
+        "level3/fused_patch_concat_layernorm_15"
+      ],
+      "operator_reason": "",
+      "case_bindings": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_15",
+          "implementation_files": [
+            ""
+          ],
+          "route_evidence": [
+            {
+              "file": "",
+              "location": "",
+              "explanation": ""
+            }
+          ]
+        }
+      ],
+      "changes": [
+        {
+          "file": "",
+          "operation": "modify",
+          "location": "",
+          "method": ""
+        }
+      ],
+      "acceptance_checks": [
+        ""
+      ]
+    }
+  ],
+  "regression_pattern": {
+    "what_changed": "",
+    "why_it_failed": "",
+    "fusion_related": null,
+    "applicability": "",
+    "next_action": "",
+    "evidence": "",
+    "case_analysis": [
+      {
+        "case_id": "",
+        "observation": "",
+        "explanation": ""
+      }
+    ]
+  }
+}

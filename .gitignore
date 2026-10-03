@@ -1,0 +1,16 @@
+work/
+output/
+build/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+export_only_prof_dir/
+
+# Optional legacy credentials file and isolated Python environment.
+config.local.yaml
+.venv-jev/
+.venv/
+.claude/settings.local.json
+视频demo素材--临时/

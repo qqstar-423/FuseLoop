@@ -1,0 +1,338 @@
+{
+  "iteration": 4,
+  "request_id": "0f505cd0c7c74b8781c319af2b697690",
+  "fail_reason": "perf_optimize",
+  "perf_diff": {
+    "has_improvement": true,
+    "has_regression": false,
+    "diff_text": "\n📊 性能提升检测（程序自动计算，数据可信）\n  avg_speedup: 0.8224094689497551 → 1.5389794201417895 (+87.1%)\n  对比轮次: iter3 → iter4\n- 文件：`/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/develop/iter3/design_rationale.md`；相对工作目录：`develop/iter3/design_rationale.md`；迭代模板：`develop/<iter>/design_rationale.md`；用途：上轮评测附近的历史设计参考；怎么看：用于回顾改动意图；实际被评测版本以代码绑定的选择依据和快照为准\n- 文件：`/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/develop/iter3/design_rationale.md`；相对工作目录：`develop/iter3/design_rationale.md`；迭代模板：`develop/<iter>/design_rationale.md`；用途：本轮评测附近的历史设计参考；怎么看：与上轮参考比较；先用代码绑定依据或快照确认版本，再归因成功经验\n  逐 case 对比（提升最大的在前）:\n    case_level3/fused_patch_concat_layernorm_18: 0.010621106737916775 → 1.7730968218773095 (+16594.1%)\n    case_level3/fused_patch_concat_layernorm_17: 0.012641778114139473 → 1.8849294729027468 (+14810.3%)\n    case_level3/fused_patch_concat_layernorm_16: 0.011364143118338709 → 1.6814516129032255 (+14696.1%)\n    case_level3/fused_patch_concat_layernorm_15: 0.00944460418924598 → 1.0460558549730525 (+10975.7%)\n    case_level3/fused_patch_concat_layernorm_14: 0.013897764394934741 → 1.399125064333505 (+9967.3%)\n    case_level3/fused_patch_concat_layernorm_13: 0.012946522662197799 → 1.248017839444995 (+9539.8%)\n\n⚡ 本轮性能大幅提升！请对照上面两轮的 design_rationale，总结这次改动为什么有效，填写 proven_pattern 字段。",
+    "regression_text": "",
+    "comparable": true,
+    "comparison_status": "comparable",
+    "curr_iter": 4,
+    "comparison_reason": "两轮硬件、任务、case、基准及评测协议一致",
+    "current_report": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter4/perf_result.json",
+    "curr_avg_speedup": 1.5389794201417895,
+    "prev_iter": 3,
+    "previous_report": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter3/perf_result.json",
+    "comparison_mismatch_fields": [],
+    "prev_avg_speedup": 0.8224094689497551,
+    "delta_pct": 87.1,
+    "curr_design_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/develop/iter3/design_rationale.md",
+    "prev_design_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/develop/iter3/design_rationale.md",
+    "case_diffs": [
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_18",
+        "prev_speedup": 0.010621106737916775,
+        "curr_speedup": 1.7730968218773095,
+        "delta": "+16594.1%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_17",
+        "prev_speedup": 0.012641778114139473,
+        "curr_speedup": 1.8849294729027468,
+        "delta": "+14810.3%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_16",
+        "prev_speedup": 0.011364143118338709,
+        "curr_speedup": 1.6814516129032255,
+        "delta": "+14696.1%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_15",
+        "prev_speedup": 0.00944460418924598,
+        "curr_speedup": 1.0460558549730525,
+        "delta": "+10975.7%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_14",
+        "prev_speedup": 0.013897764394934741,
+        "curr_speedup": 1.399125064333505,
+        "delta": "+9967.3%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_13",
+        "prev_speedup": 0.012946522662197799,
+        "curr_speedup": 1.248017839444995,
+        "delta": "+9539.8%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_8",
+        "prev_speedup": 0.02144123329416217,
+        "curr_speedup": 2.0426944971537004,
+        "delta": "+9426.9%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_9",
+        "prev_speedup": 0.018581425054147612,
+        "curr_speedup": 1.3163934426229509,
+        "delta": "+6984.5%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_7",
+        "prev_speedup": 0.018381842350653734,
+        "curr_speedup": 1.2353333333333334,
+        "delta": "+6620.4%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_5",
+        "prev_speedup": 0.02195261118952521,
+        "curr_speedup": 1.4370904325032765,
+        "delta": "+6446.3%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_12",
+        "prev_speedup": 0.01183013412790338,
+        "curr_speedup": 0.7641347801256425,
+        "delta": "+6359.2%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_11",
+        "prev_speedup": 0.013995840882885852,
+        "curr_speedup": 0.8049141503848432,
+        "delta": "+5651.1%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_10",
+        "prev_speedup": 0.013386247424253987,
+        "curr_speedup": 0.7593073593073593,
+        "delta": "+5572.3%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_6",
+        "prev_speedup": 0.019257650874119358,
+        "curr_speedup": 0.9031905594405595,
+        "delta": "+4590.0%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_4",
+        "prev_speedup": 0.018800168990283063,
+        "curr_speedup": 0.8251401466149203,
+        "delta": "+4289.0%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_2",
+        "prev_speedup": 0.03161154610260606,
+        "curr_speedup": 1.0417201540436458,
+        "delta": "+3195.4%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_3",
+        "prev_speedup": 0.028739044167044227,
+        "curr_speedup": 0.7871202396234488,
+        "delta": "+2638.9%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_21",
+        "prev_speedup": 0.03176051923147841,
+        "curr_speedup": 0.8109698681732581,
+        "delta": "+2453.4%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_20",
+        "prev_speedup": 0.041165671140071886,
+        "curr_speedup": 1.0378096479791394,
+        "delta": "+2421.1%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_1",
+        "prev_speedup": 0.03352455387221591,
+        "curr_speedup": 0.7608125819134993,
+        "delta": "+2169.4%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_19",
+        "prev_speedup": 0.043574516851591395,
+        "curr_speedup": 0.7566711895070104,
+        "delta": "+1636.5%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_23",
+        "prev_speedup": 2.7516339869281046,
+        "curr_speedup": 3.0507246376811596,
+        "delta": "+10.9%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_30",
+        "prev_speedup": 1.9064748201438848,
+        "curr_speedup": 1.8821022727272727,
+        "delta": "-1.3%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_29",
+        "prev_speedup": 2.344463971880492,
+        "curr_speedup": 2.219633943427621,
+        "delta": "-5.3%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_25",
+        "prev_speedup": 3.720873786407767,
+        "curr_speedup": 3.3471615720524017,
+        "delta": "-10.0%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_27",
+        "prev_speedup": 3.4419642857142856,
+        "curr_speedup": 3.071713147410359,
+        "delta": "-10.8%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_28",
+        "prev_speedup": 2.3714733542319753,
+        "curr_speedup": 2.0984743411927878,
+        "delta": "-11.5%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_26",
+        "prev_speedup": 3.60752688172043,
+        "curr_speedup": 3.008968609865471,
+        "delta": "-16.6%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_24",
+        "prev_speedup": 1.9545454545454546,
+        "curr_speedup": 1.5542168674698795,
+        "delta": "-20.5%"
+      },
+      {
+        "case_id": "level3/fused_patch_concat_layernorm_22",
+        "prev_speedup": 2.1344086021505375,
+        "curr_speedup": 1.620408163265306,
+        "delta": "-24.1%"
+      }
+    ],
+    "comparison_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter4/perf_comparison.json"
+  },
+  "question_path": null,
+  "history_before_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter4/0f505cd0c7c74b8781c319af2b697690/history_before.json",
+  "decision_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter4/0f505cd0c7c74b8781c319af2b697690/decision.json",
+  "allow_empty_suggestions": false,
+  "scene": "optimization",
+  "phase": "decision",
+  "human_message_ids": [],
+  "performance_case_ids": [
+    "level3/fused_patch_concat_layernorm_19",
+    "level3/fused_patch_concat_layernorm_10",
+    "level3/fused_patch_concat_layernorm_1",
+    "level3/fused_patch_concat_layernorm_12",
+    "level3/fused_patch_concat_layernorm_3",
+    "level3/fused_patch_concat_layernorm_11"
+  ],
+  "plan_version": 2,
+  "known_case_ids": [
+    "level3/fused_patch_concat_layernorm_19",
+    "level3/fused_patch_concat_layernorm_10",
+    "level3/fused_patch_concat_layernorm_1",
+    "level3/fused_patch_concat_layernorm_12",
+    "level3/fused_patch_concat_layernorm_3",
+    "level3/fused_patch_concat_layernorm_11",
+    "level3/fused_patch_concat_layernorm_21",
+    "level3/fused_patch_concat_layernorm_4",
+    "level3/fused_patch_concat_layernorm_6",
+    "level3/fused_patch_concat_layernorm_20",
+    "level3/fused_patch_concat_layernorm_2",
+    "level3/fused_patch_concat_layernorm_15",
+    "level3/fused_patch_concat_layernorm_7",
+    "level3/fused_patch_concat_layernorm_13",
+    "level3/fused_patch_concat_layernorm_9",
+    "level3/fused_patch_concat_layernorm_14",
+    "level3/fused_patch_concat_layernorm_5",
+    "level3/fused_patch_concat_layernorm_24",
+    "level3/fused_patch_concat_layernorm_22",
+    "level3/fused_patch_concat_layernorm_16",
+    "level3/fused_patch_concat_layernorm_18",
+    "level3/fused_patch_concat_layernorm_30",
+    "level3/fused_patch_concat_layernorm_17",
+    "level3/fused_patch_concat_layernorm_8",
+    "level3/fused_patch_concat_layernorm_28",
+    "level3/fused_patch_concat_layernorm_29",
+    "level3/fused_patch_concat_layernorm_26",
+    "level3/fused_patch_concat_layernorm_23",
+    "level3/fused_patch_concat_layernorm_27",
+    "level3/fused_patch_concat_layernorm_25"
+  ],
+  "implementation_base": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/impl",
+  "schema_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter4/0f505cd0c7c74b8781c319af2b697690/decision_schema.json",
+  "template_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter4/0f505cd0c7c74b8781c319af2b697690/decision_template.json",
+  "case_catalog_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter4/0f505cd0c7c74b8781c319af2b697690/case_catalog.json",
+  "require_file_scope": true,
+  "correction_attempt": 0,
+  "default_inputs": [
+    {
+      "key": "fusion_library",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/fusion/fusion_library.json",
+      "purpose": "JSON 融合算子库",
+      "read_hint": "比较候选数据流、前提与初始概率，以实测证据决定保留或更换"
+    },
+    {
+      "key": "perf_result",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter4/perf_result.json",
+      "purpose": "本轮性能结果",
+      "read_hint": "看 avg_speedup、各 case 的 speedup 和最慢用例，不只看平均值"
+    },
+    {
+      "key": "profiler",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter4/prof_data",
+      "purpose": "本轮 profiler 数据（按需回查）",
+      "read_hint": "仅在结论矛盾或缺少证据时按 case 回查"
+    },
+    {
+      "key": "perf_reports",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter4/perf_reports",
+      "purpose": "本轮性能报告",
+      "read_hint": "回查原始计时与评分，核实性能汇总及反作弊信号"
+    },
+    {
+      "key": "bottleneck",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/profile/iter4/bottleneck_analysis.md",
+      "purpose": "本轮瓶颈分析",
+      "read_hint": "优先读 Stage7 结论，区分已证实根因和推测"
+    },
+    {
+      "key": "fix_directive",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/search/iter4/FIX_DIRECTIVE.md",
+      "purpose": "本轮修改指令",
+      "read_hint": "优先读 Stage8 结论，转成原有 P0/P1/P2 优先级"
+    },
+    {
+      "key": "search_report",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/search/iter4/SEARCH_REPORT.md",
+      "purpose": "本轮搜索报告",
+      "read_hint": "按需检查候选方法、依据及适用条件"
+    },
+    {
+      "key": "build_log",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/build/iter4/build.log",
+      "purpose": "本轮编译日志",
+      "read_hint": "看 STATUS 和首个真实错误，定位构建/接口问题"
+    },
+    {
+      "key": "precision_result",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter4/precision_result.json",
+      "purpose": "本轮精度结果",
+      "read_hint": "核对总数、通过数及失败 case，优先处理正确性"
+    },
+    {
+      "key": "precision_reports",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter4/precision_reports",
+      "purpose": "本轮精度报告详情",
+      "read_hint": "按失败 case 查误差、输入和原始报错"
+    }
+  ],
+  "missing_inputs": [
+    {
+      "key": "self_test",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/develop/iter4/self_test_report.md",
+      "purpose": "同编号开发轮次的自测报告（若存在）",
+      "read_hint": "查看开发自测记录；评测代码的依据以另附的哈希绑定文件为准"
+    }
+  ],
+  "role_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter4/0f505cd0c7c74b8781c319af2b697690/n4_stage9_tech_lead_guide.md",
+  "prompt_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter4/0f505cd0c7c74b8781c319af2b697690/prompt.md",
+  "output_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter4/0f505cd0c7c74b8781c319af2b697690/decision.json",
+  "human_bundle_path": null,
+  "consultation_id": null,
+  "semantic_event": null,
+  "regression_action": null
+}

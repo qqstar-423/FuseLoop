@@ -1,0 +1,150 @@
+{
+  "iteration": 1,
+  "request_id": "508b8258a96b4adc89fcc0462b664058",
+  "fail_reason": "perf_optimize",
+  "perf_diff": {
+    "has_improvement": false,
+    "has_regression": false,
+    "diff_text": "",
+    "regression_text": "",
+    "comparable": false,
+    "comparison_status": "new_baseline",
+    "curr_iter": 1,
+    "comparison_reason": "没有上一轮有效性能结果，不计算涨跌",
+    "current_report": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/perf_result.json",
+    "curr_avg_speedup": 1.208110829133419,
+    "comparison_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/perf_comparison.json",
+    "comparison_text": "\n===== 本轮不比较性能涨跌 =====\n没有上一轮有效性能结果，不计算涨跌；本轮作为新基线，后续仅与同口径完整结果比较。不得用本次均值差推断优化收益或退步，不填写本次 proven_pattern/regression_pattern。\n- 文件：`/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/perf_comparison.json`；相对工作目录：`eval/iter1/perf_comparison.json`；迭代模板：`eval/<iter>/perf_comparison.json`；用途：程序的性能比较口径检查；怎么看：查看不比较的原因和两轮报告来源，不跨口径归因\n"
+  },
+  "question_path": null,
+  "history_before_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/history_before.json",
+  "decision_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/decision.json",
+  "allow_empty_suggestions": false,
+  "scene": "optimization",
+  "phase": "decision",
+  "human_message_ids": [],
+  "performance_case_ids": [
+    "level3/fused_patch_concat_layernorm_19",
+    "level3/fused_patch_concat_layernorm_21",
+    "level3/fused_patch_concat_layernorm_1",
+    "level3/fused_patch_concat_layernorm_20",
+    "level3/fused_patch_concat_layernorm_3",
+    "level3/fused_patch_concat_layernorm_10"
+  ],
+  "plan_version": 2,
+  "known_case_ids": [
+    "level3/fused_patch_concat_layernorm_19",
+    "level3/fused_patch_concat_layernorm_21",
+    "level3/fused_patch_concat_layernorm_1",
+    "level3/fused_patch_concat_layernorm_20",
+    "level3/fused_patch_concat_layernorm_3",
+    "level3/fused_patch_concat_layernorm_10",
+    "level3/fused_patch_concat_layernorm_11",
+    "level3/fused_patch_concat_layernorm_12",
+    "level3/fused_patch_concat_layernorm_2",
+    "level3/fused_patch_concat_layernorm_4",
+    "level3/fused_patch_concat_layernorm_6",
+    "level3/fused_patch_concat_layernorm_15",
+    "level3/fused_patch_concat_layernorm_13",
+    "level3/fused_patch_concat_layernorm_5",
+    "level3/fused_patch_concat_layernorm_14",
+    "level3/fused_patch_concat_layernorm_7",
+    "level3/fused_patch_concat_layernorm_9",
+    "level3/fused_patch_concat_layernorm_18",
+    "level3/fused_patch_concat_layernorm_17",
+    "level3/fused_patch_concat_layernorm_16",
+    "level3/fused_patch_concat_layernorm_8",
+    "level3/fused_patch_concat_layernorm_30",
+    "level3/fused_patch_concat_layernorm_29",
+    "level3/fused_patch_concat_layernorm_28",
+    "level3/fused_patch_concat_layernorm_22",
+    "level3/fused_patch_concat_layernorm_24",
+    "level3/fused_patch_concat_layernorm_23",
+    "level3/fused_patch_concat_layernorm_25",
+    "level3/fused_patch_concat_layernorm_26",
+    "level3/fused_patch_concat_layernorm_27"
+  ],
+  "implementation_base": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/impl",
+  "schema_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/decision_schema.json",
+  "template_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/decision_template.json",
+  "case_catalog_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/case_catalog.json",
+  "require_file_scope": true,
+  "correction_attempt": 0,
+  "default_inputs": [
+    {
+      "key": "fusion_library",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/fusion/fusion_library.json",
+      "purpose": "JSON 融合算子库",
+      "read_hint": "比较候选数据流、前提与初始概率，以实测证据决定保留或更换"
+    },
+    {
+      "key": "perf_result",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/perf_result.json",
+      "purpose": "本轮性能结果",
+      "read_hint": "看 avg_speedup、各 case 的 speedup 和最慢用例，不只看平均值"
+    },
+    {
+      "key": "profiler",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/prof_data",
+      "purpose": "本轮 profiler 数据（按需回查）",
+      "read_hint": "仅在结论矛盾或缺少证据时按 case 回查"
+    },
+    {
+      "key": "perf_reports",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/perf_reports",
+      "purpose": "本轮性能报告",
+      "read_hint": "回查原始计时与评分，核实性能汇总及反作弊信号"
+    },
+    {
+      "key": "bottleneck",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/profile/iter1/bottleneck_analysis.md",
+      "purpose": "本轮瓶颈分析",
+      "read_hint": "优先读 Stage7 结论，区分已证实根因和推测"
+    },
+    {
+      "key": "fix_directive",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/search/iter1/FIX_DIRECTIVE.md",
+      "purpose": "本轮修改指令",
+      "read_hint": "优先读 Stage8 结论，转成原有 P0/P1/P2 优先级"
+    },
+    {
+      "key": "search_report",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/search/iter1/SEARCH_REPORT.md",
+      "purpose": "本轮搜索报告",
+      "read_hint": "按需检查候选方法、依据及适用条件"
+    },
+    {
+      "key": "build_log",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/build/iter1/build.log",
+      "purpose": "本轮编译日志",
+      "read_hint": "看 STATUS 和首个真实错误，定位构建/接口问题"
+    },
+    {
+      "key": "precision_result",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/precision_result.json",
+      "purpose": "本轮精度结果",
+      "read_hint": "核对总数、通过数及失败 case，优先处理正确性"
+    },
+    {
+      "key": "precision_reports",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/precision_reports",
+      "purpose": "本轮精度报告详情",
+      "read_hint": "按失败 case 查误差、输入和原始报错"
+    }
+  ],
+  "missing_inputs": [
+    {
+      "key": "self_test",
+      "path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/develop/iter1/self_test_report.md",
+      "purpose": "同编号开发轮次的自测报告（若存在）",
+      "read_hint": "查看开发自测记录；评测代码的依据以另附的哈希绑定文件为准"
+    }
+  ],
+  "role_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/n4_stage9_tech_lead_guide.md",
+  "prompt_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/prompt.md",
+  "output_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/decision.json",
+  "human_bundle_path": null,
+  "consultation_id": null,
+  "semantic_event": null,
+  "regression_action": null
+}

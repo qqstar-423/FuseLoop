@@ -1,0 +1,22 @@
+{
+  "source_available": {
+    "type": "noul",
+    "instructions": "Does state.kernel contain actual source text, rather than only a filename, hash or filesystem path? Judge only the supplied state; you cannot open a local file.",
+    "criteria": {"true": "Actual code text is present.", "false": "Actual code text is absent."}
+  },
+  "source_marker": {
+    "type": "choice",
+    "instructions": "Which private smoke marker is explicitly written in the source text at state.kernel.source? A path is not evidence of file contents. Choose unavailable if the source text is absent.",
+    "criteria": {"amber_orchid_7291": null, "silver_maple_1846": null, "unavailable": "No source text is supplied or neither marker is present."}
+  },
+  "source_topology": {
+    "type": "choice",
+    "instructions": "Based only on the code in state.kernel.source, what execution structure does fused_conv_sigmoid represent? The fixture is illustrative and was not executed. Select unavailable if source is absent.",
+    "criteria": {"single_kernel": "One stage computes convolution and sigmoid together.", "two_serial_kernels": "One stage writes an intermediate, then another stage reads it.", "unavailable": "The code is absent or insufficient."}
+  },
+  "history_completeness": {
+    "type": "score",
+    "instructions": "How complete is the iteration evidence in state.iteration_history? Count only records with an optimization direction, implementation change, measured effect, and adoption outcome. The measurements are synthetic test data.",
+    "criteria": ["No complete iteration.", "One complete iteration.", "Two complete iterations.", "Three complete iterations.", "Four complete iterations.", "At least five complete iterations."]
+  }
+}

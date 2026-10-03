@@ -1,0 +1,2209 @@
+{
+  "insights": [
+    "[MULTI_TOKEN serial loop 对大 C 有效] iter1-iter2 | 证据: case 16-18(C=512) speedup 1.10-1.16→1.52-1.66(+36-49%); case 8(C=384) 1.34→1.73(+29%); case 11(C=128 fp32) 0.29→0.54(+85%) | 结论: grid=40 + 内循环在 per-token 计算量充足时有效消除调度波开销 | 状态: 已验证",
+    "[MULTI_TOKEN serial loop 对小 C + fp16/bf16 有害] iter2 | 证据: case 19(C=80 fp16) 0.183→0.170(-7%); case 12(C=128 bf16) 0.308→0.264(-14%) | 结论: per-iteration 的 w/b 重载 + 地址解码 + dtype cast 在小 C 下吞噬减波收益 | 状态: 已验证",
+    "[w/b 逐次重载是 serial loop 最大 per-iteration 开销] iter2 | 证据: profile/iter2/bottleneck_analysis.md; case 12 tokens=2304 共 464 次重载 | 结论: w/b 循环外提取是 serial loop 优化首要任务 | 状态: 已验证（profiler + 多来源共识）",
+    "[fp16/bf16 cast 开销在 serial loop 下被放大] iter2 | 证据: 同 shape fp32 比 fp16 快 34-50% | 结论: 小 C 下 per-token cast 利用率低 | 状态: 已验证",
+    "[F2 融合对小 grid 持续有效] iter1-iter3 | 证据: case 22-30 speedup 1.9-3.7 三轮稳定 | 结论: 单 kernel 融合在 per-program 工作量充足时有效 | 状态: 已验证",
+    "[非 2 幂 C mask 浪费] iter1 | 证据: C=80/BLOCK_C=128 利用率 62.5% | 结论: mask 操作对无效通道仍占指令周期，次要瓶颈 | 状态: 已验证",
+    "[条件性路由(MULTI_TOKEN=True/False)保护已达标 case] iter1-iter3 | 证据: case 22-30 三轮稳定 1.9-3.7，MULTI_TOKEN=False 路径编译等价 | 结论: tokens>64 阈值路由成功 | 状态: 已验证",
+    "[2D tensor 操作在 triton-ascend 3.2.1 上灾难性低效] iter3 | 证据: 21 个 MULTI_TOKEN case 退步 22-153x，fp32/fp16/bf16 全部受影响，TILE=2 也退步 79-153x，kernel_details 证实退步在 kernel 内部 | 结论: 严禁在当前后端版本使用 2D load/store/reduction pattern | 状态: 已验证",
+    "[w/b 循环外提取收益待独立验证] iter3 | 证据: iter3 实施 w/b 提取 + 2D tile，2D 退步掩盖了 w/b 提取效果；理论上 case 12 从 464 次降为 8 次 HBM 重载 | 结论: w/b 提取预期有效但需在 1D 路径上单独验证 | 状态: 待验证（下一轮回退 2D 后验证）"
+  ],
+  "ledger": [
+    {
+      "iter": 1,
+      "reason": "perf_optimize",
+      "direction": "下一轮核心改动：将 kernel 改为多 token/program 内循环 + grid 固定为 40（物理 Vector Core 数），tokens>64 时启用 MULTI_TOKEN 路径，tokens<=64 保持原 1-token/program 路径避免达标 case 回归。辅助改动：tl.where 比较值改 fp32 向量消除标量退化。不改动精度路径（fp32 统计 + corr 修正）和融合结构（单 kernel F2）。目标：大 grid 组（14+ case）kernel 耗时从 130-192us 降至 baseline 同量级（31-54us）。",
+      "modify_files": [
+        "impl/cann_bench/fused_patch_concat_layernorm.py"
+      ],
+      "readonly_files": [
+        "task/desc.md",
+        "task/proto.yaml",
+        "task/cases.yaml",
+        "task/golden.py",
+        "ANALYSIS.md",
+        "device_info.json",
+        "fusion/fusion_library.json",
+        "impl/cann_bench/__init__.py"
+      ],
+      "avg_speedup_before": null,
+      "avg_speedup_after": 1.2081,
+      "delta": null,
+      "verdict": "baseline",
+      "comparison_status": "new_baseline",
+      "comparison_reason": "没有上一轮有效性能结果，不计算涨跌",
+      "comparison_previous_iter": null,
+      "evaluation_summary": "iter1 首版 F2 垂直融合实现：精度 30/30 全通过，性能 avg_speedup=1.208，performance_score=22.71/50，13/30 case 达标。小 grid case（22-30，grid<=40）表现优异（speedup 1.98-3.71），大 C 中等 grid case（16-18，C=512，grid=576）达标（speedup 1.10-1.16）。17/30 case 未达标（speedup 0.18-0.91），全部为 grid>=392 且 C<=384 的 case。根因已证实：1 token/program 粒度导致大 grid case 产生 17-58 个调度波（40 Vector Core），per-program 固定开销主导（profiler kernel_details: case 10 grid=2304 耗时 191.94us vs baseline 52.62us）。次要瓶颈：(1) 非 2 幂 C 的 mask 浪费（C=80/BLOCK_C=128 仅 62.5% 利用率，per-block 慢 2x）；(2) fp16/bf16→fp32 cast 开销（同 shape fp16 比 fp32 慢 28-31%）；(3) tl.where 中 int32 比较标量退化（官方 profiling guide 同构案例已确认）。本轮为 new_baseline，不计算涨跌。融合结构 F2 本身有效（小 grid 组证实），瓶颈在调度粒度而非融合方案。",
+      "case_analysis": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_19",
+          "observation": "kernel 182.7us vs baseline 33.46us，speedup=0.183，shape [2,1380,80] C=80 BLOCK_C=128 grid=690 fp16，最慢 case。",
+          "explanation": "已证实：grid=690 产生 17.25 波（40 cores），per-program 仅 512 个 fp32 元素（~2KB），per-block 10.6us 中固定开销占主导。mask 浪费 62.5%（C=80/BLOCK_C=128）进一步降低吞吐。fp16→fp32 cast 额外增加 28% 开销（对比同 shape fp32 case 20 的 132us）。",
+          "evidence": "profile/iter1/bottleneck_analysis.md case 19 分析；profiler kernel_details Steps 92-94 Duration=182.7us Block Num=690；case 20 fp32 同 shape Duration=132.0us。",
+          "next_action": "T1 引入多 token/program 循环（grid=40），将 17.25 波降为 1 波；T2 将 tl.where 比较改 fp32 消除标量退化。预期 kernel 耗时从 182.7us 显著降低。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_21",
+          "observation": "kernel 180.34us vs baseline 34.45us，speedup=0.191，shape [2,1380,80] C=80 BLOCK_C=128 grid=690 bf16。",
+          "explanation": "已证实：与 case 19 完全相同的 grid/mask/cast 问题。bf16→fp32 cast 与 fp16→fp32 开销相当（180.3us vs 182.7us），均远慢于 fp32 case 20（132us）。",
+          "evidence": "profile/iter1/bottleneck_analysis.md case 21 分析；profiler kernel_details Steps 102-104 Duration=180.34us。",
+          "next_action": "与 case 19 共享 T1+T2 修复路径。多 token 循环摊薄 per-program 开销后，cast 开销占比将降低。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_1",
+          "observation": "kernel 151.14us vs baseline 34.83us，speedup=0.230，shape [1,3136,96] C=96 BLOCK_C=128 grid=784 fp16。",
+          "explanation": "已证实：grid=784 产生 19.6 波，per-block 7.7us。mask 利用率 75%（C=96/BLOCK_C=128）。fp16 cast 使其比 fp32 case 2（104.58us）慢 31%。",
+          "evidence": "profile/iter1/bottleneck_analysis.md case 1 分析；profiler kernel_details Steps 2-4 Duration=151.14us；case 2 fp32 Duration=104.58us。",
+          "next_action": "T1 多 token 循环将 19.6 波降为 1 波；T2 fp32 mask 比较减少标量指令。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_20",
+          "observation": "kernel 132.0us vs baseline 31.84us，speedup=0.241，shape [2,1380,80] C=80 BLOCK_C=128 grid=690 fp32。",
+          "explanation": "已证实：grid=690 的 17.25 波调度开销主导。fp32 无 cast 开销（比 fp16 case 19 快 28%），但 per-program 工作量仍过小（512 fp32 元素），mask 浪费 62.5%。证明即使无 cast，1 token/program 在此 grid 规模下仍远不足。",
+          "evidence": "profile/iter1/bottleneck_analysis.md case 20 分析；profiler kernel_details Steps 97-99 Duration=132.0us。",
+          "next_action": "T1 多 token 循环是必要修复。T2 fp32 mask 比较辅助。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_3",
+          "observation": "kernel 151.4us vs baseline 36.79us，speedup=0.243，shape [1,3136,96] C=96 BLOCK_C=128 grid=784 bf16。",
+          "explanation": "已证实：与 case 1 相同 grid=784 + mask + cast 问题。bf16 与 fp16 kernel 耗时几乎相同（151.4 vs 151.1us），证明 bf16→fp32 与 fp16→fp32 cast 开销相当。",
+          "evidence": "profile/iter1/bottleneck_analysis.md case 3 分析；profiler kernel_details Steps 12-14 Duration=151.4us。",
+          "next_action": "与 case 1 共享 T1+T2 修复路径。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_10",
+          "observation": "kernel 191.94us vs baseline 52.62us，speedup=0.274，shape [1,9216,128] C=128 BLOCK_C=128 grid=2304 fp16，grid 最大的 case。",
+          "explanation": "已证实：grid=2304 产生 57.6 波，为所有 case 中最多。C=128=BLOCK_C 无 mask 浪费（100% 利用率），但 per-block 3.33us 的吞吐（~154 elem/us）仍远低于大 C case（case 16 的 737 elem/us），说明 per-program 固定开销在极多波次下累积显著。",
+          "evidence": "profile/iter1/bottleneck_analysis.md case 10 分析；profiler kernel_details Steps 47-49 Duration=191.94us Block Num=2304。",
+          "next_action": "T1 多 token 循环将 57.6 波降为 1 波，预期收益最大（每 program 从处理 1 token 变为 ~58 tokens）。"
+        }
+      ],
+      "action_plan": {
+        "version": 2,
+        "tasks": [
+          {
+            "task_id": "T1",
+            "priority": "P0",
+            "task_type": "modify",
+            "action": "Kernel 增加多 token/program 内循环 + host 侧按 tokens 数量路由 grid 大小",
+            "reason": "Profiler 证实 1 token/program 导致大 grid case（grid 690-2304）产生 17-58 个调度波，per-program 固定开销主导 kernel 耗时。官方编程指南、vector_operator 指南和多个独立来源均推荐 grid 固定为物理 Vector Core 数 + 内循环分摊任务。预期将 17 个未达标 case 的调度波从 10-58 波降为 1 波。",
+            "case_scope": "cases",
+            "target_cases": [
+              "level3/fused_patch_concat_layernorm_19",
+              "level3/fused_patch_concat_layernorm_21",
+              "level3/fused_patch_concat_layernorm_1",
+              "level3/fused_patch_concat_layernorm_20",
+              "level3/fused_patch_concat_layernorm_3",
+              "level3/fused_patch_concat_layernorm_10",
+              "level3/fused_patch_concat_layernorm_11",
+              "level3/fused_patch_concat_layernorm_12",
+              "level3/fused_patch_concat_layernorm_2",
+              "level3/fused_patch_concat_layernorm_4",
+              "level3/fused_patch_concat_layernorm_6",
+              "level3/fused_patch_concat_layernorm_15",
+              "level3/fused_patch_concat_layernorm_13",
+              "level3/fused_patch_concat_layernorm_5",
+              "level3/fused_patch_concat_layernorm_14",
+              "level3/fused_patch_concat_layernorm_7",
+              "level3/fused_patch_concat_layernorm_9"
+            ],
+            "operator_reason": "",
+            "case_bindings": [
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_19",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_21",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_1",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_20",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_3",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_10",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_11",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_12",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_2",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_4",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_6",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_15",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_13",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_5",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_14",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_7",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_9",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              }
+            ],
+            "changes": [
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "kernel signature, lines 12-25",
+                "method": "Add runtime parameter 'tokens' (int) and constexpr 'MULTI_TOKEN: tl.constexpr' to kernel signature."
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "kernel body, lines 26-77",
+                "method": "Wrap entire compute body in token loop: if MULTI_TOKEN: token_lo,token_hi,token_step = pid,tokens,tl.num_programs(0) else: token_lo,token_hi,token_step = pid,pid+1,1; for token in range(token_lo,token_hi,token_step): decode batch/row/col from token; replace pid with token in index calculations; out_base = token.to(tl.int64)*(4*channels)."
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "host function, lines 131-144",
+                "method": "Add routing: grid=(min(tokens,40),) if tokens>64 else (tokens,); pass tokens and MULTI_TOKEN=(tokens>64) to kernel. 40 = physical Vector Core count (device_info.json). Threshold 64 preserves current path for small-grid cases (22-30) already achieving speedup 2-3.7x."
+              }
+            ],
+            "acceptance_checks": [
+              "全 30 case 精度自测通过（含 C=3/65 尾块、零方差 25-27、近常数 28-30）",
+              "连续调用自测通过（同 shape 更换参数后结果仍正确）",
+              "大 grid case（19/21/1/20/3/10）kernel 耗时显著下降",
+              "小 grid 已达标 case（22-30）speedup 无回归"
+            ]
+          },
+          {
+            "task_id": "T2",
+            "priority": "P1",
+            "task_type": "modify",
+            "action": "tl.where 比较值改 fp32 向量，消除 int32 cmp 标量退化",
+            "reason": "官方 profiling guide 记载同构修复案例：i32 的 cmp 在 NPU 上无法启用 vector，退化为 scalar；通过转为 fp32 利用 vec_cast 和 vec_cmp 实现向量化。当前实现行 47-50 的 4 处 tl.where(channel_mask,...) 中 channel_mask 为 int32 比较结果。",
+            "case_scope": "cases",
+            "target_cases": [
+              "level3/fused_patch_concat_layernorm_19",
+              "level3/fused_patch_concat_layernorm_20",
+              "level3/fused_patch_concat_layernorm_21",
+              "level3/fused_patch_concat_layernorm_1",
+              "level3/fused_patch_concat_layernorm_2",
+              "level3/fused_patch_concat_layernorm_3",
+              "level3/fused_patch_concat_layernorm_4",
+              "level3/fused_patch_concat_layernorm_5",
+              "level3/fused_patch_concat_layernorm_6",
+              "level3/fused_patch_concat_layernorm_7",
+              "level3/fused_patch_concat_layernorm_9",
+              "level3/fused_patch_concat_layernorm_13",
+              "level3/fused_patch_concat_layernorm_14",
+              "level3/fused_patch_concat_layernorm_15"
+            ],
+            "operator_reason": "",
+            "case_bindings": [
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_19",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_20",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_21",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_1",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_2",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_3",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_4",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_5",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_6",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_7",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_9",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_13",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_14",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_15",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm function, line 131-144",
+                    "explanation": "All cases dispatch through single grid=(tokens,) call to _fused_patch_concat_layernorm_kernel; no case-specific routing."
+                  }
+                ]
+              }
+            ],
+            "changes": [
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "kernel body, lines 47-50 (4x tl.where calls)",
+                "method": "Add offs_f = offs.to(tl.float32) before the 4 tl.where calls; replace tl.where(channel_mask, seg_xx - mean0, 0.0) with tl.where(offs_f < channels, seg_xx - mean0, 0.0). Keep original channel_mask for load/store masks (compiler auto-vectorizes those)."
+              }
+            ],
+            "acceptance_checks": [
+              "全 30 case 精度自测仍通过（fp32 比较语义等价于原 int32 比较）",
+              "非 2 幂 C 的 case（C=80/96/384）kernel 中 scalar ratio 下降"
+            ]
+          },
+          {
+            "task_id": "T3",
+            "priority": "P1",
+            "task_type": "inspect",
+            "action": "验证 T1/T2 修改后 host 包装函数不变式与 kernel 签名一致性",
+            "reason": "T1 修改 kernel 签名（新增 tokens/MULTI_TOKEN）和 host 调用（新增参数和 grid 路由），需确认参数顺序和数量一一对应，且输入校验/contiguous 守护/torch.empty 分配/tokens==0 早退全部保持。",
+            "case_scope": "operator",
+            "target_cases": [],
+            "operator_reason": "Host wrapper invariant check is a structural verification across all cases, not specific to any case.",
+            "case_bindings": [],
+            "changes": [
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "inspect",
+                "location": "host function fused_patch_concat_layernorm, lines 80-145",
+                "method": "Verify kernel call has correct number of positional args matching new signature (x,weight,bias,y,height,width,channels,height_half,width_half,tokens,eps + BLOCK_C + MULTI_TOKEN); verify input validation and output allocation unchanged."
+              }
+            ],
+            "acceptance_checks": [
+              "kernel 调用的位置参数数量和顺序与 kernel 签名完全匹配",
+              "输入校验、contiguous 守护、torch.empty 输出分配、tokens==0 早退逻辑未被修改"
+            ]
+          }
+        ]
+      },
+      "stage9_decision_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter1/508b8258a96b4adc89fcc0462b664058/decision.json",
+      "environment": {
+        "framework": "Triton",
+        "backend": "triton-ascend",
+        "framework_source": "performance_report",
+        "runtime_versions": {
+          "triton": "3.2.0",
+          "triton_ascend": "3.2.1",
+          "torch": "2.7.1+cpu",
+          "torch_npu": "2.7.1.post8"
+        },
+        "toolchain": {
+          "verified": true,
+          "cann_roots": {
+            "ASCEND_HOME_PATH": "/home/developer/Ascend/cann-9.1.0",
+            "ASCEND_TOOLKIT_HOME": "/home/developer/Ascend/cann-9.1.0",
+            "CANN_PATH": "/home/developer/Ascend/cann-9.1.0"
+          },
+          "version_files": [
+            {
+              "path": "/home/developer/Ascend/cann-9.1.0/share/info/asc-devkit/version.info",
+              "sha256": "f20359296d5a7127f841aa35f4a788137f444dc36d72641e948cb9e39e47e4f4",
+              "version": "9.1.0"
+            }
+          ]
+        },
+        "chip_model": "Ascend910B3",
+        "soc_version": "Ascend910B3",
+        "npu_arch": "dav-c220",
+        "programming_model": "Triton block program (SPMD)",
+        "device_id": 0,
+        "source_kind": "performance_report",
+        "source_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter1/perf_result.json"
+      }
+    },
+    {
+      "iter": 2,
+      "reason": "perf_optimize",
+      "direction": "下一轮在 F2 单 kernel 骨架内做两项关键优化：(1) P0：将 w/b 8 次 masked load 移出 token 循环、循环前一次加载驻留 UB（case 12 从 464 次降为 8 次，消除 serial loop 最大 per-iteration 开销）；(2) P0：MULTI_TOKEN 分支改 2D tile——每迭代处理 TILE 个 token 的 (TILE,BLOCK_C) 大 tile，token 解码/load/store/归约启动次数降为 1/TILE，fp16/bf16 cast 的向量利用率因更大 tile 而提升。Host 侧计算 TILE=min(16, max(1, 1024//next_power_of_2(C)))，BLOCK_C=128/TILE=16 时 UB 驻留约 64KB+4KB（远低于 192KB）。MULTI_TOKEN=False 路径（case 22-30，已达标 1.99-3.71）保持不动。数值路径（fp32 统计 + corr 修正）与融合结构不变。目标：16 个未达标 case（尤其 6 个最慢的 C=80-128 组）kernel 耗时显著下降，同时已达标 14 case 零回归。",
+      "modify_files": [
+        "impl/cann_bench/fused_patch_concat_layernorm.py"
+      ],
+      "readonly_files": [
+        "task/desc.md",
+        "task/proto.yaml",
+        "task/cases.yaml",
+        "task/golden.py",
+        "ANALYSIS.md",
+        "device_info.json",
+        "fusion/fusion_library.json",
+        "impl/cann_bench/__init__.py"
+      ],
+      "avg_speedup_before": 1.2081,
+      "avg_speedup_after": 1.3213,
+      "delta": 0.1132,
+      "verdict": "big_win",
+      "comparison_status": "comparable",
+      "comparison_reason": "两轮硬件、任务、case、基准及评测协议一致",
+      "comparison_previous_iter": 1,
+      "evaluation_summary": "iter2 在 F2 骨架内实施了两项改动：(1) MULTI_TOKEN serial loop（grid=40，tokens>64 时每 program 串行处理多 token，调度波从 17-58 降为 1）；(2) tl.where 统计掩码改 fp32 向量比较。 精度 30/30 全通过。性能 avg_speedup 从 1.208 提升至 1.321（+9.4%），performance_score 22.71→24.33，达标 case 13→14 个。 大 C 组显著受益：case 16-18（C=512）speedup 从 1.10-1.16 提升至 1.52-1.66（+36-49%），case 8（C=384）1.34→1.73（+29%），case 11（C=128 fp32）0.29→0.54（+85%），case 13（C=256 fp16）0.57→1.03（+79%，新达标）。 然而 6 个最慢 case（19/21/1/3/20/12，C=80-128，fp16/bf16/fp32）speedup 仍在 0.17-0.26，其中 case 19/1/12 比 iter1 反而退步 7-17%。 profiler 证实根因：小 C 下 per-token 有效计算量极低（BLOCK_C=128 时 4×128 fp32），serial loop 的 per-iteration 开销（token 解码、w/b 逐次重载 8 次 masked load、offs_f 转换）吞噬全部减波收益； fp16/bf16 cast 在 serial loop 下被放大（同 shape fp32 比 fp16 快 34-50%）；CacheClean 冷缓存下 w/b 每次迭代从 HBM 重载。 小 grid 已达标组（22-30）零回归（MULTI_TOKEN=False 路径与 iter0 编译等价）。融合结构 F2 本身仍然有效（小 grid speedup 1.99-3.71）。 证据来源：eval/iter2/perf_result.json（30 case speedup）、profile/iter2/bottleneck_analysis.md（逐 case profiler 对比）、selection/state.json（case_trends iter1→iter2）。",
+      "case_analysis": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_19",
+          "observation": "kernel 197.3us vs baseline 33.46us，speedup=0.170（iter1: 0.183，退步 7%）。fp16, C=80, tokens=690, BLOCK_C=128, grid=40, MULTI_TOKEN=True。为全部 30 case 中最慢。",
+          "explanation": "已证实：每 program 串行 690/40≈17 个 token，per-token≈11.6us（iter1 per-wave≈10.1us，反而更快）。C=80/BLOCK_C=128 有效利用率仅 62.5%，kernel 严重 memory-bound（op_statistic 显示 kernel 时间占比仅 43.9%）。serial loop 的 per-iteration 开销（token 解码除法/取模、w/b 8 次逐段重载、offs_f 转换）在小 C 下占比过大，抵消了减波收益。fp16→fp32 cast 进一步放大每迭代开销（同 shape fp32 case 20=129us 比 fp16=197us 快 34%）。CacheClean 冷缓存下 w/b 每次迭代从 HBM 重载。",
+          "evidence": "profile/iter2/bottleneck_analysis.md case 19 分析；eval/iter2/perf_result.json case 19 elapsed_us=197.3 baseline=33.46；selection/state.json case_trends case 19 iter1=0.183→iter2=0.170（-7%）；同 shape fp32 case 20=129.22us 证实 cast 开销。",
+          "next_action": "T1 将 w/b 移出循环（17 次→1 次重载）+ 2D tile（17 次解码/load/store→2 次），预期 per-iteration 开销大幅降低。fp16 cast 残留开销由更大 tile 的向量利用率提升缓解。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_21",
+          "observation": "kernel 160.32us vs baseline 34.45us，speedup=0.215（iter1: 0.191，小幅改善）。bf16, C=80, tokens=690, BLOCK_C=128, grid=40。",
+          "explanation": "已证实：与 case 19 同 shape（C=80, tokens=690），bf16 路径。bf16→fp32 cast 开销略低于 fp16（160 vs 197us），但远超 baseline。根因同 case 19：小 C serial loop 的 per-iteration overhead（w/b 重载 + 地址解码）主导，memory-bound。iter1→iter2 小幅改善（+2.4%）可能是波次减少的微弱净收益。",
+          "evidence": "profile/iter2/bottleneck_analysis.md case 21 分析；eval/iter2/perf_result.json case 21 elapsed_us=160.32 baseline=34.45；selection/state.json iter1=0.191→iter2=0.215（+2.4%）。",
+          "next_action": "与 case 19 共享 T1 修复路径（w/b 提取 + 2D tile）。bf16 cast 开销是残余瓶颈，但在减少 per-iteration 固定开销后占比将显著降低。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_1",
+          "observation": "kernel 161.84us vs baseline 34.83us，speedup=0.215（iter1: 0.230，退步 7%）。fp16, C=96, tokens=784, BLOCK_C=128, grid=40。",
+          "explanation": "已证实：每 program 串行 784/40≈20 个 token，per-token≈8.1us。C=96/BLOCK_C=128 利用率 75%。iter1 kernel=151.14us→iter2=161.84us（+7%），serial loop 循环控制开销抵消减波收益。同 shape fp32 case 2=91.08us 比 fp16 快 44%，dtype cast 是额外显著开销。w/b 每迭代重载 8 次 masked load 是 per-iteration 最大固定开销源。",
+          "evidence": "profile/iter2/bottleneck_analysis.md case 1 分析；eval/iter2/perf_result.json case 1 elapsed_us=161.84；case 2 fp32 elapsed_us=91.08；selection/state.json iter1=0.230→iter2=0.215（-7%）。",
+          "next_action": "T1 w/b 提取（20 次→1 次）+ 2D tile（20 次→~2 次循环迭代），预期 kernel 耗时从 161us 大幅降低。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_3",
+          "observation": "kernel 162.14us vs baseline 36.79us，speedup=0.227（iter1: 0.243，退步 7%）。bf16, C=96, tokens=784, BLOCK_C=128, grid=40。",
+          "explanation": "已证实：与 case 1 相同 grid/shape/tokens，bf16 路径。bf16 与 fp16 kernel 耗时几乎持平（162 vs 162us），证明 bf16→fp32 与 fp16→fp32 cast 开销相当。iter1→iter2 退步 7%，serial loop 的循环控制 + w/b 逐次重载在小 C 场景下净亏损。",
+          "evidence": "profile/iter2/bottleneck_analysis.md case 3 分析；eval/iter2/perf_result.json case 3 elapsed_us=162.14 baseline=36.79；selection/state.json iter1=0.243→iter2=0.227（-7%）。",
+          "next_action": "与 case 1 共享 T1 修复路径。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_20",
+          "observation": "kernel 129.22us vs baseline 31.84us，speedup=0.246（iter1: 0.241，几乎持平）。fp32, C=80, tokens=690, BLOCK_C=128, grid=40。",
+          "explanation": "已证实：fp32 无 dtype cast，per-token≈129/17≈7.6us，比 fp16 case 19 的 11.6us 快 34%，验证了 cast 开销是 fp16/bf16 case 的额外瓶颈。但 129us 仍 4x 慢于 baseline（31.84us），说明即使无 cast，w/b 逐次重载 + 地址解码的 per-iteration 固定开销在 C=80 下仍占主导。iter1→iter2 speedup 几乎不变（+0.5%），减波与循环开销基本抵消。",
+          "evidence": "profile/iter2/bottleneck_analysis.md case 20 分析；eval/iter2/perf_result.json case 20 elapsed_us=129.22 baseline=31.84；case 19 fp16=197.3us 对比。",
+          "next_action": "T1 w/b 提取对 fp32 case 同样有效（消除 17 次×8 次 masked load），2D tile 减少地址解码次数。fp32 无 cast，预期改善幅度可能大于 fp16/bf16 同 shape case。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_12",
+          "observation": "kernel 202.98us vs baseline 53.52us，speedup=0.264（iter1: 0.308，退步 14%）。bf16, C=128, tokens=2304, BLOCK_C=128, grid=40。退步最严重的 case。",
+          "explanation": "已证实：每 program 串行 2304/40=58 个 token，per-token≈3.5us（6 个 worst case 中最快，因 C=128=BLOCK_C 无 mask 浪费）。但 58 个 token 的累积开销巨大：w/b 重载 58×8=464 次 masked load。iter1 kernel=174us→iter2=203us（+17%），退步明显。同 shape fp32 case 11 反而从 188us→102us 大幅改善（+85%），差异在于 bf16 cast 在 58 次迭代中累积开销远大于 fp32。",
+          "evidence": "profile/iter2/bottleneck_analysis.md case 12 分析；eval/iter2/perf_result.json case 12 elapsed_us=202.98 baseline=53.52；case 11 fp32=101.56us（+85% 改善）；selection/state.json iter1=0.308→iter2=0.264（-14%）。",
+          "next_action": "T1 w/b 提取（464 次→8 次）是该 case 最关键优化。2D tile 将 58 次循环降为 ~4 次（TILE=16），大幅削减 per-iteration 的 bf16 cast 累积。预期改善最为显著。"
+        }
+      ],
+      "action_plan": {
+        "version": 2,
+        "tasks": [
+          {
+            "task_id": "T1",
+            "priority": "P0",
+            "task_type": "modify",
+            "action": "w/b 移出 token 循环 + MULTI_TOKEN 分支改 2D tile（每迭代处理 TILE 个 token）+ host 侧计算 TILE",
+            "reason": "profiler 证实 serial loop 的最大 per-iteration 开销是 w/b 逐次重载（每迭代 8 次 masked load）和 token 解码（除法/取模）。 搜索节点（FIX_DIRECTIVE）确认：(1) w/b 在循环前一次加载驻留 UB（case 12 从 464 次降为 8 次）；(2) 2D tile 使 load/store/归约/解码次数降为 1/TILE（case 12 从 58 降为 ~4 次迭代）；(3) host 计算 TILE=min(16, max(1, 1024//next_power_of_2(C)))。 三个来源支持：编程指南 + vector_operator 指南 + triton-ascend-ops 官方实践。 MULTI_TOKEN=False 路径保持不动。",
+            "case_scope": "cases",
+            "target_cases": [
+              "level3/fused_patch_concat_layernorm_19",
+              "level3/fused_patch_concat_layernorm_21",
+              "level3/fused_patch_concat_layernorm_1",
+              "level3/fused_patch_concat_layernorm_3",
+              "level3/fused_patch_concat_layernorm_20",
+              "level3/fused_patch_concat_layernorm_12",
+              "level3/fused_patch_concat_layernorm_10",
+              "level3/fused_patch_concat_layernorm_2",
+              "level3/fused_patch_concat_layernorm_4",
+              "level3/fused_patch_concat_layernorm_6",
+              "level3/fused_patch_concat_layernorm_11",
+              "level3/fused_patch_concat_layernorm_5",
+              "level3/fused_patch_concat_layernorm_15",
+              "level3/fused_patch_concat_layernorm_7",
+              "level3/fused_patch_concat_layernorm_9",
+              "level3/fused_patch_concat_layernorm_14"
+            ],
+            "operator_reason": "",
+            "case_bindings": [
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_19",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_21",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_1",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_3",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_20",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_12",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_10",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_2",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_4",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_6",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_11",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_5",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_15",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_7",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_9",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_14",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "fused_patch_concat_layernorm host function, line 145",
+                    "explanation": "tokens>64 routes to MULTI_TOKEN=True path with grid=(min(tokens,40),); this case has tokens>=392 and hits the MULTI_TOKEN serial loop"
+                  }
+                ]
+              }
+            ],
+            "changes": [
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "kernel body, before token loop (after line 36)",
+                "method": "Move offs/channel_mask definitions and all 8 w/b tl.load calls (lines 76-89) to before the token loop. Define w0,b0,w1,b1,w2,b2,w3,b3 = 4 pairs of weight/bias loads with segment offsets 0/C/2C/3C. Replace w_tl/b_tl etc with w0/b0 etc in store expressions."
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "kernel signature (line 26-27)",
+                "method": "Add TILE: tl.constexpr parameter after MULTI_TOKEN."
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "kernel body, MULTI_TOKEN=True branch (lines 29-91)",
+                "method": "Rewrite MULTI_TOKEN loop to 2D tile: for k in range(0, tokens-pid, TILE*step): token = pid+k+arange(TILE)*step with tmask; batch/row/col as (TILE,) vectors; 4 segment loads as (TILE,BLOCK_C) 2D tiles with tmask[:,None]&channel_mask[None,:]; statistics via axis=1 reduction; output stores as 2D masked stores. MULTI_TOKEN=False branch unchanged."
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "host function, line 145-159",
+                "method": "Compute TILE=min(16, max(1, 1024//triton.next_power_of_2(channels))); pass TILE as constexpr to kernel call. Grid and MULTI_TOKEN routing unchanged."
+              }
+            ],
+            "acceptance_checks": [
+              "全 30 case 精度自测通过（含 C=3/65 尾块、零方差 25-27、近常数 28-30、grid=1 的 case 22）",
+              "连续调用自测通过（同 shape 更换参数后结果仍正确）",
+              "6 个最慢 case（19/21/1/3/20/12）kernel 耗时显著下降",
+              "已达标 14 case（8/13/16-18/22-30）speedup 无回归",
+              "编译成功，无 UB 超限报错；若 BLOCK_C=512 时 TILE=16 超限则降为 TILE=2 重试"
+            ]
+          },
+          {
+            "task_id": "T2",
+            "priority": "P1",
+            "task_type": "inspect",
+            "action": "验证 T1 修改后 kernel 签名、host 调用一致性和 2D 归约语义正确性",
+            "reason": "T1 改动较大（新增 TILE 参数、2D tile 重写 MULTI_TOKEN 分支、w/b 提取）。需确认：(1) kernel 签名新参数 TILE 与 host 调用匹配；(2) 2D 归约 axis=1 语义等价于逐 token axis=0；(3) tmask 尾块正确兜底；(4) 输入校验/contiguous/torch.empty/tokens==0 早退不变。",
+            "case_scope": "operator",
+            "target_cases": [],
+            "operator_reason": "Kernel signature and 2D reduction semantic correctness is a structural verification across all cases.",
+            "case_bindings": [],
+            "changes": [
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "inspect",
+                "location": "kernel signature and host function call",
+                "method": "Verify TILE constexpr in kernel signature matches host call; verify parameter order and count."
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "inspect",
+                "location": "MULTI_TOKEN=True branch, 2D reduction",
+                "method": "Verify tl.sum axis=1 produces (TILE,) scalars equivalent to per-token axis=0 reduction; verify tmask prevents out-of-range tokens; verify MULTI_TOKEN=False branch is unchanged."
+              }
+            ],
+            "acceptance_checks": [
+              "kernel 调用的位置参数和 constexpr 数量与 kernel 签名完全匹配",
+              "2D 归约 axis=1 语义与逐 token axis=0 在数学上等价（同一通道轴求和）",
+              "MULTI_TOKEN=False 分支代码与 iter2 逐 token 路径完全相同"
+            ]
+          }
+        ]
+      },
+      "stage9_decision_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter2/16f375d457844ae7978d993dced42915/decision.json",
+      "environment": {
+        "framework": "Triton",
+        "backend": "triton-ascend",
+        "framework_source": "performance_report",
+        "runtime_versions": {
+          "triton": "3.2.0",
+          "triton_ascend": "3.2.1",
+          "torch": "2.7.1+cpu",
+          "torch_npu": "2.7.1.post8"
+        },
+        "toolchain": {
+          "verified": true,
+          "cann_roots": {
+            "ASCEND_HOME_PATH": "/home/developer/Ascend/cann-9.1.0",
+            "ASCEND_TOOLKIT_HOME": "/home/developer/Ascend/cann-9.1.0",
+            "CANN_PATH": "/home/developer/Ascend/cann-9.1.0"
+          },
+          "version_files": [
+            {
+              "path": "/home/developer/Ascend/cann-9.1.0/share/info/asc-devkit/version.info",
+              "sha256": "f20359296d5a7127f841aa35f4a788137f444dc36d72641e948cb9e39e47e4f4",
+              "version": "9.1.0"
+            }
+          ]
+        },
+        "chip_model": "Ascend910B3",
+        "soc_version": "Ascend910B3",
+        "npu_arch": "dav-c220",
+        "programming_model": "Triton block program (SPMD)",
+        "device_id": 0,
+        "source_kind": "performance_report",
+        "source_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter2/perf_result.json"
+      }
+    },
+    {
+      "iter": 3,
+      "reason": "perf_optimize",
+      "direction": "立即回退 MULTI_TOKEN=True 分支至 iter2 best 的 1D 逐 token serial loop，保留 w/b 循环外提取（独立改动）。删除 TILE constexpr 和 host tile 计算。目标：恢复 iter2 水平（avg_speedup>=1.32），w/b 提取在冷缓存口径下可能额外改善 5-15%。不叠加新优化。",
+      "modify_files": [
+        "impl/cann_bench/fused_patch_concat_layernorm.py"
+      ],
+      "readonly_files": [
+        "task/desc.md",
+        "task/proto.yaml",
+        "task/cases.yaml",
+        "task/golden.py",
+        "ANALYSIS.md",
+        "device_info.json",
+        "fusion/fusion_library.json",
+        "impl/cann_bench/__init__.py"
+      ],
+      "avg_speedup_before": 1.3213,
+      "avg_speedup_after": 0.8224,
+      "delta": -0.4989,
+      "verdict": "regression",
+      "comparison_status": "comparable",
+      "comparison_reason": "两轮硬件、任务、case、基准及评测协议一致",
+      "comparison_previous_iter": 2,
+      "evaluation_summary": "iter3 引入 (TILE, BLOCK_C) 2D tile 改写 MULTI_TOKEN=True 分支 + w/b 循环外提取。精度 30/30 PASS，但性能灾难性退步：avg_speedup 从 iter2 的 1.321 暴跌至 0.822（-37.8%），达标 case 从 14 降为 9。全部 21 个 MULTI_TOKEN=True case（1-21）speedup 跌至 0.009-0.044（退步 22-153x），kernel 耗时从 iter2 的 24-203us 暴增至 768-4524us。iter2 已达标的 case 8/13/16-18 全部失守。仅 MULTI_TOKEN=False 的 case 22-30 保持正常（speedup 1.9-3.7）。根因已由 profiler kernel_details 证实：triton-ascend 3.2.1 后端对 2D tensor 操作（2D strided gather、axis=1 归约、2D broadcast mask/store）生成极度低效编译代码。fp32 case 17（无 cast）同量级退步 132x 排除了 cast 为主因；TILE=2（最小非平凡值）退步 79-153x 排除了 TILE 取值或 UB 溢出；kernel_details Duration 证实退步在 kernel 执行内部。w/b 提取本身可能有效但被 2D 退步完全掩盖。证据：eval/iter3/perf_result.json、profile/iter3/bottleneck_analysis.md、selection/state.json。",
+      "case_analysis": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_15",
+          "observation": "kernel 4521.1us vs baseline 42.7us, speedup=0.00944 (iter2: 0.781, 退步 98.8%)。bf16, C=128, tokens=2304, TILE=4, MULTI_TOKEN=True。本轮最慢。",
+          "explanation": "已证实：2D tile (TILE=4, BLOCK_C=256) 路径编译产物极低效。profiler Duration=4521us，vs iter2 1D 路径 54.66us，退步 82x。2D strided gather + axis=1 reduction 在后端生成灾难性代码。非 UB 溢出（设计 36KB << 192KB）。",
+          "evidence": "eval/iter3/perf_result.json case 15 elapsed_us=4521.1; profile/iter3/bottleneck_analysis.md case 15; iter2 HAP case 15 kernel=54.66us。",
+          "next_action": "T1 回退 1D loop + w/b 提取。预期恢复 ~55us (speedup ~0.78)，w/b 提取可能进一步改善。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_18",
+          "observation": "kernel 4517.4us vs baseline 47.98us, speedup=0.01062 (iter2: 1.623, 退步 99.3%)。bf16, C=512, tokens=576, TILE=2。iter2 最佳组之一。",
+          "explanation": "已证实：即使 TILE=2（最小非平凡值），(2,512) 2D 操作仍导致 153x 退步。iter2 1D 路径仅 29.56us。profiler Duration=4517us 证实退步在 kernel 内部。",
+          "evidence": "eval/iter3/perf_result.json case 18 elapsed_us=4517.42; profile/iter3/bottleneck_analysis.md case 18; iter2 HAP case 18 kernel=29.56us。",
+          "next_action": "T1 回退 1D loop。预期恢复 ~30us (speedup ~1.6)。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_16",
+          "observation": "kernel 4036.4us vs baseline 45.87us, speedup=0.01136 (iter2: 1.516, 退步 99.3%)。fp16, C=512, tokens=576, TILE=2。",
+          "explanation": "已证实：与 case 18 同 shape，fp16 路径。fp16 2D 耗时 4036us vs bf16 4517us，量级相同，TILE=2 无调整空间。",
+          "evidence": "eval/iter3/perf_result.json case 16 elapsed_us=4036.38; profile/iter3/bottleneck_analysis.md case 16; iter2 HAP case 16 kernel=30.26us。",
+          "next_action": "T1 回退 1D loop。预期恢复 ~30us (speedup ~1.5)。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_12",
+          "observation": "kernel 4524.0us vs baseline 53.52us, speedup=0.01183 (iter2: 0.264, 退步 95.5%)。bf16, C=128, tokens=2304, TILE=8。",
+          "explanation": "已证实：per-tile 开销 ~565us vs iter2 per-token ~3.5us，160x 差异。w/b 提取（464次→8次）的收益被完全掩盖。",
+          "evidence": "eval/iter3/perf_result.json case 12 elapsed_us=4524.04; profile/iter3/bottleneck_analysis.md case 12; iter2 HAP case 12 kernel=202.98us。",
+          "next_action": "T1 回退 1D + w/b 提取。case 12 w/b 收益最大（464→8 次重载）。预期从 203us 显著下降。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_17",
+          "observation": "kernel 4016.8us vs baseline 50.78us, speedup=0.01264 (iter2: 1.664, 退步 99.2%)。fp32, C=512, tokens=576, TILE=2。",
+          "explanation": "已证实：关键对照——fp32 无 cast 但仍退步 132x，直接排除 cast 为主因，确证 2D 操作编译质量本身极差。",
+          "evidence": "eval/iter3/perf_result.json case 17 elapsed_us=4016.84; profile/iter3/bottleneck_analysis.md case 17（fp32 同量级退步）; iter2 HAP case 17 kernel=30.52us。",
+          "next_action": "T1 回退 1D loop。预期恢复 ~31us (speedup ~1.66)。fp32 可作 w/b 提取净效果的对照。"
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_13",
+          "observation": "kernel 3890.6us vs baseline 50.37us, speedup=0.01295 (iter2: 1.025, 退步 98.7%)。fp16, C=256, tokens=2304, TILE=4。iter2 刚达标。",
+          "explanation": "已证实：TILE=4 BLOCK_C=256，15 tile × ~260us/tile ≈ 3891us vs iter2 1D 49.14us。fp16 cast 是次要加剧因素。",
+          "evidence": "eval/iter3/perf_result.json case 13 elapsed_us=3890.62; profile/iter3/bottleneck_analysis.md case 13; iter2 HAP case 13 kernel=49.14us。",
+          "next_action": "T1 回退 1D + w/b 提取。预期恢复 ~49us，w/b 提取可能使其稳定达标。"
+        }
+      ],
+      "action_plan": {
+        "version": 2,
+        "tasks": [
+          {
+            "task_id": "T1",
+            "priority": "P0",
+            "task_type": "modify",
+            "action": "回退 MULTI_TOKEN=True 分支的 2D tile 为 1D 逐 token serial loop，保留 w/b 循环外提取，删除 TILE 参数和 host tile 计算",
+            "reason": "profiler 证实 2D tile 在 triton-ascend 3.2.1 后端上导致全部 21 个 MULTI_TOKEN case 退步 22-153x（kernel 768-4524us vs iter2 24-203us）。iter2 best 的 1D serial loop 已验证 avg_speedup=1.321。w/b 提取是独立于 2D tile 的有效改动（消除 per-iteration 8 次 masked load），保留作为唯一增量。FIX_DIRECTIVE 给出完整回退代码骨架。",
+            "case_scope": "cases",
+            "target_cases": [
+              "level3/fused_patch_concat_layernorm_1",
+              "level3/fused_patch_concat_layernorm_2",
+              "level3/fused_patch_concat_layernorm_3",
+              "level3/fused_patch_concat_layernorm_4",
+              "level3/fused_patch_concat_layernorm_5",
+              "level3/fused_patch_concat_layernorm_6",
+              "level3/fused_patch_concat_layernorm_7",
+              "level3/fused_patch_concat_layernorm_8",
+              "level3/fused_patch_concat_layernorm_9",
+              "level3/fused_patch_concat_layernorm_10",
+              "level3/fused_patch_concat_layernorm_11",
+              "level3/fused_patch_concat_layernorm_12",
+              "level3/fused_patch_concat_layernorm_13",
+              "level3/fused_patch_concat_layernorm_14",
+              "level3/fused_patch_concat_layernorm_15",
+              "level3/fused_patch_concat_layernorm_16",
+              "level3/fused_patch_concat_layernorm_17",
+              "level3/fused_patch_concat_layernorm_18",
+              "level3/fused_patch_concat_layernorm_19",
+              "level3/fused_patch_concat_layernorm_20",
+              "level3/fused_patch_concat_layernorm_21"
+            ],
+            "operator_reason": "",
+            "case_bindings": [
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_1",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_2",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_3",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_4",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_5",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_6",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_7",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_8",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_9",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_10",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_11",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_12",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_13",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_14",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_15",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_16",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_17",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_18",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_19",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_20",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              },
+              {
+                "case_id": "level3/fused_patch_concat_layernorm_21",
+                "implementation_files": [
+                  "impl/cann_bench/fused_patch_concat_layernorm.py"
+                ],
+                "route_evidence": [
+                  {
+                    "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                    "location": "host function line 206 and line 221-222",
+                    "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+                  }
+                ]
+              }
+            ],
+            "changes": [
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "kernel MULTI_TOKEN=True branch, lines 47-106",
+                "method": "删除整个 2D tile 实现（lanes/hw/tmask/tile_mask/2D load/axis=1 reduction/2D store），替换为 1D 逐 token serial loop（FIX_DIRECTIVE 第 1 项骨架）：token_lo=pid, token_hi=tokens, token_step=tl.num_programs(0); for token in range(...)，1D load (axis=0)，引用已上提的 w0-b3。不残留 [:, None]/[None, :]/lanes/TILE/tmask/tile_mask/axis=1。"
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "kernel signature, line 27",
+                "method": "删除 TILE: tl.constexpr 参数。签名恢复为 (..., eps, BLOCK_C: tl.constexpr, MULTI_TOKEN: tl.constexpr)。"
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "inspect",
+                "location": "kernel lines 38-45, w/b 8 段 masked load",
+                "method": "确认 w0/b0/.../w3/b3 8 次 masked load 保持在循环外、不随回退丢失。store 表达式引用 w0-b3。不恢复 iter2 快照行 76-89 的循环内逐 token w/b 加载。"
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "modify",
+                "location": "host function, lines 207 and 222",
+                "method": "删除 tile = min(16, max(1, 1024 // triton.next_power_of_2(channels))) 和 TILE=tile 实参。grid 与 MULTI_TOKEN 路由不动。"
+              },
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "inspect",
+                "location": "entire kernel and host function",
+                "method": "改后自查：不残留 2D 索引（[:,None]/[None,:]/lanes/TILE/tmask/tile_mask/2D 钳位 tl.where(tmask,...)）；axis=1 不出现；签名/host 实参/分支定义一致；输入校验/contiguous/torch.empty/tokens==0 早退不变。"
+              }
+            ],
+            "acceptance_checks": [
+              "全 30 case 精度自测通过（含 C=3/65 尾块、零方差 25-27、近常数 28-30、grid=1 的 case 22）",
+              "连续调用自测通过（同 shape 换参逐次对照 golden）",
+              "kernel 中无残留 2D 索引/axis=1/TILE/lanes/tmask",
+              "21 个 MULTI_TOKEN case kernel 耗时恢复 iter2 量级（24-203us 范围内）",
+              "9 个 MULTI_TOKEN=False case speedup 无回归（仍 1.9-3.7）"
+            ]
+          },
+          {
+            "task_id": "T2",
+            "priority": "P2",
+            "task_type": "inspect",
+            "action": "回退后对比 iter2 best 快照，验证唯一差异是 w/b 循环外提取",
+            "reason": "回退后代码应等价于 iter2 best + w/b 提取。需逐行确认 MULTI_TOKEN=True 分支与 iter2 快照的差异仅为 w/b 位置（循环前 vs 循环内），数值路径和融合结构完全一致。",
+            "case_scope": "operator",
+            "target_cases": [],
+            "operator_reason": "验证回退完整性是全局工程检查，不对应特定 case。",
+            "case_bindings": [],
+            "changes": [
+              {
+                "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+                "operation": "inspect",
+                "location": "MULTI_TOKEN=True branch and host function",
+                "method": "逐行对比 selection/records/iter2-844fc6b40708c857f98b/impl/cann_bench/fused_patch_concat_layernorm.py，确认差异仅为 w/b 从循环内（行 76-89）移至循环前（行 38-45），store 引用 w0-b3 替代 w_tl-b_br。"
+              }
+            ],
+            "acceptance_checks": [
+              "回退后代码与 iter2 best 快照的差异仅限 w/b 加载位置和变量名",
+              "MULTI_TOKEN=False 分支、host 函数（除 TILE 相关删除外）、输入校验均与 iter2 快照一致"
+            ]
+          }
+        ]
+      },
+      "stage9_decision_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter3/4b3764bf69c14a94a4be8cf959e4391a/decision.json",
+      "environment": {
+        "framework": "Triton",
+        "backend": "triton-ascend",
+        "framework_source": "performance_report",
+        "runtime_versions": {
+          "triton": "3.2.0",
+          "triton_ascend": "3.2.1",
+          "torch": "2.7.1+cpu",
+          "torch_npu": "2.7.1.post8"
+        },
+        "toolchain": {
+          "verified": true,
+          "cann_roots": {
+            "ASCEND_HOME_PATH": "/home/developer/Ascend/cann-9.1.0",
+            "ASCEND_TOOLKIT_HOME": "/home/developer/Ascend/cann-9.1.0",
+            "CANN_PATH": "/home/developer/Ascend/cann-9.1.0"
+          },
+          "version_files": [
+            {
+              "path": "/home/developer/Ascend/cann-9.1.0/share/info/asc-devkit/version.info",
+              "sha256": "f20359296d5a7127f841aa35f4a788137f444dc36d72641e948cb9e39e47e4f4",
+              "version": "9.1.0"
+            }
+          ]
+        },
+        "chip_model": "Ascend910B3",
+        "soc_version": "Ascend910B3",
+        "npu_arch": "dav-c220",
+        "programming_model": "Triton block program (SPMD)",
+        "device_id": 0,
+        "source_kind": "performance_report",
+        "source_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/eval/iter3/perf_result.json"
+      }
+    },
+    {
+      "iter": 4,
+      "reason": "(pending tech_lead)",
+      "direction": "(pending tech_lead)",
+      "modify_files": [],
+      "readonly_files": [],
+      "avg_speedup_before": 0.8224,
+      "avg_speedup_after": 1.539,
+      "delta": 0.7166,
+      "verdict": "big_win",
+      "comparison_status": "comparable",
+      "comparison_reason": "两轮硬件、任务、case、基准及评测协议一致",
+      "comparison_previous_iter": 3
+    }
+  ],
+  "rounds": [
+    {
+      "iter": 1,
+      "avg_speedup": 1.2081,
+      "overall_score": 72.71,
+      "performance_score": 22.71,
+      "improved": null,
+      "worst_case": {
+        "case_id": "level3/fused_patch_concat_layernorm_19",
+        "speedup": 0.1831
+      },
+      "worst_6_speedups": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_19",
+          "speedup": 0.1831
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_21",
+          "speedup": 0.191
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_1",
+          "speedup": 0.2304
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_20",
+          "speedup": 0.2412
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_3",
+          "speedup": 0.243
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_10",
+          "speedup": 0.2741
+        }
+      ],
+      "comparison_status": "new_baseline",
+      "comparison_reason": "没有上一轮有效性能结果，不计算涨跌",
+      "comparison_previous_iter": null
+    },
+    {
+      "iter": 2,
+      "avg_speedup": 1.3213,
+      "overall_score": 74.33,
+      "performance_score": 24.33,
+      "improved": true,
+      "worst_case": {
+        "case_id": "level3/fused_patch_concat_layernorm_19",
+        "speedup": 0.1696
+      },
+      "worst_6_speedups": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_19",
+          "speedup": 0.1696
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_21",
+          "speedup": 0.2149
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_1",
+          "speedup": 0.2152
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_3",
+          "speedup": 0.2269
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_20",
+          "speedup": 0.2464
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_12",
+          "speedup": 0.2637
+        }
+      ],
+      "comparison_status": "comparable",
+      "comparison_reason": "两轮硬件、任务、case、基准及评测协议一致",
+      "comparison_previous_iter": 1
+    },
+    {
+      "iter": 3,
+      "avg_speedup": 0.8224,
+      "overall_score": 62.06,
+      "performance_score": 12.06,
+      "improved": false,
+      "worst_case": {
+        "case_id": "level3/fused_patch_concat_layernorm_15",
+        "speedup": 0.0094
+      },
+      "worst_6_speedups": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_15",
+          "speedup": 0.0094
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_18",
+          "speedup": 0.0106
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_16",
+          "speedup": 0.0114
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_12",
+          "speedup": 0.0118
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_17",
+          "speedup": 0.0126
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_13",
+          "speedup": 0.0129
+        }
+      ],
+      "comparison_status": "comparable",
+      "comparison_reason": "两轮硬件、任务、case、基准及评测协议一致",
+      "comparison_previous_iter": 2
+    },
+    {
+      "iter": 4,
+      "avg_speedup": 1.539,
+      "overall_score": 79.4,
+      "performance_score": 29.4,
+      "improved": true,
+      "worst_case": {
+        "case_id": "level3/fused_patch_concat_layernorm_19",
+        "speedup": 0.7567
+      },
+      "worst_6_speedups": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_19",
+          "speedup": 0.7567
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_10",
+          "speedup": 0.7593
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_1",
+          "speedup": 0.7608
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_12",
+          "speedup": 0.7641
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_3",
+          "speedup": 0.7871
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_11",
+          "speedup": 0.8049
+        }
+      ],
+      "comparison_status": "comparable",
+      "comparison_reason": "两轮硬件、任务、case、基准及评测协议一致",
+      "comparison_previous_iter": 3
+    }
+  ],
+  "bottleneck_now": "本轮灾难性退步的唯一根因是 MULTI_TOKEN=True 分支的 (TILE, BLOCK_C) 2D tile 路径在 triton-ascend 3.2.1 后端生成极低效代码。21 个 case kernel 耗时 768-4524us（退步 22-153x），全部 dtype/C/TILE 无一幸免。回退到 1D serial loop 后，瓶颈将恢复为 iter2 已识别的 per-iteration 固定开销（w/b 重载占首位，w/b 提取直接命中）。",
+  "suggest_next": [
+    {
+      "task_id": "T1",
+      "priority": "P0",
+      "task_type": "modify",
+      "action": "回退 MULTI_TOKEN=True 分支的 2D tile 为 1D 逐 token serial loop，保留 w/b 循环外提取，删除 TILE 参数和 host tile 计算",
+      "reason": "profiler 证实 2D tile 在 triton-ascend 3.2.1 后端上导致全部 21 个 MULTI_TOKEN case 退步 22-153x（kernel 768-4524us vs iter2 24-203us）。iter2 best 的 1D serial loop 已验证 avg_speedup=1.321。w/b 提取是独立于 2D tile 的有效改动（消除 per-iteration 8 次 masked load），保留作为唯一增量。FIX_DIRECTIVE 给出完整回退代码骨架。",
+      "case_scope": "cases",
+      "target_cases": [
+        "level3/fused_patch_concat_layernorm_1",
+        "level3/fused_patch_concat_layernorm_2",
+        "level3/fused_patch_concat_layernorm_3",
+        "level3/fused_patch_concat_layernorm_4",
+        "level3/fused_patch_concat_layernorm_5",
+        "level3/fused_patch_concat_layernorm_6",
+        "level3/fused_patch_concat_layernorm_7",
+        "level3/fused_patch_concat_layernorm_8",
+        "level3/fused_patch_concat_layernorm_9",
+        "level3/fused_patch_concat_layernorm_10",
+        "level3/fused_patch_concat_layernorm_11",
+        "level3/fused_patch_concat_layernorm_12",
+        "level3/fused_patch_concat_layernorm_13",
+        "level3/fused_patch_concat_layernorm_14",
+        "level3/fused_patch_concat_layernorm_15",
+        "level3/fused_patch_concat_layernorm_16",
+        "level3/fused_patch_concat_layernorm_17",
+        "level3/fused_patch_concat_layernorm_18",
+        "level3/fused_patch_concat_layernorm_19",
+        "level3/fused_patch_concat_layernorm_20",
+        "level3/fused_patch_concat_layernorm_21"
+      ],
+      "operator_reason": "",
+      "case_bindings": [
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_1",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_2",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_3",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_4",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_5",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_6",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_7",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_8",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_9",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_10",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_11",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_12",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_13",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_14",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_15",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_16",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_17",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_18",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_19",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_20",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        },
+        {
+          "case_id": "level3/fused_patch_concat_layernorm_21",
+          "implementation_files": [
+            "impl/cann_bench/fused_patch_concat_layernorm.py"
+          ],
+          "route_evidence": [
+            {
+              "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+              "location": "host function line 206 and line 221-222",
+              "explanation": "tokens>64 routes to grid=(min(tokens,40),) + MULTI_TOKEN=True; this case has tokens>=392 and enters the MULTI_TOKEN branch at kernel line 47"
+            }
+          ]
+        }
+      ],
+      "changes": [
+        {
+          "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+          "operation": "modify",
+          "location": "kernel MULTI_TOKEN=True branch, lines 47-106",
+          "method": "删除整个 2D tile 实现（lanes/hw/tmask/tile_mask/2D load/axis=1 reduction/2D store），替换为 1D 逐 token serial loop（FIX_DIRECTIVE 第 1 项骨架）：token_lo=pid, token_hi=tokens, token_step=tl.num_programs(0); for token in range(...)，1D load (axis=0)，引用已上提的 w0-b3。不残留 [:, None]/[None, :]/lanes/TILE/tmask/tile_mask/axis=1。"
+        },
+        {
+          "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+          "operation": "modify",
+          "location": "kernel signature, line 27",
+          "method": "删除 TILE: tl.constexpr 参数。签名恢复为 (..., eps, BLOCK_C: tl.constexpr, MULTI_TOKEN: tl.constexpr)。"
+        },
+        {
+          "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+          "operation": "inspect",
+          "location": "kernel lines 38-45, w/b 8 段 masked load",
+          "method": "确认 w0/b0/.../w3/b3 8 次 masked load 保持在循环外、不随回退丢失。store 表达式引用 w0-b3。不恢复 iter2 快照行 76-89 的循环内逐 token w/b 加载。"
+        },
+        {
+          "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+          "operation": "modify",
+          "location": "host function, lines 207 and 222",
+          "method": "删除 tile = min(16, max(1, 1024 // triton.next_power_of_2(channels))) 和 TILE=tile 实参。grid 与 MULTI_TOKEN 路由不动。"
+        },
+        {
+          "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+          "operation": "inspect",
+          "location": "entire kernel and host function",
+          "method": "改后自查：不残留 2D 索引（[:,None]/[None,:]/lanes/TILE/tmask/tile_mask/2D 钳位 tl.where(tmask,...)）；axis=1 不出现；签名/host 实参/分支定义一致；输入校验/contiguous/torch.empty/tokens==0 早退不变。"
+        }
+      ],
+      "acceptance_checks": [
+        "全 30 case 精度自测通过（含 C=3/65 尾块、零方差 25-27、近常数 28-30、grid=1 的 case 22）",
+        "连续调用自测通过（同 shape 换参逐次对照 golden）",
+        "kernel 中无残留 2D 索引/axis=1/TILE/lanes/tmask",
+        "21 个 MULTI_TOKEN case kernel 耗时恢复 iter2 量级（24-203us 范围内）",
+        "9 个 MULTI_TOKEN=False case speedup 无回归（仍 1.9-3.7）"
+      ],
+      "inspect_files": [
+        "impl/cann_bench/fused_patch_concat_layernorm.py"
+      ],
+      "modify_files": [
+        "impl/cann_bench/fused_patch_concat_layernorm.py"
+      ]
+    },
+    {
+      "task_id": "T2",
+      "priority": "P2",
+      "task_type": "inspect",
+      "action": "回退后对比 iter2 best 快照，验证唯一差异是 w/b 循环外提取",
+      "reason": "回退后代码应等价于 iter2 best + w/b 提取。需逐行确认 MULTI_TOKEN=True 分支与 iter2 快照的差异仅为 w/b 位置（循环前 vs 循环内），数值路径和融合结构完全一致。",
+      "case_scope": "operator",
+      "target_cases": [],
+      "operator_reason": "验证回退完整性是全局工程检查，不对应特定 case。",
+      "case_bindings": [],
+      "changes": [
+        {
+          "file": "impl/cann_bench/fused_patch_concat_layernorm.py",
+          "operation": "inspect",
+          "location": "MULTI_TOKEN=True branch and host function",
+          "method": "逐行对比 selection/records/iter2-844fc6b40708c857f98b/impl/cann_bench/fused_patch_concat_layernorm.py，确认差异仅为 w/b 从循环内（行 76-89）移至循环前（行 38-45），store 引用 w0-b3 替代 w_tl-b_br。"
+        }
+      ],
+      "acceptance_checks": [
+        "回退后代码与 iter2 best 快照的差异仅限 w/b 加载位置和变量名",
+        "MULTI_TOKEN=False 分支、host 函数（除 TILE 相关删除外）、输入校验均与 iter2 快照一致"
+      ],
+      "inspect_files": [
+        "impl/cann_bench/fused_patch_concat_layernorm.py"
+      ],
+      "modify_files": []
+    }
+  ],
+  "worst_cases_tracker": {
+    "level3/fused_patch_concat_layernorm_19": {
+      "case_id": "level3/fused_patch_concat_layernorm_19",
+      "observation": "kernel 197.3us vs baseline 33.46us，speedup=0.170（iter1: 0.183，退步 7%）。fp16, C=80, tokens=690, BLOCK_C=128, grid=40, MULTI_TOKEN=True。为全部 30 case 中最慢。",
+      "explanation": "已证实：每 program 串行 690/40≈17 个 token，per-token≈11.6us（iter1 per-wave≈10.1us，反而更快）。C=80/BLOCK_C=128 有效利用率仅 62.5%，kernel 严重 memory-bound（op_statistic 显示 kernel 时间占比仅 43.9%）。serial loop 的 per-iteration 开销（token 解码除法/取模、w/b 8 次逐段重载、offs_f 转换）在小 C 下占比过大，抵消了减波收益。fp16→fp32 cast 进一步放大每迭代开销（同 shape fp32 case 20=129us 比 fp16=197us 快 34%）。CacheClean 冷缓存下 w/b 每次迭代从 HBM 重载。",
+      "evidence": "profile/iter2/bottleneck_analysis.md case 19 分析；eval/iter2/perf_result.json case 19 elapsed_us=197.3 baseline=33.46；selection/state.json case_trends case 19 iter1=0.183→iter2=0.170（-7%）；同 shape fp32 case 20=129.22us 证实 cast 开销。",
+      "next_action": "T1 将 w/b 移出循环（17 次→1 次重载）+ 2D tile（17 次解码/load/store→2 次），预期 per-iteration 开销大幅降低。fp16 cast 残留开销由更大 tile 的向量利用率提升缓解。",
+      "iteration": 2
+    },
+    "level3/fused_patch_concat_layernorm_21": {
+      "case_id": "level3/fused_patch_concat_layernorm_21",
+      "observation": "kernel 160.32us vs baseline 34.45us，speedup=0.215（iter1: 0.191，小幅改善）。bf16, C=80, tokens=690, BLOCK_C=128, grid=40。",
+      "explanation": "已证实：与 case 19 同 shape（C=80, tokens=690），bf16 路径。bf16→fp32 cast 开销略低于 fp16（160 vs 197us），但远超 baseline。根因同 case 19：小 C serial loop 的 per-iteration overhead（w/b 重载 + 地址解码）主导，memory-bound。iter1→iter2 小幅改善（+2.4%）可能是波次减少的微弱净收益。",
+      "evidence": "profile/iter2/bottleneck_analysis.md case 21 分析；eval/iter2/perf_result.json case 21 elapsed_us=160.32 baseline=34.45；selection/state.json iter1=0.191→iter2=0.215（+2.4%）。",
+      "next_action": "与 case 19 共享 T1 修复路径（w/b 提取 + 2D tile）。bf16 cast 开销是残余瓶颈，但在减少 per-iteration 固定开销后占比将显著降低。",
+      "iteration": 2
+    },
+    "level3/fused_patch_concat_layernorm_1": {
+      "case_id": "level3/fused_patch_concat_layernorm_1",
+      "observation": "kernel 161.84us vs baseline 34.83us，speedup=0.215（iter1: 0.230，退步 7%）。fp16, C=96, tokens=784, BLOCK_C=128, grid=40。",
+      "explanation": "已证实：每 program 串行 784/40≈20 个 token，per-token≈8.1us。C=96/BLOCK_C=128 利用率 75%。iter1 kernel=151.14us→iter2=161.84us（+7%），serial loop 循环控制开销抵消减波收益。同 shape fp32 case 2=91.08us 比 fp16 快 44%，dtype cast 是额外显著开销。w/b 每迭代重载 8 次 masked load 是 per-iteration 最大固定开销源。",
+      "evidence": "profile/iter2/bottleneck_analysis.md case 1 分析；eval/iter2/perf_result.json case 1 elapsed_us=161.84；case 2 fp32 elapsed_us=91.08；selection/state.json iter1=0.230→iter2=0.215（-7%）。",
+      "next_action": "T1 w/b 提取（20 次→1 次）+ 2D tile（20 次→~2 次循环迭代），预期 kernel 耗时从 161us 大幅降低。",
+      "iteration": 2
+    },
+    "level3/fused_patch_concat_layernorm_20": {
+      "case_id": "level3/fused_patch_concat_layernorm_20",
+      "observation": "kernel 129.22us vs baseline 31.84us，speedup=0.246（iter1: 0.241，几乎持平）。fp32, C=80, tokens=690, BLOCK_C=128, grid=40。",
+      "explanation": "已证实：fp32 无 dtype cast，per-token≈129/17≈7.6us，比 fp16 case 19 的 11.6us 快 34%，验证了 cast 开销是 fp16/bf16 case 的额外瓶颈。但 129us 仍 4x 慢于 baseline（31.84us），说明即使无 cast，w/b 逐次重载 + 地址解码的 per-iteration 固定开销在 C=80 下仍占主导。iter1→iter2 speedup 几乎不变（+0.5%），减波与循环开销基本抵消。",
+      "evidence": "profile/iter2/bottleneck_analysis.md case 20 分析；eval/iter2/perf_result.json case 20 elapsed_us=129.22 baseline=31.84；case 19 fp16=197.3us 对比。",
+      "next_action": "T1 w/b 提取对 fp32 case 同样有效（消除 17 次×8 次 masked load），2D tile 减少地址解码次数。fp32 无 cast，预期改善幅度可能大于 fp16/bf16 同 shape case。",
+      "iteration": 2
+    },
+    "level3/fused_patch_concat_layernorm_3": {
+      "case_id": "level3/fused_patch_concat_layernorm_3",
+      "observation": "kernel 162.14us vs baseline 36.79us，speedup=0.227（iter1: 0.243，退步 7%）。bf16, C=96, tokens=784, BLOCK_C=128, grid=40。",
+      "explanation": "已证实：与 case 1 相同 grid/shape/tokens，bf16 路径。bf16 与 fp16 kernel 耗时几乎持平（162 vs 162us），证明 bf16→fp32 与 fp16→fp32 cast 开销相当。iter1→iter2 退步 7%，serial loop 的循环控制 + w/b 逐次重载在小 C 场景下净亏损。",
+      "evidence": "profile/iter2/bottleneck_analysis.md case 3 分析；eval/iter2/perf_result.json case 3 elapsed_us=162.14 baseline=36.79；selection/state.json iter1=0.243→iter2=0.227（-7%）。",
+      "next_action": "与 case 1 共享 T1 修复路径。",
+      "iteration": 2
+    },
+    "level3/fused_patch_concat_layernorm_10": {
+      "case_id": "level3/fused_patch_concat_layernorm_10",
+      "observation": "kernel 191.94us vs baseline 52.62us，speedup=0.274，shape [1,9216,128] C=128 BLOCK_C=128 grid=2304 fp16，grid 最大的 case。",
+      "explanation": "已证实：grid=2304 产生 57.6 波，为所有 case 中最多。C=128=BLOCK_C 无 mask 浪费（100% 利用率），但 per-block 3.33us 的吞吐（~154 elem/us）仍远低于大 C case（case 16 的 737 elem/us），说明 per-program 固定开销在极多波次下累积显著。",
+      "evidence": "profile/iter1/bottleneck_analysis.md case 10 分析；profiler kernel_details Steps 47-49 Duration=191.94us Block Num=2304。",
+      "next_action": "T1 多 token 循环将 57.6 波降为 1 波，预期收益最大（每 program 从处理 1 token 变为 ~58 tokens）。",
+      "iteration": 1
+    },
+    "level3/fused_patch_concat_layernorm_12": {
+      "case_id": "level3/fused_patch_concat_layernorm_12",
+      "observation": "kernel 4524.0us vs baseline 53.52us, speedup=0.01183 (iter2: 0.264, 退步 95.5%)。bf16, C=128, tokens=2304, TILE=8。",
+      "explanation": "已证实：per-tile 开销 ~565us vs iter2 per-token ~3.5us，160x 差异。w/b 提取（464次→8次）的收益被完全掩盖。",
+      "evidence": "eval/iter3/perf_result.json case 12 elapsed_us=4524.04; profile/iter3/bottleneck_analysis.md case 12; iter2 HAP case 12 kernel=202.98us。",
+      "next_action": "T1 回退 1D + w/b 提取。case 12 w/b 收益最大（464→8 次重载）。预期从 203us 显著下降。",
+      "iteration": 3
+    },
+    "level3/fused_patch_concat_layernorm_15": {
+      "case_id": "level3/fused_patch_concat_layernorm_15",
+      "observation": "kernel 4521.1us vs baseline 42.7us, speedup=0.00944 (iter2: 0.781, 退步 98.8%)。bf16, C=128, tokens=2304, TILE=4, MULTI_TOKEN=True。本轮最慢。",
+      "explanation": "已证实：2D tile (TILE=4, BLOCK_C=256) 路径编译产物极低效。profiler Duration=4521us，vs iter2 1D 路径 54.66us，退步 82x。2D strided gather + axis=1 reduction 在后端生成灾难性代码。非 UB 溢出（设计 36KB << 192KB）。",
+      "evidence": "eval/iter3/perf_result.json case 15 elapsed_us=4521.1; profile/iter3/bottleneck_analysis.md case 15; iter2 HAP case 15 kernel=54.66us。",
+      "next_action": "T1 回退 1D loop + w/b 提取。预期恢复 ~55us (speedup ~0.78)，w/b 提取可能进一步改善。",
+      "iteration": 3
+    },
+    "level3/fused_patch_concat_layernorm_18": {
+      "case_id": "level3/fused_patch_concat_layernorm_18",
+      "observation": "kernel 4517.4us vs baseline 47.98us, speedup=0.01062 (iter2: 1.623, 退步 99.3%)。bf16, C=512, tokens=576, TILE=2。iter2 最佳组之一。",
+      "explanation": "已证实：即使 TILE=2（最小非平凡值），(2,512) 2D 操作仍导致 153x 退步。iter2 1D 路径仅 29.56us。profiler Duration=4517us 证实退步在 kernel 内部。",
+      "evidence": "eval/iter3/perf_result.json case 18 elapsed_us=4517.42; profile/iter3/bottleneck_analysis.md case 18; iter2 HAP case 18 kernel=29.56us。",
+      "next_action": "T1 回退 1D loop。预期恢复 ~30us (speedup ~1.6)。",
+      "iteration": 3
+    },
+    "level3/fused_patch_concat_layernorm_16": {
+      "case_id": "level3/fused_patch_concat_layernorm_16",
+      "observation": "kernel 4036.4us vs baseline 45.87us, speedup=0.01136 (iter2: 1.516, 退步 99.3%)。fp16, C=512, tokens=576, TILE=2。",
+      "explanation": "已证实：与 case 18 同 shape，fp16 路径。fp16 2D 耗时 4036us vs bf16 4517us，量级相同，TILE=2 无调整空间。",
+      "evidence": "eval/iter3/perf_result.json case 16 elapsed_us=4036.38; profile/iter3/bottleneck_analysis.md case 16; iter2 HAP case 16 kernel=30.26us。",
+      "next_action": "T1 回退 1D loop。预期恢复 ~30us (speedup ~1.5)。",
+      "iteration": 3
+    },
+    "level3/fused_patch_concat_layernorm_17": {
+      "case_id": "level3/fused_patch_concat_layernorm_17",
+      "observation": "kernel 4016.8us vs baseline 50.78us, speedup=0.01264 (iter2: 1.664, 退步 99.2%)。fp32, C=512, tokens=576, TILE=2。",
+      "explanation": "已证实：关键对照——fp32 无 cast 但仍退步 132x，直接排除 cast 为主因，确证 2D 操作编译质量本身极差。",
+      "evidence": "eval/iter3/perf_result.json case 17 elapsed_us=4016.84; profile/iter3/bottleneck_analysis.md case 17（fp32 同量级退步）; iter2 HAP case 17 kernel=30.52us。",
+      "next_action": "T1 回退 1D loop。预期恢复 ~31us (speedup ~1.66)。fp32 可作 w/b 提取净效果的对照。",
+      "iteration": 3
+    },
+    "level3/fused_patch_concat_layernorm_13": {
+      "case_id": "level3/fused_patch_concat_layernorm_13",
+      "observation": "kernel 3890.6us vs baseline 50.37us, speedup=0.01295 (iter2: 1.025, 退步 98.7%)。fp16, C=256, tokens=2304, TILE=4。iter2 刚达标。",
+      "explanation": "已证实：TILE=4 BLOCK_C=256，15 tile × ~260us/tile ≈ 3891us vs iter2 1D 49.14us。fp16 cast 是次要加剧因素。",
+      "evidence": "eval/iter3/perf_result.json case 13 elapsed_us=3890.62; profile/iter3/bottleneck_analysis.md case 13; iter2 HAP case 13 kernel=49.14us。",
+      "next_action": "T1 回退 1D + w/b 提取。预期恢复 ~49us，w/b 提取可能使其稳定达标。",
+      "iteration": 3
+    }
+  },
+  "fusion_kernel_strategy": [
+    {
+      "iter": 1,
+      "direction": "F2 垂直融合：单 kernel Slice×4(strided gather) → Concat(UB 内) → LayerNorm，1 token/program，grid=B*(H/2)*(W/2)",
+      "evidence": "impl/cann_bench/fused_patch_concat_layernorm.py 行 12-77；精度 30/30 PASS；小 grid speedup 1.98-3.71，大 grid speedup 0.18-0.31",
+      "status": "已验证：融合结构有效，调度粒度需优化为多 token/program"
+    },
+    {
+      "iter": 2,
+      "direction": "F2 垂直融合 + MULTI_TOKEN serial loop（grid=40，每 program 步进循环处理多 token；tokens<=64 走原 1 token/program 路径）",
+      "evidence": "impl/cann_bench/fused_patch_concat_layernorm.py 行 28-36 循环路由、行 145 host grid 路由；eval/iter2/perf_result.json avg_speedup=1.321（+9.4%）；大 C 组 +29-85%，小 C 组 -7 to -14%",
+      "status": "已验证：对大 C(≥256) 有效，对小 C(≤128)+fp16/bf16 有害；下一步 w/b 提取 + 2D tile"
+    },
+    {
+      "iter": 3,
+      "direction": "F2 垂直融合 + MULTI_TOKEN 2D tile (TILE, BLOCK_C)，w/b 循环外提取",
+      "evidence": "impl/cann_bench/fused_patch_concat_layernorm.py 行 47-106 2D 分支; eval/iter3/perf_result.json avg_speedup=0.822; 全部 MULTI_TOKEN case 退步 22-153x",
+      "status": "无效：2D tile 在 triton-ascend 3.2.1 上灾难性低效。下一轮回退 1D + 保留 w/b 提取"
+    }
+  ],
+  "plan_version": 2
+}

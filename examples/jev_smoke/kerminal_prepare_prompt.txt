@@ -1,0 +1,32 @@
+Translate the Chinese test evidence into English JSON. This is a bounded translation task, not an operator optimization task.
+
+Read only evidence.zh.md and kernel.py in the current working directory. Use read-only file tools or read-only shell commands. Do not read any other files, credentials, configuration or session history. Do not modify files, execute the kernel, benchmark, browse the network or call Jev. The caller saves your final response.
+
+Return exactly one JSON object without Markdown fences or commentary. Use this structure:
+{
+  "language": "en",
+  "sample_kind": "synthetic_connectivity_fixture_not_real_performance_evidence",
+  "evidence_status": "English translation of the source's synthetic-data and not-executed-on-NPU statements",
+  "measurement_protocol": {
+    "provider": "cann-bench",
+    "strategy": "kernel_details",
+    "scope": "English translation of what is timed and what is excluded",
+    "metric_policy": "English translation of which tool metrics must be preserved"
+  },
+  "profiling_analysis": {
+    "finding": "English translation of the synthetic profiling observation",
+    "limitation": "English translation of the uncertainty and what is not established",
+    "next_validation": "English translation of the required follow-up comparison"
+  },
+  "iteration_history": [
+    {
+      "iteration": 1,
+      "direction": "English translation of the optimization direction",
+      "implementation_change": "English translation of the actual implementation change",
+      "measured_effect": {"geomean_speedup": 0.0, "min_case_speedup": 0.0},
+      "adoption_outcome": "English translation of whether the change was accepted, rejected or restored"
+    }
+  ]
+}
+
+The example row is a schema, not data: replace the two zero placeholders with the actual source numbers and include all five iteration records in order. Preserve all numbers. In evidence_status explicitly state that the records are synthetic, were not executed on an NPU, and are not real operator performance evidence. Domain glossary: for cann-bench kernel_details, 汇总每个 kernel 执行耗时的中位数 means the SUM of per-kernel median execution times; it is not the average across different kernels. Explicitly preserve the exclusion of gaps between kernels. Preserve negation, uncertainty, serial execution, timing exclusions and which version each iteration starts from. Do not add conclusions absent from the source or infer a production exit decision. Do not add a kernel field or rewrite source code: Python separately reads the unchanged kernel.py into state.kernel.source.

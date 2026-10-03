@@ -1,0 +1,375 @@
+{
+  "version": 1,
+  "updated_at": "2026-04-26T16:00:37",
+  "scopes": {
+    "cutlass__cutlass_softmax__cutlass_softmax_ref__auto_arch__339090bb90fe": {
+      "meta": {
+        "backend": "cutlass",
+        "source_file": "/home/aa24aa/work/cuda-optimized-skill/example/cutlass_softmax.cu",
+        "reference_file": "/home/aa24aa/work/cuda-optimized-skill/example/cutlass_softmax_ref.py",
+        "dims_args": [
+          "--rows=4096",
+          "--cols=1024"
+        ],
+        "arch": ""
+      },
+      "positive": {
+        "d576b5ea15008131": {
+          "tags": [
+            "baseline"
+          ],
+          "first_iteration": 0,
+          "last_iteration": 0,
+          "count": 2,
+          "last_outcome": "positive",
+          "last_reason": "baseline_seed",
+          "evidence": {
+            "baseline_iteration": null,
+            "baseline_median_ms": null,
+            "current_median_ms": 0.1489408016204834
+          }
+        },
+        "693f19f37331ba8b": {
+          "tags": [
+            "register_cached_exp",
+            "rowwise_softmax_shape_specialization",
+            "thread_retile_128",
+            "vectorized_float4_io"
+          ],
+          "first_iteration": 1,
+          "last_iteration": 1,
+          "count": 1,
+          "last_outcome": "positive",
+          "last_reason": "faster_than_previous",
+          "evidence": {
+            "baseline_iteration": 0,
+            "baseline_median_ms": 0.1489408016204834,
+            "current_median_ms": 0.10316799879074097
+          }
+        },
+        "705f6825edb0a4e4": {
+          "tags": [
+            "approximate_exp_path",
+            "arithmetic_only_tuning",
+            "revert_to_128_tile"
+          ],
+          "first_iteration": 3,
+          "last_iteration": 3,
+          "count": 1,
+          "last_outcome": "positive",
+          "last_reason": "faster_than_previous",
+          "evidence": {
+            "baseline_iteration": 2,
+            "baseline_median_ms": 0.14586880207061767,
+            "current_median_ms": 0.10245120525360107
+          }
+        }
+      },
+      "negative": {
+        "f5f0e39777db3029": {
+          "tags": [
+            "keep_vectorized_single_pass",
+            "register_fragment_expansion",
+            "retile_64_for_higher_ilp"
+          ],
+          "first_iteration": 2,
+          "last_iteration": 2,
+          "count": 1,
+          "last_outcome": "negative",
+          "last_reason": "slower_or_equal_to_previous",
+          "evidence": {
+            "baseline_iteration": 1,
+            "baseline_median_ms": 0.10316799879074097,
+            "current_median_ms": 0.14586880207061767
+          }
+        }
+      },
+      "rejected": {}
+    },
+    "triton__kernel__no_ref__auto_arch__da39a3ee5e6b": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_round_0_20260425_162130/workspaces_cuda_optimized/aten__affine_grid_generator/kernel.py",
+        "reference_file": "",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {
+        "2dd502a29fcf6d56": {
+          "tags": [
+            "baseline"
+          ],
+          "first_iteration": 0,
+          "last_iteration": 0,
+          "count": 43,
+          "last_outcome": "rejected",
+          "last_reason": "blocked_strategy_reused",
+          "evidence": {
+            "baseline_iteration": null,
+            "baseline_median_ms": null,
+            "current_median_ms": 0.07505584955215454
+          }
+        },
+        "2a8863e449a6ec11": {
+          "tags": [
+            "fill_me_tag"
+          ],
+          "first_iteration": 1,
+          "last_iteration": 1,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "benchmark_failed",
+          "evidence": {
+            "baseline_iteration": 0,
+            "baseline_median_ms": null,
+            "current_median_ms": null
+          }
+        }
+      }
+    },
+    "triton__kernel__no_ref__auto_arch__bernoulli": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_round_0_20260425_162130/workspaces_cuda_optimized/aten__bernoulli/kernel.py",
+        "reference_file": "",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {}
+    },
+    "triton__kernel__ref__auto_arch__da39a3ee5e6b": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_round_0_20260426_015104/workspaces_cuda_optimized/aten__binary_cross_entropy_with_logits/kernel.py",
+        "reference_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_round_0_20260426_015104/workspaces_cuda_optimized/aten__binary_cross_entropy_with_logits/ref.py",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {
+        "2dd502a29fcf6d56": {
+          "tags": [
+            "baseline"
+          ],
+          "first_iteration": 0,
+          "last_iteration": 0,
+          "count": 8,
+          "last_outcome": "rejected",
+          "last_reason": "blocked_strategy_reused",
+          "evidence": {
+            "baseline_iteration": null,
+            "baseline_median_ms": null,
+            "current_median_ms": 0.047071948647499084
+          }
+        },
+        "8c2038789aae9840": {
+          "tags": [
+            "autotune",
+            "block_size_tuning"
+          ],
+          "first_iteration": 1,
+          "last_iteration": 1,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "ncu_incomplete",
+          "evidence": {
+            "baseline_iteration": 0,
+            "baseline_median_ms": 0.13935940265655516,
+            "current_median_ms": 0.18612799644470215
+          }
+        }
+      }
+    },
+    "triton__kernel_v1__ref__auto_arch__da39a3ee5e6b": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__index_put_/optimize_runs/run_20260426_135818/iter_v1/kernel_v1.py",
+        "reference_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__index_put_/ref.py",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {
+        "2a8863e449a6ec11": {
+          "tags": [
+            "fill_me_tag"
+          ],
+          "first_iteration": 1,
+          "last_iteration": 1,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "ncu_incomplete",
+          "evidence": {
+            "baseline_iteration": 0,
+            "baseline_median_ms": 0.13668800592422486,
+            "current_median_ms": 0.1183359980583191
+          }
+        },
+        "1cc1abae5cece894": {
+          "tags": [
+            "reduced_launch_overhead",
+            "single_warp_optimization"
+          ],
+          "first_iteration": 1,
+          "last_iteration": 1,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "ncu_incomplete",
+          "evidence": {
+            "baseline_iteration": 0,
+            "baseline_median_ms": 0.047071948647499084,
+            "current_median_ms": 0.0460640013217926
+          }
+        }
+      }
+    },
+    "triton__kernel_v1_v1__ref__auto_arch__da39a3ee5e6b": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__index_put_/optimize_runs/run_20260426_135818/iter_v1/kernel_v1_v1.py",
+        "reference_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__index_put_/ref.py",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {
+        "56a9c45b8628c072": {
+          "tags": [
+            "coalescing_optimization",
+            "memory_optimization",
+            "warp_tuning"
+          ],
+          "first_iteration": 2,
+          "last_iteration": 2,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "ncu_incomplete",
+          "evidence": {
+            "baseline_iteration": 1,
+            "baseline_median_ms": 0.1183359980583191,
+            "current_median_ms": 0.1221119999885559
+          }
+        }
+      }
+    },
+    "triton__kernel_v1_v1_v2__ref__auto_arch__da39a3ee5e6b": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__index_put_/optimize_runs/run_20260426_135818/iter_v2/kernel_v1_v1_v2.py",
+        "reference_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__index_put_/ref.py",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {
+        "2a8863e449a6ec11": {
+          "tags": [
+            "fill_me_tag"
+          ],
+          "first_iteration": 3,
+          "last_iteration": 3,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "blocked_strategy_reused",
+          "evidence": {
+            "baseline_iteration": 2,
+            "baseline_median_ms": 0.1221119999885559,
+            "current_median_ms": 0.11524809598922729
+          }
+        }
+      }
+    },
+    "triton__kernel_v1_v1_v2_v3__ref__auto_arch__da39a3ee5e6b": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__index_put_/optimize_runs/run_20260426_135818/iter_v3/kernel_v1_v1_v2_v3.py",
+        "reference_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__index_put_/ref.py",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {
+        "2a8863e449a6ec11": {
+          "tags": [
+            "fill_me_tag"
+          ],
+          "first_iteration": 4,
+          "last_iteration": 4,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "blocked_strategy_reused",
+          "evidence": {
+            "baseline_iteration": 3,
+            "baseline_median_ms": 0.11524809598922729,
+            "current_median_ms": 0.11839989423751832
+          }
+        }
+      }
+    },
+    "triton__kernel_v2__ref__auto_arch__da39a3ee5e6b": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__ones_like/kernel_v2.py",
+        "reference_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__ones_like/ref.py",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {
+        "2a8863e449a6ec11": {
+          "tags": [
+            "fill_me_tag"
+          ],
+          "first_iteration": 2,
+          "last_iteration": 2,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "ncu_incomplete",
+          "evidence": {
+            "baseline_iteration": 1,
+            "baseline_median_ms": 0.0460640013217926,
+            "current_median_ms": 0.046999949216842654
+          }
+        }
+      }
+    },
+    "triton__kernel_v3__ref__auto_arch__da39a3ee5e6b": {
+      "meta": {
+        "backend": "triton",
+        "source_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__ones_like/kernel_v3.py",
+        "reference_file": "/path/to/KernelGenBench/agent_bench/runs/cuda_optimized_kernels_20260426_113805/workspaces_cuda_optimized/aten__ones_like/ref.py",
+        "dims_args": [],
+        "arch": ""
+      },
+      "positive": {},
+      "negative": {},
+      "rejected": {
+        "2a8863e449a6ec11": {
+          "tags": [
+            "fill_me_tag"
+          ],
+          "first_iteration": 3,
+          "last_iteration": 3,
+          "count": 1,
+          "last_outcome": "rejected",
+          "last_reason": "blocked_strategy_reused",
+          "evidence": {
+            "baseline_iteration": 2,
+            "baseline_median_ms": 0.046999949216842654,
+            "current_median_ms": 0.04790405035018921
+          }
+        }
+      }
+    }
+  }
+}

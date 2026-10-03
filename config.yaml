@@ -1,0 +1,103 @@
+﻿# Triton Ascend Workflow 统一配置（程序实际读取，纳入 Git 跟踪）
+# 工作流参数、工具路径、Jev 连接与密钥统一放在本文件；迁移机器时直接修改此文件。
+
+# ═══════════════════════════════════════════════════
+# 工作流控制
+# ═══════════════════════════════════════════════════
+workflow:
+  max_iterations: 20
+  recent_iterations_window: 5
+  human_review:
+    proactive_enabled: true
+    consultation_enabled: true
+    # 第三次有效停滞求助；等待 2 分钟，收到等待指令仅额外延长一次 10 分钟。
+  semantic_exit:
+    # 场景1的 x：本轮全部 case 的 speedup >= 1，连续 x 次有效迭代的
+    # 最佳 avg_speedup 累计提升 < 5% 时，结束优化并交付最佳达标实现。
+    passed_window: 3
+    # 场景2的 y：本轮至少一个 case 的 speedup < 1，连续 y 次有效迭代的
+    # 最佳 avg_speedup 累计提升 < 5% 时，Stage9 重点审查方案，不直接退出/强制换方案。
+    underperforming_window: 3
+    # 均需“一份有效基线 + x/y 份有效成绩”；无效评测不计数，达标状态切换重置窗口。
+    # 5% 为固定阈值；x/y 不是场景进入次数，也不是第三次停滞触发人工咨询的次数。
+
+# stage1.5 按 Jev 概率选择的融合方案数（1–10）。
+fusion_selection:
+  top_n: 3
+  # stage1.5 复用 agents.kerminal.cli，将所有非英文材料翻译后再提交 Jev。
+  translation_timeout_seconds: 240
+
+# Jev 调用配置；stage1.5 使用，独立调用工具也继续复用。
+jev:
+  base_url: "https://api.typesafe.ai"
+  model: "jev-1.13.0"
+  # 优先读取环境变量；未设置时使用下方 api_key，无需另一个 YAML。
+  api_key_env: "TYPESAFE_API_KEY"
+  api_key: ""
+  timeout_seconds: 30
+  max_retries: 1
+  # UTF-8 JSON 字节预检，不是精确 token 计数；为 32K / 64K 限制留余量。
+  max_state_question_bytes: 28000
+  max_request_bytes: 56000
+
+# ═══════════════════════════════════════════════════
+# Agent 配置
+# ═══════════════════════════════════════════════════
+agents:
+  cannbot:
+    cli: "/home/developer/.nvm/versions/node/v18.19.1/bin/cannbot"
+    # API key 配置在: /root/.config/opencode/opencode.jsonc
+    # 模型: glm-5.3-flash
+
+  kerminal:
+    cli: "/home/developer/.local/bin/kerminal"
+    # API key 配置在: ~/.kerminal/config.toml
+    # 模型: kernelcat1.0
+
+  hermes:
+    cli: "/home/developer/.hermes/venvs/hermes-dev/bin/hermes"
+    # API key 和模型配置在: ~/.hermes/config.yaml
+    # 模型: glm-5.3-flash
+
+# ═══════════════════════════════════════════════════
+# 硬件
+# ═══════════════════════════════════════════════════
+hardware:
+  device_id: 0
+  # chip_model / soc_version / npu_arch 由 orchestrator 启动时自动检测
+  # 写入 <work>/device_info.json，注入到每个 stage 的 prompt 中
+  # 如需手动覆盖（如远程机器无法自动检测），取消注释以下字段：
+  # chip_model: "Ascend 950"
+  # soc_version: "Ascend910B4"
+  # npu_arch: "dav-3510"
+  # arch_key: "a5"
+# Triton Ascend 使用 block program 编程；程序启动时验证实际 NPU 后端及运行时版本。
+  # ai_core_num: 32
+  # ub_size_kb: 248
+  # l1_size_kb: 1024
+  # l0a_size_kb: 64
+  # l0b_size_kb: 64
+  # l0c_size_kb: 256
+
+# ═══════════════════════════════════════════════════
+# 路径
+# ═══════════════════════════════════════════════════
+paths:
+  cannbench_repo: "/mnt/workspace/cann-bench"
+
+# ═══════════════════════════════════════════════════
+# CANN 环境（消除所有硬编码路径）
+# 迁移新机器时只改这里，代码中不再出现具体版本号和架构
+# ═══════════════════════════════════════════════════
+cann:
+  toolkit_path: "/home/developer/Ascend/cann-9.1.0"
+  driver_path: "/usr/local/Ascend/driver"
+  arch: "aarch64-linux"
+  node_bin: "/home/developer/.nvm/versions/node/v18.19.1/bin"
+
+# ═══════════════════════════════════════════════════
+# 日志
+# ═══════════════════════════════════════════════════
+logging:
+  level: "DEBUG"
+  console_level: "INFO"

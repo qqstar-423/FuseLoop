@@ -1,0 +1,23 @@
+{
+  "language": "en",
+  "sample_kind": "synthetic_connectivity_fixture_not_real_performance_evidence",
+  "purpose": "Check file-content delivery and Noul/Choice/Score parsing. Do not decide workflow exit.",
+  "measurement_protocol": {
+    "provider": "cann-bench",
+    "strategy": "kernel_details",
+    "scope": "Sum of per-kernel median execution times; excludes gaps between kernels.",
+    "metric_policy": "Use the tool's baseline, speedup, HAP and aggregate scores without recomputing them. All numbers below are synthetic."
+  },
+  "profiling_analysis": {
+    "finding": "Intermediate memory traffic is a candidate bottleneck; the fixture does not establish that a single kernel is faster.",
+    "evidence": "Synthetic profile attributes repeated intermediate writes and reads to the implementation.",
+    "next_validation": "Measure an alternative fusion topology on the same cases and benchmark strategy before comparing."
+  },
+  "iteration_history": [
+    {"iteration": 1, "direction": "Reduce redundant memory reads", "implementation_change": "Reuse loaded weight tiles", "measured_effect": {"geomean_speedup": 1.10, "min_case_speedup": 1.01}, "adoption_outcome": "Accepted as the first passing candidate."},
+    {"iteration": 2, "direction": "Improve tiling", "implementation_change": "Increase tile reuse", "measured_effect": {"geomean_speedup": 1.13, "min_case_speedup": 1.02}, "adoption_outcome": "Accepted as the best candidate."},
+    {"iteration": 3, "direction": "Reduce synchronization", "implementation_change": "Remove an unnecessary barrier", "measured_effect": {"geomean_speedup": 1.14, "min_case_speedup": 1.02}, "adoption_outcome": "Accepted; improvement remains small."},
+    {"iteration": 4, "direction": "Reduce temporary storage", "implementation_change": "Reuse scratch space", "measured_effect": {"geomean_speedup": 1.08, "min_case_speedup": 1.00}, "adoption_outcome": "Rejected; previous best restored and regression recorded."},
+    {"iteration": 5, "direction": "Adjust vector tiling", "implementation_change": "Use a different vector block size from the restored best", "measured_effect": {"geomean_speedup": 1.15, "min_case_speedup": 1.03}, "adoption_outcome": "Accepted as the current candidate."}
+  ]
+}

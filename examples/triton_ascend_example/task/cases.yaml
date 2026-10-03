@@ -1,0 +1,16 @@
+cases:
+  - operator: FusedAddRelu
+    case_id: 1
+    input_shape: [[1024], [1024]]
+    dtype: [float32, float32]
+    value_range: [-2, 2]
+  - operator: FusedAddRelu
+    case_id: 2
+    input_shape: [[1025], [1025]]
+    dtype: [float16, float16]
+    value_range: [-2, 2]
+  - operator: FusedAddRelu
+    case_id: 3
+    input_shape: [[17, 63], [17, 63]]
+    dtype: [bfloat16, bfloat16]
+    value_range: [-2, 2]
