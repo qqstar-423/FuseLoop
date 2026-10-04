@@ -12,7 +12,7 @@ import orchestrator
 from lib import agent_runner, bench_parser
 from lib.framework_target import (TARGET_IDENTITY, PROGRAMMING_MODEL,
                                   ensure_workflow_target, ensure_example_link, detect_triton_runtime,
-                                  read_cann_toolchain)
+                                  read_cann_toolchain, assert_target_implementation)
 from lib.knowledge_metadata import build_knowledge_environment
 from lib.performance_comparison import compare_performance
 
@@ -49,7 +49,7 @@ class TritonRuntimeTests(unittest.TestCase):
             result = detect_triton_runtime(device_id, str(self.root / "synthetic.yaml"))
         return result, env, run
 
-    def test_active_npu_backend_and_versions_are_required_without_pypto(self):
+    def test_active_npu_backend_and_versions_are_required(self):
         runtime, env, run = self.probe()
         self.assertEqual(runtime["backend"], "triton-ascend")
         self.assertEqual(runtime["driver_backend"], "npu")
@@ -58,7 +58,7 @@ class TritonRuntimeTests(unittest.TestCase):
         script = run.call_args.args[0][2]
         self.assertIn("torch.npu.set_device(2)", script)
         self.assertIn("driver.active.get_current_target()", script)
-        self.assertNotIn("pypto", script)
+        self.assertIn("version('triton-ascend')", script)
         env.assert_called_once_with({"WORKFLOW_NPU_DEVICE_ID": "2"},
                                     config_path=str(self.root / "synthetic.yaml"))
         self.assertEqual(run.call_args.kwargs["env"]["ASCEND_RT_VISIBLE_DEVICES"], "4,7")
@@ -90,15 +90,19 @@ class TritonRuntimeTests(unittest.TestCase):
     def test_unmarked_old_checkpoint_is_unchanged_and_not_adopted(self):
         state = self.write("old/.state.json", {"iteration": 8, "current_stage": "iter8_stage9"})
         before = state.read_bytes()
-        with self.assertRaisesRegex(ValueError, "resuming an old PyPTO task directly is forbidden"):
+        with self.assertRaisesRegex(ValueError, "Triton Ascend target cannot be verified"):
             ensure_workflow_target(state.parent)
         self.assertEqual(state.read_bytes(), before)
         self.assertFalse((state.parent / "workflow_target.json").exists())
 
-    def test_wrong_marked_framework_cannot_resume(self):
-        marker = self.write("old/workflow_target.json", dict(TARGET_IDENTITY, framework="PyPTO Pro"))
-        with self.assertRaisesRegex(ValueError, "Cross-framework checkpoint resume is forbidden"):
-            ensure_workflow_target(marker.parent)
+    def test_mismatched_target_identity_cannot_resume(self):
+        for field, value in (("framework", "OtherFramework"), ("backend", "other-backend"),
+                             ("schema_version", 2)):
+            marker = self.write("mismatch/workflow_target.json", dict(TARGET_IDENTITY, **{field: value}))
+            before = marker.read_bytes()
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "Target identity must match"):
+                ensure_workflow_target(marker.parent)
+            self.assertEqual(marker.read_bytes(), before)
 
     def test_missing_example_fails_and_existing_wrong_directory_is_not_adopted(self):
         work = self.root / "work"
@@ -116,15 +120,85 @@ class TritonRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source does not match"):
             ensure_example_link(work, bench)
 
-    def test_marking_old_pypto_implementation_as_triton_does_not_bypass_guard(self):
-        work = self.root / "old"
-        self.write("old/workflow_target.json", TARGET_IDENTITY)
+    def test_target_marker_alone_cannot_establish_implementation_identity(self):
+        work = self.root / "mismatch"
+        self.write("mismatch/workflow_target.json", TARGET_IDENTITY)
         (work / "impl").mkdir()
         path = work / "impl/kernel.py"
-        path.write_text("import torch, pypto_pro.language as arbitrary_alias\n", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "still imports the old"):
+        path.write_text("import torch, other_framework.language as arbitrary_alias\n", encoding="utf-8")
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "has no Triton source import"):
             ensure_workflow_target(work)
-        self.assertIn("pypto_pro", path.read_text(encoding="utf-8"))
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_split_submission_imports_are_validated_at_directory_scope(self):
+        package = self.root / "impl/cann_bench"
+        package.mkdir(parents=True)
+        (self.root / "impl/setup.py").write_text("from setuptools import setup\nsetup()\n", encoding="utf-8")
+        (package / "__init__.py").write_text("from .operator import entry\n", encoding="utf-8")
+        (package / "operator.py").write_text("from .kernel import kernel\ndef entry(x): return kernel(x)\n", encoding="utf-8")
+        kernel = package / "kernel.py"
+        for statement in ("import torch, triton as backend", "from triton import jit",
+                          "import triton.language as tl", "from triton.language import load"):
+            kernel.write_text(statement + "\n", encoding="utf-8")
+            with self.subTest(statement=statement):
+                assert_target_implementation(package.parent)
+
+    def test_placeholder_package_can_resume_before_development(self):
+        work = self.root / "placeholder"
+        self.write("placeholder/workflow_target.json", TARGET_IDENTITY)
+        package = work / "impl/cann_bench"
+        package.mkdir(parents=True)
+        (work / "impl/setup.py").write_text("from setuptools import setup\nsetup()\n", encoding="utf-8")
+        (package / "__init__.py").write_text('"""Submission package."""\n# Pending Stage2\npass\n', encoding="utf-8")
+        self.assertEqual(ensure_workflow_target(work), work / "workflow_target.json")
+
+    def test_comments_strings_relative_imports_and_similar_names_do_not_prove_identity(self):
+        implementation = self.root / "impl"
+        implementation.mkdir()
+        source = implementation / "kernel.py"
+        for statement in ('# import triton\nvalue = 1\n', 'description = "import triton"\n',
+                          "from .triton import jit\n", "import triton_helper\n"):
+            source.write_text(statement, encoding="utf-8")
+            with self.subTest(statement=statement), self.assertRaisesRegex(ValueError, "has no Triton source import"):
+                assert_target_implementation(implementation)
+
+    def test_generated_files_cannot_supply_implementation_identity(self):
+        implementation = self.root / "impl"
+        implementation.mkdir()
+        (implementation / "kernel.py").write_text("def entry(x): return x\n", encoding="utf-8")
+        (implementation / "setup.py").write_text("import triton\n", encoding="utf-8")
+        for name in (".git", "__pycache__", "build", "dist"):
+            folder = implementation / name
+            folder.mkdir()
+            (folder / "cached.py").write_text("import triton\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "has no Triton source import"):
+            assert_target_implementation(implementation)
+
+    def test_syntax_repairs_still_reach_build_when_triton_import_is_identifiable(self):
+        implementation = self.root / "impl"
+        implementation.mkdir()
+        source = implementation / "kernel.py"
+        for statement in ("import torch, triton as backend", "from triton import (\n jit,\n)"):
+            source.write_text(statement + "\ndef unfinished(\n", encoding="utf-8")
+            with self.subTest(statement=statement):
+                assert_target_implementation(implementation)
+        for statement in ('"""import triton"""', "from .triton import jit", "import other_framework"):
+            source.write_text(statement + "\ndef unfinished(\n", encoding="utf-8")
+            with self.subTest(statement=statement), self.assertRaisesRegex(ValueError, "has no Triton source import"):
+                assert_target_implementation(implementation)
+
+    def test_example_with_implementation_requires_triton_source_import(self):
+        package = self.root / "bench/examples/triton_ascend_cann_example/cann_bench"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("from other_framework import kernel\n", encoding="utf-8")
+        with patch("lib.framework_target.os.symlink") as link, \
+                self.assertRaisesRegex(ValueError, "has no Triton source import"):
+            ensure_example_link(self.root / "work", self.root / "bench")
+        link.assert_not_called()
+
+    def test_public_example_has_verifiable_triton_source_imports(self):
+        assert_target_implementation(Path(__file__).resolve().parents[1] / "examples/triton_ascend_example")
 
     def test_chip_probe_uses_configured_device_and_only_torch_npu_tbe(self):
         responses = [
@@ -142,7 +216,7 @@ class TritonRuntimeTests(unittest.TestCase):
         self.assertEqual(info["programming_model"], PROGRAMMING_MODEL)
         scripts = "\n".join(call.args[0][2] for call in run.call_args_list)
         self.assertIn("get_device_properties(3)", scripts)
-        self.assertNotIn("pypto", scripts)
+        self.assertIn("torch.npu.set_device(3)", scripts)
         self.assertNotIn("ARCH_MAP", scripts)
 
     def test_agent_and_evaluator_preserve_visible_mapping_and_share_device_id(self):
@@ -151,7 +225,7 @@ class TritonRuntimeTests(unittest.TestCase):
             env = agent_runner._agent_env({"device_id": 1, "workflow_config_path": "synthetic.yaml"})
         self.assertEqual(env["WORKFLOW_NPU_DEVICE_ID"], "1")
         self.assertEqual(env["ASCEND_RT_VISIBLE_DEVICES"], "4,7")
-        self.assertNotIn("TILE_FWK_DEVICE_ID", env)
+        self.assertEqual(env["PYTHONPATH"], "/synthetic")
         response = SimpleNamespace(returncode=0, stdout="", stderr="")
         for evaluate in (bench_parser.run_perf_eval, bench_parser.run_precision_eval):
             with self.subTest(evaluate=evaluate.__name__), \
@@ -173,7 +247,7 @@ class TritonRuntimeTests(unittest.TestCase):
                   "avg_speedup": 2, "total_cases": 1, "cases": [{"case_id": "case1", "status": "success",
                       "speedup": 2, "elapsed_us": 5, "baseline_perf_us": 10}]}
         self.assertTrue(compare_performance(report, deepcopy(report))["comparable"])
-        for field, value in (("framework", "PyPTO Pro"), ("backend", "cuda"),
+        for field, value in (("framework", "OtherFramework"), ("backend", "cuda"),
                              ("runtime_versions", dict(self.runtime["runtime_versions"], triton="new-version"))):
             changed = deepcopy(report)
             changed["comparison_context"][field] = value
@@ -184,9 +258,9 @@ class TritonRuntimeTests(unittest.TestCase):
 
     def test_historical_framework_label_is_not_replaced_by_current_target(self):
         report = self.write("old_report.json", {"comparison_context": {
-            "framework": "PyPTO Pro", "backend": "historical-pypto", "hardware": {"chip_model": "old-chip"}}})
+            "framework": "OtherFramework", "backend": "other-backend", "hardware": {"chip_model": "old-chip"}}})
         environment = build_knowledge_environment(self.root, performance_report=report)
-        self.assertEqual(environment["framework"], "PyPTO Pro")
+        self.assertEqual(environment["framework"], "OtherFramework")
         self.assertEqual(environment["framework_source"], "performance_report")
         self.write("old_report.json", {"comparison_context": {"hardware": {"chip_model": "old-chip"}}})
         self.assertEqual(build_knowledge_environment(self.root, performance_report=report)["framework"], "unknown")

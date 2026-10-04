@@ -8,9 +8,10 @@ __pycache__/
 dist/
 export_only_prof_dir/
 
-# Optional legacy credentials file and isolated Python environment.
+# Local credentials and Python environments.
 config.local.yaml
 .venv-jev/
 .venv/
+.env
+.env.*
 .claude/settings.local.json
-视频demo素材--临时/

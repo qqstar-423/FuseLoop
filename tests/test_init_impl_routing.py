@@ -116,6 +116,20 @@ class InitImplRoutingTests(unittest.TestCase):
             side_effect=AssertionError("Emergency import must skip Stage1")))
         return stack
 
+    def test_implementation_without_triton_stops_before_allocation_or_stages(self):
+        path = self.source / "impl/cann_bench/__init__.py"
+        path.write_text("from other_framework import kernel\n", encoding="utf-8")
+        before = path.read_bytes()
+        with self.patches(), patch.object(orchestrator, "load_config") as config, \
+                patch.object(orchestrator, "allocate_work_directory") as allocate, \
+                self.assertRaisesRegex(ValueError, "has no Triton source import"):
+            orchestrator.main()
+        config.assert_not_called()
+        allocate.assert_not_called()
+        self.assertEqual(self.events, [])
+        self.assertFalse(self.work.exists())
+        self.assertEqual(path.read_bytes(), before)
+
     def test_starts_with_build_then_fresh_measurement_and_best_without_old_history(self):
         old_hash = implementation_hash(self.source / "impl")
         for relative in ("knowledge/history.json", "eval/iter8/perf_result.json",

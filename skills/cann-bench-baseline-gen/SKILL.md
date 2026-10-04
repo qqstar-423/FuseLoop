@@ -17,7 +17,7 @@ Measure the baseline performance of the golden implementation for a cann-bench o
 ### 1. Single operator
 
 ```bash
-# Run in the pypto-pro-workflow directory; a CANN environment is required
+# Run in the FuseLoop repository root; a CANN environment is required
 python3 tools/gen_baseline.py \
   --task-dir /path/to/cann-bench/bench_lab/.../level3/<operator>
 ```
@@ -146,7 +146,7 @@ A: `metadata/<chip_name>.json` does not exist or the chip name does not match. R
 A: Check whether golden.py's parameter signature matches cases.yaml's `input_shape`/`dtype`/`attrs`. Golden interfaces may differ across operators.
 
 **Q: t_hw_us is inaccurate**
-A: The default `baseline × 0.1` is a rough estimate. Precise t_hw requires a roofline-model calculation (see the `hap-ascend-910b2-v2` skill).
+A: The default `baseline × 0.1` is a rough estimate. Derive a hardware-specific estimate from the operator's arithmetic work, memory traffic, and the target chip's compute and bandwidth limits using a roofline model. Record the assumptions separately from measured baseline time.
 
 ## Files
 

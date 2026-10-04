@@ -1,8 +1,7 @@
-"""Migration contracts: active prompts, stable fusion IDs and resumed hardware."""
+"""Triton contracts: active prompts, stable fusion IDs and resumed hardware."""
 
 import json
 from pathlib import Path
-import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -15,7 +14,7 @@ import test_fusion_routing as routing
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class TritonMigrationTests(unittest.TestCase):
+class TritonContractTests(unittest.TestCase):
     def test_kernel_names_cannot_become_an_ownership_or_cheating_verdict(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "kernel_details.csv"
@@ -30,17 +29,16 @@ class TritonMigrationTests(unittest.TestCase):
             self.assertNotIn("all aclnn", summary)
             self.assertNotIn("of which custom", summary)
 
-    def test_active_instructions_do_not_require_the_previous_dsl(self):
-        paths = [ROOT / "README.md"]
-        for directory in ("roles", "knowledge", "skills", "examples/triton_ascend_example"):
-            paths.extend(path for path in (ROOT / directory).rglob("*")
-                         if path.suffix in {".md", ".py", ".json"})
-        pattern = re.compile(r"@pl\.|\bpypto_pro\b|\bTILE_FWK_DEVICE_ID\b|\bMEMORY_BASE\b|\bREGISTER_BASE\b")
-        for path in paths:
-            with self.subTest(path=path.relative_to(ROOT).as_posix()):
-                text = path.read_text(encoding="utf-8")
-                self.assertIsNone(pattern.search(text))
-        self.assertTrue((ROOT / "skills/triton-profiling-analysis/SKILL.md").is_file())
+    def test_development_and_profiling_instructions_require_triton_evidence(self):
+        for name in ("n1_stage2_first_impl.md", "n1_stage3_fix_and_optimize.md"):
+            with self.subTest(role=name):
+                text = (ROOT / "roles" / name).read_text(encoding="utf-8")
+                self.assertIn("@triton.jit", text)
+                self.assertIn("triton-ascend", text)
+        profiling = (ROOT / "skills/triton-profiling-analysis/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Triton", profiling)
+        self.assertIn("kernel_details.csv", profiling)
+        self.assertIn("device_info.json", profiling)
 
     def test_fusion_catalog_keeps_method_and_variant_identity(self):
         current = json.loads((ROOT / "knowledge/fusion_options.json").read_text(encoding="utf-8"))

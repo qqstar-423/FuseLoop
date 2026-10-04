@@ -116,9 +116,8 @@ class TimingAuditTests(unittest.TestCase):
             if row["Name"] == "K2":
                 row["Type"] = "aclnnCopy"
         result = self.audit(rows)
-        self.assertNotIn("extra_non_pypto_work", result)
         self.assertEqual(result["metrics"]["device_kernel_sum_us"]["median"], 50)
-        self.assertNotIn("pypto_kernel_sum_us", result["metrics"])
+        self.assertEqual(result["tool_compatible"]["per_kernel_medians_us"], {"K1": 40, "K2": 10})
         self.assertEqual(result["kernel_counts_all_repeats"], {"K1": 3, "K2": 3})
 
     def test_tool_name_or_type_can_supply_boundary(self):

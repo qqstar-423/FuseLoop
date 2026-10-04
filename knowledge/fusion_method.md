@@ -2,7 +2,7 @@
 
 This directory provides **10 method classes with 24 variants** for the Stage1.5, development, analysis and decision nodes. Concrete options and stable IDs are in `knowledge/fusion_options.json`; choose based on the current task, chip and triton-ascend capabilities — no method is pre-declared to always be faster.
 
-These are design options, not verified Triton performance conclusions. Old PyPTO materials were backed up separately by the user and do not serve as the current framework's APIs, capabilities, or results. Jev scores each class independently; probabilities need not sum to 1 and do not equal measured gains; methods that are currently inexpressible keep their IDs, but the capability gap must be stated — implementation cannot be demanded on high probability alone.
+These are design options whose performance must be measured on the target Triton Ascend environment. Jev scores each class independently; probabilities need not sum to 1 and do not equal measured gains. Methods that the installed backend cannot express keep their stable IDs, with the capability gap documented; probability alone does not establish implementability.
 
 ## Common Preconditions
 

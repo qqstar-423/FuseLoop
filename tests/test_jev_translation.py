@@ -142,6 +142,20 @@ class JevTranslationTests(unittest.TestCase):
         result = self.prepare()
         self.assertEqual(result["note"], self.english[self.payload["note"]])
 
+    def test_numeric_and_existing_identifier_multiplicity_must_be_preserved(self):
+        for source, incorrect, error in (
+            ("使用 128 和 128", "Use 128", "numeric"),
+            ("使用 128", "Use 128 and 128", "numeric"),
+            ("使用 HBM 和 HBM", "Use HBM", "identifiers"),
+            ("使用 HBM", "Use HBM and HBM", "identifiers"),
+        ):
+            with self.subTest(source=source, incorrect=incorrect):
+                self.payload = {"note": source}
+                self.english[source] = incorrect
+                with self.assertRaisesRegex(ValueError, error):
+                    self.prepare()
+                self.assert_not_published()
+
     def test_literal_escaped_input_is_decoded_before_translation(self):
         self.payload = {"note": r"\u534a\u878d\u5408"}
         result = self.prepare()
@@ -182,6 +196,43 @@ class JevTranslationTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         self.prepare()
         self.assertEqual(self.translate_fields.call_count, 2)
+
+    def test_cached_numeric_and_identifier_drift_requires_retranslation(self):
+        original = self.payload["fusion_methods_source"]
+        for token, replacement in (("128", "256"), ("128", "-128"), ("F1", "G1"),
+                                   ("HBM", "DDR"), ("HBM", "HBM HBM")):
+            with self.subTest(token=token, replacement=replacement):
+                result = self.prepare()
+                output_path = self.work / "english_inputs.json"
+                manifest_path = self.work / "translation_manifest.json"
+                result["fusion_methods_source"] = self.english[original].replace(token, replacement)
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["output_sha256"] = hashlib.sha256(json.dumps(result, ensure_ascii=False, sort_keys=True,
+                                                                      allow_nan=False).encode()).hexdigest()
+                output_path.write_text(json.dumps(result), encoding="utf-8")
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                calls_before = self.translate_fields.call_count
+                translated = self.prepare()
+                self.assertEqual(self.translate_fields.call_count, calls_before + 1)
+                self.assertEqual(translated["fusion_methods_source"], self.english[original])
+
+    def test_numeric_drift_in_cache_and_retranslation_leaves_no_usable_artifact(self):
+        result = self.prepare()
+        original = self.payload["fusion_methods_source"]
+        incorrect = self.english[original].replace("128", "256")
+        result["fusion_methods_source"] = incorrect
+        output_path = self.work / "english_inputs.json"
+        manifest_path = self.work / "translation_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["output_sha256"] = hashlib.sha256(json.dumps(result, ensure_ascii=False, sort_keys=True,
+                                                              allow_nan=False).encode()).hexdigest()
+        output_path.write_text(json.dumps(result), encoding="utf-8")
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        self.english[original] = incorrect
+        with self.assertRaisesRegex(ValueError, "numeric"):
+            self.prepare()
+        self.assertEqual(self.translate_fields.call_count, 2)
+        self.assert_not_published()
 
     def test_translation_failure_removes_previous_usable_artifacts(self):
         self.prepare()

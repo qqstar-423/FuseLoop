@@ -3,6 +3,8 @@
 Tests may install narrower mocks over these guards. Only synthetic credential
 files created inside this invocation's private temporary directory are readable.
 The public report contains test IDs/statuses, never exception text or tracebacks.
+Real local subprocess transport tests are explicitly skipped and reported; run
+them separately with the command recorded in the report.
 """
 
 import argparse
@@ -26,6 +28,13 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SECRET_NAMES = {"config.yaml", "config.local.yaml", "all_api_key.md"}
+LOCAL_PROCESS_TEST_MODULES = frozenset({"test_agent_output_streams", "tests.test_agent_output_streams"})
+LOCAL_PROCESS_SKIP_REASON = (
+    "Requires real local Python subprocesses; the strict offline runner blocks subprocess.Popen."
+)
+LOCAL_PROCESS_TEST_COMMAND = (
+    "python3 -m unittest discover -s tests -p 'test_agent_output_streams.py' -v"
+)
 
 
 @contextmanager
@@ -72,6 +81,24 @@ def offline_guards(fixture_root, violations):
         yield
 
 
+@contextmanager
+def skip_local_process_tests(suite):
+    """Temporarily exclude declared process integration tests, keeping every guard."""
+    def test_classes(node):
+        if isinstance(node, unittest.TestSuite):
+            for child in node:
+                yield from test_classes(child)
+        elif node.__class__.__module__ in LOCAL_PROCESS_TEST_MODULES:
+            yield node.__class__
+
+    with ExitStack() as stack:
+        for test_class in set(test_classes(suite)):
+            stack.enter_context(patch.object(test_class, "__unittest_skip__", True, create=True))
+            stack.enter_context(patch.object(test_class, "__unittest_skip_why__",
+                                            LOCAL_PROCESS_SKIP_REASON, create=True))
+        yield
+
+
 class SafeResults(unittest.TestResult):
     """Keep individual outcomes without storing arbitrary failure payloads."""
 
@@ -115,6 +142,11 @@ class SafeResults(unittest.TestResult):
             record["skipped_subtests"] = record.get("skipped_subtests", 0) + 1
             return
         self._record(test, "skipped")
+        # Publish only our fixed exclusion reason, never arbitrary test payloads.
+        if reason == LOCAL_PROCESS_SKIP_REASON:
+            record = self.records[self._identity(test)]
+            record["skip_reason"] = LOCAL_PROCESS_SKIP_REASON
+            record["run_separately"] = LOCAL_PROCESS_TEST_COMMAND
 
     def addExpectedFailure(self, test, err):
         self.expectedFailures.append((test, "Expected failure details withheld."))
@@ -149,7 +181,8 @@ def main(argv=None):
         with offline_guards(fixture_root, violations), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             try:
                 suite = unittest.TestLoader().discover(str(ROOT / "tests"), pattern="test_*.py")
-                suite.run(results)
+                with skip_local_process_tests(suite):
+                    suite.run(results)
             except Exception as exc:
                 discovery_error = type(exc).__name__
     records = sorted(results.records.values(), key=lambda record: record["name"])
@@ -175,6 +208,7 @@ def main(argv=None):
                                   for path in source_paths if path.is_file()},
         "limitations": ["Synthetic measurements and mocked external services only.",
                         "No real NPU, compiler, CANN-Bench, SSH, Jev or Kerminal execution was tested.",
+                        LOCAL_PROCESS_SKIP_REASON + " Run separately: " + LOCAL_PROCESS_TEST_COMMAND,
                         "Each test method counts once; parameterized subtests are not separate test methods.",
                         "Stage1.5, fusion evidence, semantic exit, best snapshots and existing knowledge routes are covered offline."],
     }

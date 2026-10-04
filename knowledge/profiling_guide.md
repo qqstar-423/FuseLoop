@@ -50,10 +50,10 @@ Check the counts and durations of APIs such as `aclrtMemcpy`, then locate their 
 
 Filter events by the current kernel's real identity, device, stream and related calls. Use the timeline to explain launches, waits and cross-kernel dependencies; adjacent events may overlap, so do not assume everything is serial or identify the same invocation by name alone.
 
-Do not use trace events specific to other frameworks as Triton time. Historical `trace_view` results and the current `kernel_details` use different protocols and cannot be compared directly; discuss gains only after the framework/backend, hardware, cases, baselines and timing method are consistent.
+Use trace events that correspond to the evaluated Triton Ascend invocation. `trace_view` latency and `kernel_details` timing use different protocols and cannot be compared directly; discuss gains only after the framework/backend, hardware, cases, baselines and timing method are consistent.
 
 ## 7. How to Write the Report
 
 For up to 6 of the slowest cases, each write: **conclusion, evidence file/line or event, next verification step**. Then review the distribution across all cases and slow-case trends, distinguishing mask/stride, tiling, fixed overhead, resource pressure and structural issues of the fusion plan. Where proof is lacking, write hypotheses and validation methods; do not give definitive conclusions.
 
-The current plan and design files must correspond to the evaluated code. Self-tests are correctness evidence; Jev probabilities are initial directions; old cases from other frameworks only indicate historical background — none of these can substitute for current measured Triton results.
+The current plan and design files must correspond to the evaluated code. Self-tests establish correctness and Jev probabilities guide initial exploration. Performance conclusions require measured Triton Ascend results from the current evaluation protocol.

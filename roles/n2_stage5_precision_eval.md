@@ -22,7 +22,7 @@ python3 -m kernel_eval.cli eval \
   --no-perf
 ```
 
-`device_id` uses the program-specified value. Inputs, outputs, and the Triton kernel must all use that NPU; the first actual call triggers JIT compilation; fully preserve compilation or runtime errors, and do not treat a successful import as a precision pass. No device environment variables for other frameworks need to be set.
+`device_id` uses the program-specified value. Inputs, outputs, and the Triton kernel must all use that NPU; the first actual call triggers JIT compilation; fully preserve compilation or runtime errors, and do not treat a successful import as a precision pass. Preserve the configured NPU visibility mapping.
 
 ## 2. Output Artifact Analysis
 

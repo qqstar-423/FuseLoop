@@ -80,9 +80,6 @@ def _technical_ids(text):
                    or re.search(r"[A-Z]{2}|[a-z][A-Z]", token))
 
 
-_RAW_DIGITS = re.compile(r"\d+(?:\.\d+)*")
-
-
 def _check_translated_text(original, translated):
     if not isinstance(translated, str) or not translated.strip():
         raise ValueError("Kerminal translations must be nonempty strings.")
@@ -91,21 +88,14 @@ def _check_translated_text(original, translated):
     orig_nums = Counter(_NUMBER.findall(original))
     trans_nums = Counter(_NUMBER.findall(translated))
     if orig_nums != trans_nums:
-        raw_orig = sorted(_RAW_DIGITS.findall(original))
-        raw_trans = sorted(_RAW_DIGITS.findall(translated))
-        if raw_orig != raw_trans:
-            log.warning("[Jev translation] Numeric validation difference (e.g. '1'→'one'), downgraded to a warning: "
-                        "orig=%s, trans=%s", dict(orig_nums - trans_nums),
-                        dict(trans_nums - orig_nums))
-        else:
-            log.debug("[Jev translation] Minor number formatting change (e.g. Stage1.5→Stage 1.5); raw digit sequence identical, allowed")
+        raise ValueError("English translation changed numeric tokens or their multiplicity.")
     original_ids, translated_ids = _technical_ids(original), _technical_ids(translated)
     # A Chinese technical term can legitimately become a new English acronym.
     # Existing identifiers must still survive unchanged with their multiplicity.
     missing = {token for token, count in original_ids.items()
                if translated_ids[token] != count}
     if missing:
-        log.warning("[Jev translation] Technical identifier difference, downgraded to a warning: missing=%s", missing)
+        raise ValueError("English translation changed technical identifiers or their multiplicity.")
 
 
 def _collect_fields(value, fields, path=(), identity=False):

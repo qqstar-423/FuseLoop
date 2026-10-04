@@ -65,7 +65,7 @@ class KnowledgeMetadataTests(unittest.TestCase):
     def test_summary_exposes_legacy_unknowns_and_does_not_infer_a_framework(self):
         for value in (None, {}, "malformed"):
             self.assertIn("not recorded", environment_summary(value))
-            self.assertNotIn("PyPTO", environment_summary(value))
+            self.assertIn("framework and chip: not recorded", environment_summary(value))
         self.assertIn("chip=not recorded", environment_summary({"framework": "Triton", "chip_model": "unknown"}))
 
     def test_both_logs_include_environment_output_and_provenance_once(self):

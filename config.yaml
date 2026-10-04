@@ -1,5 +1,5 @@
-# Triton Ascend Workflow unified configuration (read by the program; tracked in Git)
-# Workflow parameters, tool paths, Jev connection and keys are all kept in this file; when migrating machines, just edit this file.
+# FuseLoop configuration for Triton Ascend operator development.
+# Set machine paths below and provide Jev credentials through TYPESAFE_API_KEY.
 
 # ═══════════════════════════════════════════════════
 # Workflow control
@@ -45,19 +45,17 @@ jev:
 # ═══════════════════════════════════════════════════
 agents:
   cannbot:
-    cli: "/home/developer/.nvm/versions/node/v18.19.1/bin/cannbot"
-    # API key configured at: /root/.config/opencode/opencode.jsonc
-    # Model: glm-5.3-flash
+    cli: "cannbot"
+    # Configure the provider and model in ~/.config/opencode/opencode.jsonc.
 
   kerminal:
-    cli: "/home/developer/.local/bin/kerminal"
-    # API key configured at: ~/.kerminal/config.toml
-    # Model: kernelcat1.0
+    cli: "kerminal"
+    # Configure the provider and model in ~/.kerminal/config.toml.
 
   hermes:
-    cli: "/home/developer/.hermes/venvs/hermes-dev/bin/hermes"
-    # API key and model configured at: ~/.hermes/config.yaml
-    # Model: glm-5.3-flash
+    cli: "hermes"
+    # Resolve from PATH, or use the absolute Python entrypoint in the Hermes environment.
+    # Configure the provider and model in ~/.hermes/config.yaml and ~/.hermes/.env.
 
 # ═══════════════════════════════════════════════════
 # Hardware
@@ -66,18 +64,8 @@ hardware:
   device_id: 0
   # chip_model / soc_version / npu_arch are auto-detected at orchestrator startup
   # and written to <work>/device_info.json, injected into every stage's prompt
-  # To override manually (e.g., a remote machine cannot auto-detect), uncomment the fields below:
-  # chip_model: "Ascend 950"
-  # soc_version: "Ascend910B4"
-  # npu_arch: "dav-3510"
-  # arch_key: "a5"
   # Triton Ascend uses block-program programming; the program verifies the actual NPU backend and runtime version at startup.
-  # ai_core_num: 32
-  # ub_size_kb: 248
-  # l1_size_kb: 1024
-  # l0a_size_kb: 64
-  # l0b_size_kb: 64
-  # l0c_size_kb: 256
+  # Set hardware overrides only from the target machine's detected device_info.json.
 
 # ═══════════════════════════════════════════════════
 # Paths
@@ -86,14 +74,14 @@ paths:
   cannbench_repo: "/mnt/workspace/cann-bench"
 
 # ═══════════════════════════════════════════════════
-# CANN environment (eliminates all hardcoded paths)
-# When migrating to a new machine, change only here; concrete version numbers and architectures no longer appear in code
+# CANN environment: set paths and host architecture for the target machine.
 # ═══════════════════════════════════════════════════
 cann:
-  toolkit_path: "/home/developer/Ascend/cann-9.1.0"
+  toolkit_path: "/usr/local/Ascend/ascend-toolkit/latest"
   driver_path: "/usr/local/Ascend/driver"
   arch: "aarch64-linux"
-  node_bin: "/home/developer/.nvm/versions/node/v18.19.1/bin"
+  # Leave empty to use Node.js from PATH, or set its binary directory.
+  node_bin: ""
 
 # ═══════════════════════════════════════════════════
 # Logging

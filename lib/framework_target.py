@@ -1,12 +1,14 @@
-"""Triton Ascend target identity, runtime probe and cross-framework work guard."""
+"""Triton Ascend target identity, implementation and runtime validation."""
 
 import ast
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import tokenize
 
 from .handoff import atomic_write_json
 
@@ -25,27 +27,72 @@ def validate_device_id(device_id):
     return device_id
 
 
+def _imports_triton(tree):
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(name.name.split(".", 1)[0] == "triton" for name in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+            if (node.module or "").split(".", 1)[0] == "triton":
+                return True
+    return False
+
+
+def _unfinished_source_imports_triton(source):
+    """Read import statements even when Stage4 still needs to repair syntax."""
+    statement = []
+
+    def matches():
+        try:
+            return _imports_triton(ast.parse(tokenize.untokenize(statement)))
+        except SyntaxError:
+            return False
+
+    try:
+        for token in tokenize.generate_tokens(io.StringIO(source).readline):
+            if token.type in {tokenize.NEWLINE, tokenize.ENDMARKER} or token.string == ";":
+                if statement and matches():
+                    return True
+                statement = []
+            elif statement:
+                statement.append((token.type, token.string))
+            elif token.type == tokenize.NAME and token.string in {"from", "import"}:
+                statement.append((token.type, token.string))
+    except (tokenize.TokenError, IndentationError):
+        pass
+    return bool(statement and matches())
+
+
 def assert_target_implementation(directory):
-    """Reject importing the previous framework; never rewrite an old implementation."""
+    """Require Triton source imports across an implemented submission directory.
+
+    Imports may live in a kernel module separate from package exports and host
+    wrappers. Empty packages, docstrings and pass statements are valid before
+    development; packaging metadata alone does not establish an implementation.
+    This is a source identity check, not proof of kernel execution or correctness.
+    """
     root = Path(directory)
     if not root.is_dir():
         return
+    has_implementation = False
+    imports_triton = False
     for path in root.rglob("*.py"):
         if any(part in {".git", "__pycache__", "build", "dist"} for part in path.relative_to(root).parts):
+            continue
+        if path == root / "setup.py":
             continue
         source = path.read_text(encoding="utf-8-sig")
         try:
             tree = ast.parse(source)
-            modules = [name.name for node in ast.walk(tree) if isinstance(node, ast.Import)
-                       for name in node.names]
-            modules += [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
-            previous_framework = any(name.split(".", 1)[0] in {"pypto", "pypto_pro"} for name in modules)
+            has_implementation |= any(not isinstance(node, ast.Pass)
+                and not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+                         and isinstance(node.value.value, str)) for node in tree.body)
+            imports_triton |= _imports_triton(tree)
         except SyntaxError:
-            # Partly edited code is handled later by Stage4; identifiable imports
-            # of the previous target must still not enter a Triton run.
-            previous_framework = bool(re.search(r"(?m)^\s*(?:from|import)\s+pypto(?:_pro)?\b", source))
-        if previous_framework:
-            raise ValueError(f"The implementation still imports the old PyPTO framework: {path}. Provide a Triton Ascend implementation and use a new work directory; the old files were not modified.")
+            has_implementation = True
+            imports_triton |= _unfinished_source_imports_triton(source)
+    if has_implementation and not imports_triton:
+        raise ValueError(f"The implementation has no Triton source import: {root}. Provide a Triton Ascend implementation; existing files were not modified.")
 
 
 def ensure_workflow_target(work_dir):
@@ -58,7 +105,7 @@ def ensure_workflow_target(work_dir):
         except (OSError, ValueError) as exc:
             raise ValueError(f"Cannot verify the working directory\'s target framework: {marker}; use a new work directory") from exc
         if not isinstance(target, dict) or any(target.get(key) != value for key, value in TARGET_IDENTITY.items()):
-            raise ValueError(f"The working directory is not a Triton Ascend task: {marker}. Cross-framework checkpoint resume is forbidden; use a new work directory.")
+            raise ValueError(f"The working directory is not a Triton Ascend task: {marker}. Target identity must match this workflow; use a new work directory.")
         assert_target_implementation(work / "impl")
         return marker
     existing = [work / name for name in (".state.json", "history.json", "device_info.json", "ANALYSIS.md")
@@ -68,7 +115,7 @@ def ensure_workflow_target(work_dir):
         if folder.is_dir() and any(path.is_file() for path in folder.rglob("*")):
             existing.append(folder)
     if existing:
-        raise ValueError(f"The existing work directory lacks {TARGET_FILE}, so it cannot be proven to belong to Triton Ascend; resuming an old PyPTO task directly is forbidden. Create a new work directory. Existing files were not modified.")
+        raise ValueError(f"The existing work directory lacks {TARGET_FILE}, so its Triton Ascend target cannot be verified. Create a new work directory. Existing files were not modified.")
     work.mkdir(parents=True, exist_ok=True)
     atomic_write_json(marker, TARGET_IDENTITY)
     return marker
@@ -83,7 +130,7 @@ def ensure_example_link(work_dir, cannbench_repo):
     assert_target_implementation(source)
     if os.path.lexists(link):
         if not link.is_dir() or link.resolve() != source:
-            raise ValueError(f"The working directory\'s example source does not match: {link}; it must point to {source}. Use a new work directory; the old framework\'s example cannot be reused.")
+            raise ValueError(f"The working directory\'s example source does not match: {link}; it must point to {source}. Use a new work directory or the matching example source.")
     else:
         os.symlink(source, link, target_is_directory=True)
     return source
