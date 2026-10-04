@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def setup_logger(work_dir: str = None, level: str = "DEBUG", console_level: str = "INFO") -> logging.Logger:
-    """设置全局日志 + 状态切换日志 + 节点日志"""
+    """Set up the global log + state-transition log + node logs"""
     log = logging.getLogger("triton-ascend-workflow")
     if log.handlers:
         return log
@@ -15,7 +15,7 @@ def setup_logger(work_dir: str = None, level: str = "DEBUG", console_level: str 
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # 终端输出
+    # console output
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(getattr(logging, console_level.upper(), logging.INFO))
     ch.setFormatter(fmt)
@@ -25,7 +25,7 @@ def setup_logger(work_dir: str = None, level: str = "DEBUG", console_level: str 
         log_dir = Path(work_dir) / "log"
         log_dir.mkdir(parents=True, exist_ok=True)
 
-        # 全局日志（所有内容）
+        # global log (everything)
         fh = logging.FileHandler(log_dir / "workflow.log", encoding="utf-8")
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(fmt)
@@ -35,7 +35,7 @@ def setup_logger(work_dir: str = None, level: str = "DEBUG", console_level: str 
 
 
 def setup_state_logger(work_dir: str) -> logging.Logger:
-    """状态切换专用日志"""
+    """Dedicated log for state transitions"""
     log = logging.getLogger("triton-ascend-state")
     if log.handlers:
         return log
@@ -58,7 +58,7 @@ def setup_state_logger(work_dir: str) -> logging.Logger:
 
 
 def setup_history_logger(work_dir: str) -> logging.Logger:
-    """history 变化专用日志，每轮记录完整 JSON 快照"""
+    """Dedicated log for history changes; records the full JSON snapshot each round"""
     log = logging.getLogger("triton-ascend-history")
     if log.handlers:
         return log
@@ -82,9 +82,9 @@ def setup_history_logger(work_dir: str) -> logging.Logger:
 
 def setup_node_logger(work_dir: str, node: str) -> logging.Logger:
     """
-    节点专用日志。
+    Per-node log.
     node: "N1" / "N2" / "N3" / "N4"
-    每个节点一个日志文件，记录该节点 agent 的所有活动。
+    One log file per node, recording all of that node's agent activity.
     """
     logger_name = f"triton-ascend-{node}"
     log = logging.getLogger(logger_name)

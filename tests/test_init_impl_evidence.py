@@ -107,9 +107,9 @@ class ImportedEvidenceTests(unittest.TestCase):
         self.assertEqual([path.name for path in (self.work / "selection").iterdir()],
                          ["current_implementation.json"])
         prompt = format_evidence_for_prompt(self.work)
-        self.assertIn("对应代码与原开发证据已核对一致", prompt)
+        self.assertIn("verified as consistent", prompt)
         self.assertIn("init_impl_manifest.json", prompt)
-        self.assertIn("相对工作目录：`develop/iter0/", prompt)
+        self.assertIn("relative to working directory: `develop/iter0/", prompt)
 
     def test_stage2_and_relative_self_test_log_paths_also_restore(self):
         for item in (self.self_test["provided_cases"], self.self_test["continuous_calls"]):
@@ -123,9 +123,9 @@ class ImportedEvidenceTests(unittest.TestCase):
         (self.work / "impl/kernel.py").write_text("def kernel(x): return x + 2\n", encoding="utf-8")
         self.assert_ineligible("differs from the source")
         prompt = format_evidence_for_prompt(self.work)
-        self.assertIn("原自测结果只作历史参考", prompt)
-        self.assertIn("Stage9 应安排 Stage3", prompt)
-        self.assertIn("不进入最佳记录和停滞窗口", prompt)
+        self.assertIn("historical reference only", prompt)
+        self.assertIn("Stage9 should arrange", prompt)
+        self.assertIn("excluded from the best record and stagnation window", prompt)
         self.assertIn(DECISION_FILE, prompt)
 
     def test_source_document_edit_after_binding_invalidates_import(self):
@@ -198,14 +198,14 @@ class ImportedEvidenceTests(unittest.TestCase):
         self.assertTrue(self.restore()["eligible"])
         begin_development(self.work, self.work / "develop/iter1")
         self.assertFalse(load_evidence(self.work)["eligible"])
-        self.assertNotIn("应急导入的开发材料", format_evidence_for_prompt(self.work))
+        self.assertNotIn("Emergency-imported development material", format_evidence_for_prompt(self.work))
 
     def test_optimize_hint_is_context_for_review_not_an_approved_human_task(self):
         self.manifest["optimize_hint"] = "Explore a smaller tile on the longest case."
         self.assertTrue(self.restore()["eligible"])
         prompt = format_evidence_for_prompt(self.work)
         self.assertIn(self.manifest["optimize_hint"], prompt)
-        self.assertIn("首轮先实测，不是已批准的 P0", prompt)
+        self.assertIn("not an approved P0", prompt)
 
 
 if __name__ == "__main__":

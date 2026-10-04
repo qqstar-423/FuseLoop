@@ -49,7 +49,7 @@ class Stage9FileTargetTests(unittest.TestCase):
         alias = self.work / "impl/alias.py"
         os.link(protected, alias)
         self.assertTrue(protected.samefile(alias))
-        with self.assertRaisesRegex(ValueError, "实际指向同一文件"):
+        with self.assertRaisesRegex(ValueError, "actually point to the same file"):
             self.validate(local_plan([("impl/alias.py", "modify")],
                                      readonly=["impl/protected.py"]))
 
@@ -57,7 +57,7 @@ class Stage9FileTargetTests(unittest.TestCase):
         protected = self.write("impl/protected.py")
         self.write("impl/other.py")
         os.link(protected, self.work / "impl/alias.py")
-        with self.assertRaisesRegex(ValueError, "实际指向同一文件"):
+        with self.assertRaisesRegex(ValueError, "actually point to the same file"):
             self.validate(local_plan([("impl/other.py", "modify")],
                                      [("impl/alias.py", "modify")],
                                      readonly=["impl/protected.py"]))
@@ -71,24 +71,24 @@ class Stage9FileTargetTests(unittest.TestCase):
     def test_undeclared_hardlink_to_fixed_input_cannot_be_authorized(self):
         protected = self.write("task/golden.py")
         os.link(protected, self.work / "impl/alias.py")
-        with self.assertRaisesRegex(ValueError, "多个硬链接"):
+        with self.assertRaisesRegex(ValueError, "multiple hard links"):
             self.validate(local_plan([("impl/alias.py", "modify")]))
         self.assertEqual(protected.read_text(encoding="utf-8"), "synthetic source\n")
 
     def test_multiple_hardlinks_within_impl_require_independent_copy_before_writing(self):
         original = self.write("impl/kernel.py")
         os.link(original, self.work / "impl/alias.py")
-        with self.assertRaisesRegex(ValueError, "多个硬链接"):
+        with self.assertRaisesRegex(ValueError, "multiple hard links"):
             self.validate(local_plan([("impl/kernel.py", "modify"), ("impl/alias.py", "modify")]))
         self.validate(local_plan([("impl/alias.py", "inspect")]))
 
     def test_new_file_under_existing_file_is_rejected(self):
         self.write("impl/existing.py")
-        with self.assertRaisesRegex(ValueError, "父级已是文件"):
+        with self.assertRaisesRegex(ValueError, "parent of the file to write is already a file"):
             self.validate(local_plan([("impl/existing.py/nested/new.py", "create")]))
 
     def test_same_task_parent_and_child_files_are_rejected(self):
-        with self.assertRaisesRegex(ValueError, "另一待写文件的目录"):
+        with self.assertRaisesRegex(ValueError, "the directory of another file to write"):
             self.validate(local_plan([("impl/new.py", "create"),
                                       ("impl/new.py/child.py", "create")]))
 
@@ -96,7 +96,7 @@ class Stage9FileTargetTests(unittest.TestCase):
         for tasks in (([("impl/new.py", "create")], [("impl/new.py/sub/child.py", "create")]),
                       ([("impl/new.py/sub/child.py", "create")], [("impl/new.py", "create")])):
             with self.subTest(tasks=tasks):
-                with self.assertRaisesRegex(ValueError, "另一待写文件的目录"):
+                with self.assertRaisesRegex(ValueError, "the directory of another file to write"):
                     self.validate(local_plan(*tasks))
 
     def test_many_files_sharing_new_directory_are_allowed(self):
@@ -140,13 +140,13 @@ class Stage9FileTargetTests(unittest.TestCase):
         protected = base / "protected.py"
         protected.write_text("snapshot", encoding="utf-8")
         os.link(protected, base / "alias.py")
-        with self.assertRaisesRegex(ValueError, "实际指向同一文件"):
+        with self.assertRaisesRegex(ValueError, "actually point to the same file"):
             self.validate(local_plan([("impl/alias.py", "modify")],
                                      readonly=["impl/protected.py"]), implementation_base=base)
 
     def test_resume_existing_created_file_still_checks_parent_conflicts(self):
         self.write("impl/new.py")
-        with self.assertRaisesRegex(ValueError, "另一待写文件的目录|父级已是文件"):
+        with self.assertRaisesRegex(ValueError, "the directory of another file to write|parent of the file to write is already a file"):
             self.validate(local_plan([("impl/new.py", "create"),
                                       ("impl/new.py/child.py", "create")]),
                           allow_existing_creates=True)
@@ -159,11 +159,11 @@ class Stage9FileTargetTests(unittest.TestCase):
         for relative in files:
             with self.subTest(relative=relative):
                 self.write(relative)
-                with self.assertRaisesRegex(ValueError, "不可修改只读输入或程序维护文件"):
+                with self.assertRaisesRegex(ValueError, "must not modify read-only inputs or program-maintained files"):
                     self.validate(local_plan([(relative, "modify")]))
 
     def test_create_inside_protected_area_is_rejected_without_existing_file(self):
-        with self.assertRaisesRegex(ValueError, "不可修改只读输入或程序维护文件"):
+        with self.assertRaisesRegex(ValueError, "must not modify read-only inputs or program-maintained files"):
             self.validate(local_plan([("knowledge/fake_history.json", "create")]))
 
     def test_declared_inspections_of_program_owned_inputs_are_allowed(self):
@@ -185,7 +185,7 @@ class Stage9FileTargetTests(unittest.TestCase):
             return actual if result == alias else result
 
         with patch.object(Path, "resolve", resolve):
-            with self.assertRaisesRegex(ValueError, "实际指向只读输入或程序维护文件"):
+            with self.assertRaisesRegex(ValueError, "actually points to a read-only input or program-maintained file"):
                 self.validate(local_plan([("impl/alias.py", "modify")]))
 
     def test_logical_impl_is_validated_against_selected_restore_snapshot(self):
@@ -197,7 +197,7 @@ class Stage9FileTargetTests(unittest.TestCase):
     def test_snapshot_itself_is_not_writable_even_with_restore_base(self):
         base = self.work / "selection/records/iter1/impl"
         self.write("selection/records/iter1/impl/kernel.py")
-        with self.assertRaisesRegex(ValueError, "不可修改只读输入或程序维护文件"):
+        with self.assertRaisesRegex(ValueError, "must not modify read-only inputs or program-maintained files"):
             self.validate(local_plan([("selection/records/iter1/impl/kernel.py", "modify")]),
                           implementation_base=base)
 
@@ -213,7 +213,7 @@ class Stage9FileTargetTests(unittest.TestCase):
             return actual if result == alias else result
 
         with patch.object(Path, "resolve", resolve):
-            with self.assertRaisesRegex(ValueError, "实际指向只读输入或程序维护文件"):
+            with self.assertRaisesRegex(ValueError, "actually points to a read-only input or program-maintained file"):
                 self.validate(local_plan([("impl/alias.py", "modify")]), implementation_base=base)
 
     def test_normal_impl_link_to_snapshot_is_not_a_rollback_exemption(self):
@@ -229,7 +229,7 @@ class Stage9FileTargetTests(unittest.TestCase):
             return result
 
         with patch.object(Path, "resolve", resolve):
-            with self.assertRaisesRegex(ValueError, "实际指向只读输入或程序维护文件"):
+            with self.assertRaisesRegex(ValueError, "actually points to a read-only input or program-maintained file"):
                 self.validate(local_plan([("impl/kernel.py", "modify")]), implementation_base=base)
 
 

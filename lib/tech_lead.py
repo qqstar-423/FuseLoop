@@ -166,13 +166,13 @@ def validate_stage9_request_conditions(output, *, perf_diff, performance_case_id
                             (has_question, "pitfall")):
         if not required:
             if field in output:
-                condition = ("本轮没有待裁定的开发 question.md" if field == "pitfall"
-                             else "本轮未触发对应的可比性能涨跌经验")
-                errors.append(f"{field}: {condition}，必须省略此字段；"
-                              "相关错误原因及修复依据保留在 ledger_entry.evaluation_summary 和 suggest_next，不能丢失")
+                condition = ("this round has no development question.md awaiting adjudication" if field == "pitfall"
+                             else "this round did not trigger a comparable performance up/down experience")
+                errors.append(f"{field}: {condition}, this field must be omitted; "
+                              "the related error reasons and fix rationale are kept in ledger_entry.evaluation_summary and suggest_next and must not be lost")
             continue
         if field not in output:
-            errors.append(f"Stage9 缺少本轮必须填写的 {field}；禁止写占位经验或继续下发旧计划")
+            errors.append(f"Stage9 is missing this round\'s required {field}; placeholder experience or re-issuing an old plan is forbidden")
             continue
         try:
             if field == "pitfall":
@@ -188,8 +188,8 @@ def validate_stage9_request_conditions(output, *, perf_diff, performance_case_id
     analyses = ledger.get("case_analysis", []) if isinstance(ledger, dict) else None
     if performance_case_ids is not None and isinstance(analyses, list):
         if not performance_case_ids and analyses:
-            errors.append("ledger_entry.case_analysis: 本轮不是性能慢 case 分析任务，只能省略或填 []；"
-                          "编译、精度或评测异常的逐 case 原因写入 ledger_entry.evaluation_summary 和对应 suggest_next 任务")
+            errors.append("ledger_entry.case_analysis: this round is not a performance slow-case analysis task; it must be omitted or filled with []; "
+                          "per-case causes of build, precision or evaluation errors go into ledger_entry.evaluation_summary and the corresponding suggest_next task")
         elif performance_case_ids:
             reviewed = [entry.get("case_id") for entry in analyses
                         if isinstance(entry, dict) and isinstance(entry.get("case_id"), str)]

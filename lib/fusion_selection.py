@@ -274,7 +274,7 @@ def run_fusion_selection(work_dir, *, config_path=None, top_n=3,
         "catalog": catalog,
     }, directory / "translation", cli=cli, timeout=translation_timeout)
     _t1_translate = _time.monotonic()
-    log.info("[阶段1.5] 翻译耗时: %.2fs", _t1_translate - _t0_translate)
+    log.info("[Stage1.5] translation time: %.2fs", _t1_translate - _t0_translate)
     english_catalog = english_inputs["catalog"]
     english_methods = _validate_catalog(english_catalog)
     # Score the English projection but retain the original catalog for users
@@ -317,14 +317,14 @@ def run_fusion_selection(work_dir, *, config_path=None, top_n=3,
         _t0_jev = _time.monotonic()
         response = evaluate(request, settings)
         _t1_jev = _time.monotonic()
-        log.info("[阶段1.5] Jev 评分耗时: %.2fs (model=%s)", _t1_jev - _t0_jev, settings.model)
+        log.info("[Stage1.5] Jev scoring time: %.2fs (model=%s)", _t1_jev - _t0_jev, settings.model)
     else:
-        log.info("[阶段1.5] Jev 评分命中缓存，跳过调用")
+        log.info("[Stage1.5] Jev scoring hit the cache; skipping the call")
     _write_json(directory / "jev_response.json", response)
     try:
         ranked = _rank_response(response, methods)
     except (ValueError, TypeError) as exc:
-        log.error("[融合方案] 评分校验失败: error_type=%s, response=%s",
+        log.error("[fusion scheme] scoring validation failed: error_type=%s, response=%s",
                   type(exc).__name__, directory / "jev_response.json")
         raise
     metadata = {
@@ -343,12 +343,12 @@ def run_fusion_selection(work_dir, *, config_path=None, top_n=3,
     _write_json(directory / "ranking.json", {**metadata, "candidates": ranked})
     library = {**metadata, "top_n": top_n, "candidates": ranked[:top_n]}
     _write_json(fusion_library_path(work), library)
-    log.debug("[融合方案] 候选库已保存: methods=%d, top_n=%d, selected=%s, ranking=%s, library=%s",
+    log.debug("[fusion scheme] candidate library saved: methods=%d, top_n=%d, selected=%s, ranking=%s, library=%s",
               len(methods), top_n,
               ", ".join(f"{item['method']['id']}={item['probability']:.4f}"
                         for item in library["candidates"]),
               directory / "ranking.json", fusion_library_path(work))
-    log.info("[阶段1.5] 总耗时: %.2fs (翻译+校验+Jev评分+持久化)", _time.monotonic() - _t0_stage)
+    log.info("[Stage1.5] total time: %.2fs (translation + validation + Jev scoring + persistence)", _time.monotonic() - _t0_stage)
     return library
 
 
@@ -362,7 +362,7 @@ def format_fusion_library_for_prompt(work_dir, stage):
     path = fusion_library_path(work_dir)
     if (stage != "2" and not path.parent.exists()
             and not (Path(work_dir) / "fusion_requirements.en.json").exists()):
-        return "\n\n旧任务尚无 Stage1.5 JSON 融合算子库；沿用现有节点流程。\n"
+        return "\n\nThis legacy task has no Stage1.5 JSON fusion operator library yet; the existing node flow is kept.\n"
     library = json.loads(path.read_text(encoding="utf-8"))
     candidates = library.get("candidates") if isinstance(library, dict) else None
     if (not isinstance(library, dict) or library.get("schema_version") != SCHEMA_VERSION or not isinstance(candidates, list)
@@ -379,16 +379,16 @@ def format_fusion_library_for_prompt(work_dir, stage):
     if checked != candidates:
         raise ValueError("Fusion library candidates are not a valid ranked selection.")
     instruction = (
-        "Stage2：以概率最高的首项融合方案作为初始实现方向，结合当前硬件与算子约束编写代码。"
+        "Stage2: use the highest-probability first fusion scheme as the initial implementation direction and write code according to the current hardware and operator constraints."
         if stage == "2" else
-        f"Stage{stage}：结合本节点已有职责参考以下融合方案及其概率，实际精度和性能证据优先。"
+        f"Stage{stage}: within this node's existing duties, reference the following fusion schemes and their probabilities; actual precision and performance evidence takes priority."
     )
     source_descriptions = {
-        "methods": ("融合方法原始说明", "需要追溯评分时，核对方法适用条件和限制"),
-        "options": ("完整融合方法选项表", "按 method id 对照方法及变体，区别于筛选后的 Top N 库"),
-        "stage1_analysis": ("Stage1 需求分析", "核对算子语义、输入范围和实现约束"),
-        "stage1_requirements": ("提供给 Jev 的结构化算子需求", "核对 operator_summary、case_groups 和 implementation_constraints"),
-        "hardware": ("当前硬件信息", "核对设备型号、内存容量及方法所需硬件能力"),
+        "methods": ("Original descriptions of the fusion methods", "When tracing scores, verify the methods' applicability conditions and limitations"),
+        "options": ("Complete fusion method options table", "Compare methods and variants by method id; distinct from the filtered Top N library"),
+        "stage1_analysis": ("Stage1 requirements analysis", "Verify operator semantics, input scope and implementation constraints"),
+        "stage1_requirements": ("Structured operator requirements supplied to Jev", "Verify operator_summary, case_groups and implementation_constraints"),
+        "hardware": ("Current hardware info", "Verify the device model, memory capacity and the hardware capabilities the methods require"),
     }
     source_hints = ""
     sources = library.get("sources")
@@ -400,18 +400,18 @@ def format_fusion_library_for_prompt(work_dir, stage):
             in_work = source_path.is_relative_to(Path(work_dir).absolute())
             source_hints += file_hint(work_dir, source_path, *description,
                                       base_dir=None if in_work else ROOT,
-                                      base_label="工作目录" if in_work else "项目根目录")
+                                      base_label="working directory" if in_work else "project root")
     if library.get("english_inputs_path"):
-        source_hints += file_hint(work_dir, library["english_inputs_path"], "实际用于评分的英文材料副本",
-                                  "仅在追溯 Jev 输入时查看，按原需求、硬件和方法逐项核对")
+        source_hints += file_hint(work_dir, library["english_inputs_path"], "Copy of the English material actually used for scoring",
+                                  "View only when tracing Jev inputs; verify item by item against the original requirements, hardware and methods")
     return (
-        "\n\n## JSON 融合算子库（Stage1.5 Jev）\n"
-        + file_hint(work_dir, path, "只读初始融合候选库，提供 Jev 选出的 Top N 方法及概率",
-                    "先看 candidates 的 rank、method 和 probability；概率用于选择初始方向，后续以实测为准")
+        "\n\n## JSON fusion operator library (Stage1.5 Jev)\n"
+        + file_hint(work_dir, path, "Read-only initial fusion candidate library with the Top N methods and probabilities chosen by Jev",
+                    "Look first at candidates' rank, method and probability; the probabilities guide the initial direction, and measurements take precedence afterwards")
         + f"{instruction}\n"
-        "概率表示各方案独立的初始适用性估计，不要求加和为1，也不代表实测加速比。"
-        "保留原始 Jev 概率；不得自行修改、归一化或伪造。"
-        "本轮接入不改变已有评测、P0/P1/P2 审查或退出路由。\n"
+        "The probabilities are each scheme's independent initial suitability estimate; they need not sum to 1 and do not represent measured speedups."
+        "Keep the original Jev probabilities; do not modify, normalize or fabricate them."
+        "This round's integration does not change existing evaluations, P0/P1/P2 reviews or exit routing.\n"
         + source_hints
         + json.dumps(library, ensure_ascii=False, indent=2, allow_nan=False)
     )

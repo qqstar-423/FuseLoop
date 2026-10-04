@@ -305,7 +305,7 @@ class SemanticExitTests(unittest.TestCase):
         })
         Path(action["knowledge_path"]).write_text("Archived regression lesson", encoding="utf-8")
         before = implementation_hash(self.work / "impl")
-        with self.assertRaisesRegex(ValueError, "最佳或本轮评测快照失效"):
+        with self.assertRaisesRegex(ValueError, "snapshot is invalid"):
             apply_regression_action(self.work, 1, decision_path, logger, logger,
                                     comparison_context=self.context)
         self.assertEqual(implementation_hash(self.work / "impl"), before)

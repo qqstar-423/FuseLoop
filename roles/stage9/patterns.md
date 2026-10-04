@@ -1,19 +1,19 @@
-## 条件任务：详细记录本轮性能经验
+## Conditional Task: Record This Round's Performance Experience in Detail
 
-仅依据程序注入的本轮可比成绩：单轮平均加速比提升 ≥5% 必填 `proven_pattern`；退步 ≥5% 必填 `regression_pattern`。未触发的字段省略；y 窗口停滞不代替单轮条件。
+Base it solely on this round's comparable scores injected by the program: a single-round average speedup gain of ≥5% requires filling `proven_pattern`; a regression of ≥5% requires filling `regression_pattern`. Omit untriggered fields; y-window stagnation does not substitute for the single-round condition.
 
-对象包含：
+The object contains:
 
-- `what_changed`：具体代码改动，引用绑定的选择依据并核对代码。
-- 成功用 `why_it_worked`、退步用 `why_it_failed`：对应计算、搬运或调度证据解释原因；假设明确标注。
-- `fusion_related`：布尔值，是否与融合方案有关。
-- `case_analysis`：非空列表，每项都填非空文字 `case_id`、`observation`、`explanation`，既写受益项也写受损项。`explanation` 单独说明该 case 变化的原因；不能只写现象，也不能用总体 `why_it_worked/why_it_failed` 或 `ledger_entry.case_analysis` 代替。原因不确定时写明推测或待验证及验证方法，不编造结论。
-- `evidence`：证据路径与该路径的 case/字段/实际测量；`<iter>` 替换为真实绑定轮次。
-- `applicability`：一段非空文字，说明适用硬件、shape、参数、未验证范围和局限；不要写成对象或数组。
-- `next_action`：非空文字，说明后续复用、避让或对照验证方法。
+- `what_changed`: the specific code changes, citing the bound selection rationale and checking the code.
+- For successes `why_it_worked`, for regressions `why_it_failed`: explain the cause with the corresponding computation, movement, or scheduling evidence; clearly mark assumptions.
+- `fusion_related`: boolean, whether it relates to the fusion scheme.
+- `case_analysis`: non-empty list; each item fills non-empty text `case_id`, `observation`, `explanation`, covering both benefited and harmed cases. `explanation` separately states why that case changed; do not write only the symptom, and do not substitute the overall `why_it_worked/why_it_failed` or `ledger_entry.case_analysis`. When the cause is uncertain, state it as speculated or to-be-verified with a verification method; do not fabricate conclusions.
+- `evidence`: evidence paths and that path's case/field/actual measurement; replace `<iter>` with the real bound round.
+- `applicability`: a non-empty paragraph stating the applicable hardware, shapes, parameters, unverified scope, and limitations; do not write it as an object or array.
+- `next_action`: non-empty text stating later reuse, avoidance, or comparative verification methods.
 
-本次 `decision_schema.json` 和 `decision_template.json` 已列出触发的经验对象及完整字段；模板的空值须填写。提交前同时核对账本和经验各自的 `case_analysis`，两者用途不同，不能只补其中一份。同轮修正时逐项处理 `validation_error.json` 的 `errors` 列表，不只修第一条，也不能删除受影响 case 来绕过检查。
+This round's `decision_schema.json` and `decision_template.json` already list the triggered experience objects and their complete fields; the template's empty values must be filled. Before submitting, also check both the ledger's and the experience's `case_analysis` — they serve different purposes and cannot substitute for each other. When correcting in the same round, process each entry of `validation_error.json`'s `errors` list, not just the first, and do not bypass checks by deleting affected cases.
 
-程序直接消费公共字段，补前后均值、差值、轮次、全部 case 数字差分及性能来源，写入 `knowledge/proven_patterns.md` 或 `knowledge/regression_patterns.md`。不输出 `_pending_*`，不写占位原因；缺少本轮必填经验会停止 Stage9。同轮复议更新原经验，原始 decision 各自留档。
+The program directly consumes the common fields, supplements the before/after averages, differences, rounds, full-case numeric diffs, and performance sources, and writes to `knowledge/proven_patterns.md` or `knowledge/regression_patterns.md`. Do not output `_pending_*` or placeholder reasons; missing this round's required experience stops Stage9. Same-round follow-ups update the original experience, and the original decisions are each archived.
 
-框架与芯片 `environment` 由程序按本次性能报告自动补入，无须你填写。`applicability` 仍需分析硬件、shape 等适用条件；复用旧经验先核对其环境，旧记录未注明的内容不得自行当作当前环境。
+The framework and chip `environment` are filled automatically by the program from this round's performance report; you need not fill it. `applicability` still requires analyzing hardware, shape, and other applicability conditions; before reusing old experience, verify its environment, and do not treat content not noted in old records as valid for the current environment.

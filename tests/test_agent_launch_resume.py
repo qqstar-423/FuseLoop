@@ -34,7 +34,7 @@ class AgentLaunchResumeTests(unittest.TestCase):
 
         def arriving(stage, iteration, prompt):
             if stage == "stage4" and iteration == 3 and not messages:
-                messages.append(self.flow.submit("保持融合方向，优先调整慢 case 的切块"))
+                messages.append(self.flow.submit("Keep the fusion direction; prioritize adjusting the slow cases' tiling"))
             if stage == "stage3" and iteration == 3:
                 source_hashes.append(implementation_hash(self.work / "impl"))
                 with patch.object(agent_runner, "_agent_env", return_value={}), \

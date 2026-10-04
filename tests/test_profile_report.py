@@ -21,17 +21,17 @@ class ProfileReportTests(unittest.TestCase):
         self.decision = {
             "iteration": 3,
             "ledger_entry": {
-                "evaluation_summary": "case7 的测量耗时为 12us；尚无逐核数据。",
+                "evaluation_summary": "case7's measured time is 12us; no per-core data yet.",
                 "case_analysis": [{
-                    "case_id": "case7", "observation": "测量耗时偏高。",
-                    "explanation": "推测分块不均，仍需验证。",
-                    "evidence": "eval/iter3/perf_result.json；没有 kernel_csv。",
-                    "next_action": "复查 dispatcher 和分块策略。",
+                    "case_id": "case7", "observation": "measured time is high.",
+                    "explanation": "speculated uneven tiling; still to be verified.",
+                    "evidence": "eval/iter3/perf_result.json; no kernel_csv.",
+                    "next_action": "recheck the dispatcher and tiling strategy.",
                 }],
             },
             "suggest_next": [{
-                "task_id": "T1", "priority": "P1", "action": "检查 case7 分块。",
-                "reason": "核间工作量可能不均。", "acceptance_checks": ["运行 case7 正确性和性能测试。"],
+                "task_id": "T1", "priority": "P1", "action": "check case7's tiling.",
+                "reason": "per-core workload may be uneven.", "acceptance_checks": ["run case7 correctness and performance tests."],
                 "changes": [{"file": "impl/case7.py", "operation": "inspect"}],
             }],
         }
@@ -39,7 +39,7 @@ class ProfileReportTests(unittest.TestCase):
         self.source.parent.mkdir(parents=True)
         self.source.write_text(json.dumps(self.decision, ensure_ascii=False), encoding="utf-8")
 
-    def stage7(self, body="# Stage7 原文\n\n保留结论、证据和空行。\n\n"):
+    def stage7(self, body="# Stage7 original\n\nkeep conclusions, evidence and blank lines.\n\n"):
         path = profile_report_path(self.work, 3)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
@@ -65,14 +65,14 @@ class ProfileReportTests(unittest.TestCase):
                 profile_report_path(self.work, iteration)
 
     def test_stage7_body_is_preserved_and_stamping_is_idempotent(self):
-        body = "# 原文\n\n现象：12us。\n\n原因：尚待验证。\n\n"
+        body = "# original\n\nSymptom: 12us.\n\nCause: to be verified.\n\n"
         report = self.stage7(body)
         self.assertEqual(stamp_stage7_report(self.work, 3), report)
         stamped = report.read_text(encoding="utf-8")
         self.assertTrue(stamped.endswith(body))
-        self.assertIn("分析来源：Stage7", stamped)
-        self.assertIn("轮次：3", stamped)
-        self.assertIn("不适用（Stage7 原始报告）", stamped)
+        self.assertIn("Analysis source: Stage7", stamped)
+        self.assertIn("Iteration: 3", stamped)
+        self.assertIn("not applicable (original Stage7 report)", stamped)
         with patch("lib.profile_report.atomic_write_text") as write:
             stamp_stage7_report(self.work, 3)
         write.assert_not_called()
@@ -80,21 +80,21 @@ class ProfileReportTests(unittest.TestCase):
         self.assertEqual(list(report.parent.iterdir()), [report])
 
     def test_stage7_replaces_own_source_block_only(self):
-        report = self.stage7("# Original\n\n> 分析来源：用户备注\n")
+        report = self.stage7("# Original\n\n> Analysis source: user note\n")
         stamp_stage7_report(self.work, 3)
-        stamped = report.read_text(encoding="utf-8").replace("分析来源：Stage7", "分析来源：OldStage")
+        stamped = report.read_text(encoding="utf-8").replace("Analysis source: Stage7", "Analysis source: OldStage")
         report.write_text(stamped, encoding="utf-8")
         stamp_stage7_report(self.work, 3)
         content = report.read_text(encoding="utf-8")
         self.assertEqual(content.count("profile-report-source:start"), 1)
         self.assertNotIn("OldStage", content)
-        self.assertTrue(content.endswith("# Original\n\n> 分析来源：用户备注\n"))
+        self.assertTrue(content.endswith("# Original\n\n> Analysis source: user note\n"))
 
     def test_stage7_rejects_missing_empty_and_source_only_reports(self):
         with self.assertRaisesRegex(ValueError, "missing"):
             stamp_stage7_report(self.work, 3)
         for body in ("", " \n\t", "<!-- profile-report-source:start -->\n"
-                     "> 分析来源：Stage7\n<!-- profile-report-source:end -->\n\n"):
+                     "> Analysis source: Stage7\n<!-- profile-report-source:end -->\n\n"):
             with self.subTest(body=body):
                 report = self.stage7(body)
                 before = report.read_bytes()
@@ -124,17 +124,17 @@ class ProfileReportTests(unittest.TestCase):
         original = deepcopy(self.decision)
         report = self.write_stage9()
         content = report.read_text(encoding="utf-8")
-        self.assertIn("分析来源：Stage9", content)
-        self.assertIn("轮次：3", content)
+        self.assertIn("Analysis source: Stage9", content)
+        self.assertIn("Iteration: 3", content)
         self.assertIn("stage9/iter3/request1/decision.json", content)
         self.assertIn(self.decision["ledger_entry"]["evaluation_summary"], content)
         for value in self.decision["ledger_entry"]["case_analysis"][0].values():
             self.assertIn(value, content)
-        for label in ("现象", "原因", "证据", "下一步", "T1", "P1", "验收"):
+        for label in ("Observation", "Cause", "Evidence", "Next step", "T1", "P1", "Acceptance"):
             self.assertIn(label, content)
-        self.assertIn("生成报告时不重新读取原始 profiling", content)
-        self.assertIn("不新增或扩大文件修改权限", content)
-        self.assertIn("以已校验的原始 decision", content)
+        self.assertIn("the original profiling is not re-read when generating the report", content)
+        self.assertIn("neither adds nor expands file modification permissions", content)
+        self.assertIn("follow the validated original decision", content)
         self.assertNotIn('"changes"', content)
         self.assertEqual(self.decision, original)
         self.assertEqual(list(report.parent.iterdir()), [report])
@@ -147,13 +147,13 @@ class ProfileReportTests(unittest.TestCase):
         self.assertNotIn(b"Obsolete", first)
         self.write_stage9()
         self.assertEqual(report.read_bytes(), first)
-        self.decision["ledger_entry"]["evaluation_summary"] = "人工复议后的摘要。"
+        self.decision["ledger_entry"]["evaluation_summary"] = "Summary after human re-review."
         second_source = self.source.parent.parent / "request2/decision.json"
         second_source.parent.mkdir()
         second_source.write_text(json.dumps(self.decision, ensure_ascii=False), encoding="utf-8")
         write_stage9_report(self.work, 3, self.decision, second_source)
         content = report.read_text(encoding="utf-8")
-        self.assertIn("人工复议后的摘要。", content)
+        self.assertIn("Summary after human re-review.", content)
         self.assertIn("request2/decision.json", content)
         self.assertNotIn("request1/decision.json", content)
         self.assertEqual(list(report.parent.iterdir()), [report])

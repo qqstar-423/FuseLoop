@@ -70,7 +70,7 @@ class RegressionRoutingTests(unittest.TestCase):
         self.assertEqual(develop["code"], "# implementation revision 0\n")
         self.assertTrue(develop["knowledge_exists"])
         self.assertTrue(develop["record_exists"])
-        self.assertIn("性能退步处置", develop["prompt"])
+        self.assertIn("Regression handling", develop["prompt"])
 
         record = self.record(2)
         self.assertEqual(record["action"], "restore_best")
@@ -82,9 +82,9 @@ class RegressionRoutingTests(unittest.TestCase):
         self.assertEqual([row["avg_speedup"] for row in rounds], [2.0, 1.5])
         for filename in ("workflow.log", "state_transitions.log"):
             log = (self.work / "log" / filename).read_text(encoding="utf-8")
-            for token in ("===== 性能退步处置：iter2 =====", "avg_speedup 2.0→1.5",
-                          "变化=-25.0%", "当前全部达标=True",
-                          "===== 最佳实现恢复完成：iter2 → 最佳 iter1 =====",
+            for token in ("===== Regression handling: iter2 =====", "avg_speedup 2.0→1.5",
+                          "change=-25.0%", "All cases passing now=True",
+                          "===== Best implementation restore finished: iter2 → best iter1 =====",
                           record["best_implementation_dir"], record["failed_implementation_dir"],
                           record["knowledge_path"], record["decision_path"], str(self.record_path(2))):
                 with self.subTest(log=filename, token=token):
@@ -98,20 +98,20 @@ class RegressionRoutingTests(unittest.TestCase):
         develop = self.entry("stage3", 2)
         self.assertEqual(develop["code"], "# implementation revision 1\n")
         self.assertTrue(develop["knowledge_exists"])
-        self.assertIn("性能退步处置", develop["prompt"])
+        self.assertIn("Regression handling", develop["prompt"])
         record = self.record(2)
         self.assertEqual(record["action"], "keep_current")
         self.assertEqual(record["status"], "recorded")
         self.assertEqual(self.routing.selection_status()["best"]["iteration"], 1)
         for filename in ("workflow.log", "state_transitions.log"):
             log = (self.work / "log" / filename).read_text(encoding="utf-8")
-            for token in ("===== 性能退步处置：iter2 =====", "avg_speedup 2.0→1.4",
-                          "变化=-30.0%", "当前全部达标=False", "保留当前实现，只记录退步教训",
+            for token in ("===== Regression handling: iter2 =====", "avg_speedup 2.0→1.4",
+                          "change=-30.0%", "All cases passing now=False", "keeping the current implementation and only recording the regression lesson",
                           record["best_implementation_dir"], record["knowledge_path"],
                           str(self.record_path(2))):
                 with self.subTest(log=filename, token=token):
                     self.assertIn(token, log)
-            self.assertNotIn("===== 最佳实现恢复完成", log)
+            self.assertNotIn("===== Best implementation restore finished", log)
         # Both logs identify record.json; its final decision links the knowledge
         # commit even though the branch notification precedes the Stage9 call.
         decision = Path(record["decision_path"])
@@ -214,7 +214,7 @@ class RegressionRoutingTests(unittest.TestCase):
             return True
 
         self.routing.stage9_callback = corrupt_snapshot_after_review
-        with self.assertRaisesRegex(ValueError, "失效|恢复"):
+        with self.assertRaisesRegex(ValueError, "invalid|restor"):
             self.routing.run_workflow(max_iterations=2)
 
         self.assert_code(self.work / "impl", 1)

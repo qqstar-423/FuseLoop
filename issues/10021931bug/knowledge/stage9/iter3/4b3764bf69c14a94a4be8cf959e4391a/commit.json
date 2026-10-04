@@ -1,7 +1,0 @@
-{
-  "iteration": 3,
-  "request_id": "4b3764bf69c14a94a4be8cf959e4391a",
-  "decision_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/stage9/iter3/4b3764bf69c14a94a4be8cf959e4391a/decision.json",
-  "history_path": "/mnt/workspace/pypto-pro-workflow/work/fused_patch_concat_layernorm_20261002_025914/knowledge/history.json",
-  "committed": true
-}

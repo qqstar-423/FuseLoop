@@ -1,4 +1,4 @@
-"""Exercise the real workflow with a synthetic agent and deterministic human clock."""
+﻿"""Exercise the real workflow with a synthetic agent and deterministic human clock."""
 import json
 from pathlib import Path
 import unittest
@@ -52,18 +52,18 @@ class HumanRoutingTests(unittest.TestCase):
             self.on_stage(stage, iteration, prompt)
         if stage == "stage9":
             self.role_texts.append(Path(role).read_text(encoding="utf-8"))
-        if "Stage9 咨询输出文件：" in prompt:
-            question_path = Path(next(line.split("：", 1)[1] for line in prompt.splitlines()
-                                      if line.startswith("Stage9 咨询输出文件：")))
-            request_id = next(line.split("：", 1)[1] for line in prompt.splitlines()
-                              if line.startswith("Stage9 咨询请求编号："))
+        if "Stage9 consultation output file:" in prompt:
+            question_path = Path(next(line.split(":", 1)[1].strip() for line in prompt.splitlines()
+                                      if line.startswith("Stage9 consultation output file:")))
+            request_id = next(line.split(":", 1)[1].strip() for line in prompt.splitlines()
+                              if line.startswith("Stage9 consultation request ID:"))
             question = {
-                "request_id": request_id, "question": "继续优化慢 case 还是切换方案？",
-                "difficulty": "一个 case 仍然慢", "current_scheme": "F2 垂直融合",
-                "attempts": "已调整 tile，平均收益有限", "evidence": "见版本清单中的逐 case 性能与方案依据",
-                "options": [{"id": name, "title": title, "benefit": "改善慢 case", "cost": "一轮实现验证", "risk": "可能无收益"}
-                            for name, title in (("A", "局部调优"), ("B", "shape 半融合"))],
-                "recommended_option": "A", "recommendation_reason": "慢 case 仍在改善",
+                "request_id": request_id, "question": "keep optimizing the slow cases or switch schemes?",
+                "difficulty": "one case is still slow", "current_scheme": "F2 vertical fusion",
+                "attempts": "tile adjusted; average gain is limited", "evidence": "see the per-case performance and scheme rationale in the version manifest",
+                "options": [{"id": name, "title": title, "benefit": "improve the slow cases", "cost": "one implementation round to verify", "risk": "may bring no gain"}
+                            for name, title in (("A", "local tuning"), ("B", "shape partial fusion"))],
+                "recommended_option": "A", "recommendation_reason": "the slow cases are still improving",
             }
             self.fixture.write_json(question_path, question)
             self.questions.append((iteration, request_id, len(load_history(work).get("ledger", []))))
@@ -76,9 +76,9 @@ class HumanRoutingTests(unittest.TestCase):
                         if item["id"] in ids and item["kind"] == "direction" and item["status"] != "executed"]
             if messages:
                 self.fixture.write_json(f"develop/iter{iteration}/human_feedback.json", [
-                    {"message_id": item["id"], "status": "implemented", "details": "按意见调整慢 case 的 tile"}
+                    {"message_id": item["id"], "status": "implemented", "details": "adjusted the slow cases' tile per the feedback"}
                     for item in messages])
-                path = self.work / f"develop/iter{iteration}/融合方案选择决策依据.md"
+                path = self.work / f"develop/iter{iteration}/fusion_scheme_rationale.md"
                 path.write_text(path.read_text(encoding="utf-8") + "\n" + "\n".join(item["id"] for item in messages), encoding="utf-8")
         return result
 
@@ -88,12 +88,12 @@ class HumanRoutingTests(unittest.TestCase):
         messages = [item for item in self.human.all_messages() if item["id"] in ids]
         payload["human_responses"] = []
         for message in messages:
-            payload["human_responses"].append({"message_id": message["id"], "kind": message["kind"], "answer": "已结合证据处理"})
+            payload["human_responses"].append({"message_id": message["id"], "kind": message["kind"], "answer": "handled with the evidence"})
             if message["kind"] == "direction":
                 task = fusion.stage9_plan_task(request.get("known_case_ids"),
                                                task_id=f"T{len(payload['suggest_next']) + 1}")
                 task.update(priority="P0", source="human", human_message_id=message["id"],
-                            action="P0（人工建议）：优化慢 case", reason=message["text"])
+                            action="P0 (human suggestion): optimize the slow cases", reason=message["text"])
                 payload["suggest_next"].append(task)
         self.decisions.append((iteration, ids, request, prompt))
         if self.on_decision:
@@ -109,23 +109,23 @@ class HumanRoutingTests(unittest.TestCase):
         sent = []
         def send(stage, _iteration, _prompt):
             if stage == "stage4" and not sent:
-                sent.append(self.submit("先保留融合方向，优化慢 case"))
+                sent.append(self.submit("keep the fusion direction first; optimize the slow cases"))
         self.on_stage = send
         self.run_flow(1)
         message = self.human.all_messages()[0]
         self.assertEqual(message["status"], "executed")
-        self.assertIn("P0（人工建议）", self.fixture.prompts["stage3"])
+        self.assertIn("P0 (human suggestion)", self.fixture.prompts["stage3"])
         self.assertIn(sent[0]["id"], self.fixture.prompts["stage3"])
         self.assertEqual(len(self.decisions), 1)
         manifest = list((self.work / "human_review").glob("iter*/*/evidence_manifest.json"))[0]
         self.assertTrue(json.loads(manifest.read_text(encoding="utf-8"))["files"])
 
     def test_new_opinion_during_stage9_reopens_review_and_keeps_both_p0s(self):
-        first = self.submit("保留融合方案")
+        first = self.submit("keep the fusion scheme")
         second = []
         def arriving(*_args):
             if not second:
-                second.append(self.submit("优先调整 case2"))
+                second.append(self.submit("prioritize case2"))
         self.on_decision = arriving
         self.run_flow(1)
         self.assertEqual(len(self.decisions), 2)
@@ -134,7 +134,7 @@ class HumanRoutingTests(unittest.TestCase):
         self.assertEqual(len(load_history(str(self.work))["ledger"]), 1)
 
     def test_question_is_answered_without_becoming_p0(self):
-        message = self.submit("为何不切换融合方案？", kind="question")
+        message = self.submit("why not switch fusion schemes?", kind="question")
         self.run_flow(1)
         suggestions = load_history(str(self.work))["suggest_next"]
         self.assertFalse(any(item.get("human_message_id") == message["id"] for item in suggestions))
@@ -163,10 +163,10 @@ class HumanRoutingTests(unittest.TestCase):
         self.run_flow(4)
         prompt = self.question_prompts[0]
         self.assertIn("FUSION_HANDOFF[stage9]", prompt)
-        self.assertIn("融合方案选择决策依据.md", prompt)
-        self.assertIn("程序计算的性能变化（仅作为咨询依据）", prompt)
-        self.assertNotIn("Stage9 输出文件：", prompt)
-        self.assertNotIn("填写 proven_pattern", prompt)
+        self.assertIn("fusion_scheme_rationale.md", prompt)
+        self.assertIn("Performance change computed by the program (consultation reference only)", prompt)
+        self.assertNotIn("Stage9 output file:", prompt)
+        self.assertNotIn("proven_pattern", prompt)
         self.assertTrue((self.work / "knowledge/proven_patterns.md").is_file())
         self.assertTrue((self.work / "knowledge/regression_patterns.md").is_file())
 
@@ -174,7 +174,7 @@ class HumanRoutingTests(unittest.TestCase):
         sent = []
         def arriving(stage, iteration, _prompt):
             if stage == "stage3" and iteration == 1 and not sent:
-                sent.append(self.submit("下轮先调整切块"))
+                sent.append(self.submit("adjust the tiling first next round"))
         self.on_stage = arriving
         self.run_flow(2)
         self.assertEqual(self.decisions[0][1], set())
@@ -196,7 +196,7 @@ class HumanRoutingTests(unittest.TestCase):
         self.assertEqual(original["original_deadline"], 1120)
         self.assertEqual(self.fixture.read_state()["current_stage"], "iter4_stage9")
         self.now = 1140
-        self.submit("选 A，继续优化慢 case")
+        self.submit("choose A; keep optimizing the slow cases")
         self.run_flow()
         request = self.human.get_consultation(original["request_id"])
         self.assertEqual(request["deadline"], 1720)
@@ -210,19 +210,19 @@ class HumanRoutingTests(unittest.TestCase):
         sent = []
         def arriving(_output, _payload, iteration, _prompt):
             if iteration == 2 and not sent:
-                sent.append(self.submit("再换一种融合方法"))
+                sent.append(self.submit("switch to another fusion method"))
         self.on_decision = arriving
         self.run_flow(8)
         self.assertEqual(self.fixture.read_state()["stopped_by"], "semantic_stagnation")
         self.assertEqual(self.human.all_messages()[0]["status"], "not_executed")
         self.assertEqual(self.human.all_messages()[0]["reason"], "semantic_stagnation")
         self.assertEqual([iteration for iteration, stage, _ in self.routing.seen if stage == "stage3"], [1])
-        self.assertIn("人工意见处理与执行状态", self.fixture.prompts["stage10"])
+        self.assertIn("Human feedback processing and execution status", self.fixture.prompts["stage10"])
 
     def test_missing_execution_receipt_stops_and_recovers_same_last_round(self):
-        self.submit("调整慢 case")
+        self.submit("adjust the slow cases")
         self.omit_receipt = True
-        with self.assertRaisesRegex(RuntimeError, "落实回执"):
+        with self.assertRaisesRegex(RuntimeError, "receipt"):
             self.run_flow(1)
         self.assertEqual(self.fixture.read_state()["stage9_context"]["phase"], "developing")
         self.omit_receipt = False
@@ -244,8 +244,8 @@ class HumanRoutingTests(unittest.TestCase):
         self.routing.interrupt_stage9_iteration = None
         self.run_flow()
         self.assertEqual(self.decisions[-1][2]["scene"], "compile")
-        self.assertNotIn("本轮性能结果", self.decisions[-1][3])
-        self.assertNotIn("## 条件任务：详细记录本轮性能经验", self.role_texts[-1])
+        self.assertNotIn("This round's formal performance", self.decisions[-1][3])
+        self.assertNotIn("## Conditional Task: Record This Round's Performance Experience in Detail", self.role_texts[-1])
         self.assertIn("build_fail", self.fixture.prompts["stage3"])
         self.assertNotIn("stage6", self.fixture.events)
 
@@ -264,7 +264,7 @@ class HumanRoutingTests(unittest.TestCase):
         sent = []
         def arriving(stage, _iteration, _prompt):
             if stage == "stage10" and not sent:
-                sent.append(self.submit("下轮考虑半融合"))
+                sent.append(self.submit("consider partial fusion next round"))
         self.on_stage = arriving
         self.run_flow(1)
         self.assertEqual(self.fixture.events.count("stage10"), 2)
@@ -275,11 +275,11 @@ class HumanRoutingTests(unittest.TestCase):
 
 class HumanProtocolTests(unittest.TestCase):
     def test_model_cannot_relabel_direction_as_question_or_lower_priority(self):
-        message = {"id": "m1", "kind": "direction", "text": "保留当前方案"}
+        message = {"id": "m1", "kind": "direction", "text": "keep the current scheme"}
         for kind, priority in (("question", "P0"), ("direction", "P1")):
             with self.subTest(kind=kind), self.assertRaises(ValueError):
                 validate_human_responses({
-                    "human_responses": [{"message_id": "m1", "kind": kind, "answer": "处理"}],
+                    "human_responses": [{"message_id": "m1", "kind": kind, "answer": "handled"}],
                     "suggest_next": [{"priority": priority, "source": "human", "human_message_id": "m1"}],
                 }, [message])
 
@@ -289,9 +289,9 @@ class HumanProtocolTests(unittest.TestCase):
 
     def test_conflict_requires_alternative_and_still_p0(self):
         message = {"id": "m1", "kind": "direction"}
-        output = {"human_responses": [{"message_id": "m1", "kind": "conflict", "answer": "硬件不支持"}],
+        output = {"human_responses": [{"message_id": "m1", "kind": "conflict", "answer": "hardware not supported"}],
                   "suggest_next": [{"priority": "P0", "source": "human", "human_message_id": "m1"}]}
         with self.assertRaises(ValueError):
             validate_human_responses(output, [message])
-        output["human_responses"][0]["alternative"] = "改用分块循环满足内存限制"
+        output["human_responses"][0]["alternative"] = "use a tiled loop to satisfy the memory limit"
         validate_human_responses(output, [message])

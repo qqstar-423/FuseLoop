@@ -1,4 +1,4 @@
-"""Durable local human inbox and consultation clock.
+﻿"""Durable local human inbox and consultation clock.
 
 Only the workflow writes state/request files. Independent terminals publish one
 immutable UUID-named message each, so submitting never races a state rewrite.
@@ -69,16 +69,16 @@ def submit_message(work_dir: str, text: str, request_id: str | None = None,
                    *, kind: str = "direction", now: float | None = None) -> dict:
     """Publish without modifying workflow state. CLI inputs never become commands."""
     if not isinstance(text, str) or not text.strip():
-        raise ValueError("人工意见不能为空")
+        raise ValueError("Human feedback must not be empty")
     if kind not in {"direction", "question"}:
         raise ValueError("kind must be direction or question")
     work = Path(work_dir).resolve()
     if not work.is_dir():
-        raise ValueError(f"工作目录不存在：{work}")
+        raise ValueError(f"Working directory does not exist: {work}")
     root = work / "human_review"
     state = _read(root / "state.json", _initial_state())
     if state.get("workflow_closed"):
-        raise ValueError("此 workflow 已结束；意见不会重新启动任务")
+        raise ValueError("This workflow has finished; feedback will not restart the task")
     active_id = state.get("active_request_id")
     active = None
     if active_id and active_id in state.get("requests", {}):
@@ -86,10 +86,10 @@ def submit_message(work_dir: str, text: str, request_id: str | None = None,
     if request_id is None and active and active.get("status") in {"draft", "waiting"}:
         request_id = active_id
     if request_id is not None and request_id not in state.get("requests", {}):
-        raise ValueError("找不到咨询请求编号")
+        raise ValueError("Consultation request ID not found")
     if not state.get("active_enabled", True) and not (
             request_id == active_id and active and active.get("status") in {"draft", "waiting"}):
-        raise ValueError("主动人工入口已关闭")
+        raise ValueError("The proactive human entry is closed")
     timestamp = float(time.time() if now is None else now)
     message_id = uuid.uuid4().hex
     message = {"id": message_id, "text": text, "kind": "wait" if is_wait_message(text) else kind,
@@ -100,7 +100,7 @@ def submit_message(work_dir: str, text: str, request_id: str | None = None,
     if _read(root / "state.json", _initial_state()).get("workflow_closed"):
         # The final reader may already have sealed the run while this terminal
         # published. Do not report this late submission as accepted for execution.
-        raise ValueError(f"提交时 workflow 已结束；原话已留档但不会执行：{path}")
+        raise ValueError(f"The workflow had already finished when submitted; the verbatim message is archived but will not be executed: {path}")
     return {**message, "path": str(path)}
 
 
@@ -160,7 +160,7 @@ class HumanReview:
                               "kind": item["kind"], "original_path": item["path"],
                               "submitted_at": item["submitted_at"], "observed_at": observed,
                               "observed_at_utc": _stamp(observed)})
-        log.info("人工消息已读取 message_id=%s request_id=%s kind=%s 摘要=%s 原文=%s 回执=%s",
+        log.info("Human message read message_id=%s request_id=%s kind=%s summary=%s original=%s receipt=%s",
                  item["id"], item.get("request_id") or "proactive", item["kind"],
                  _summary(item["text"]), item["path"], receipt_path)
 
@@ -212,9 +212,9 @@ class HumanReview:
         self._save(state)
         for message_id in changes:
             message = known[message_id]
-            handling = {"direction": "人工P0建议", "question": "提问答复", "wait": "仅等待"}[message["kind"]]
-            log.info("人工消息状态 message_id=%s request_id=%s kind=%s status=%s 处理类型=%s "
-                     "decision=%s 执行依据=%s 原因=%s 状态记录=%s",
+            handling = {"direction": "human P0 suggestion", "question": "question answer", "wait": "wait only"}[message["kind"]]
+            log.info("Human message status message_id=%s request_id=%s kind=%s status=%s handling=%s "
+                     "decision=%s execution evidence=%s reason=%s status record=%s",
                      message_id, message.get("request_id") or "proactive", message["kind"], status,
                      handling, state["messages"][message_id].get("decision_path", "-"),
                      metadata.get("execution_evidence_path", "-"), _summary(str(metadata.get("reason", "-"))),
@@ -266,14 +266,14 @@ class HumanReview:
                    "scene": scene, "fail_reason": fail_reason, "status": "draft",
                    "created_at": self.clock(), "context": deepcopy(context),
                    "trigger_iterations": list(state["stagnation"]["trigger_iterations"]),
-                   "directory": str(directory), "question_path": str(directory / "问题文档.md"),
+                   "directory": str(directory), "question_path": str(directory / "Question Document.md"),
                    "evidence_manifest_path": str(directory / "evidence_manifest.json"),
                    "message_ids": [], "extension_used": False, "deadline": None}
         self._save_request(request)
         state["requests"][request_id] = self._request_path(request).relative_to(self.root).as_posix()
         state["active_request_id"] = request_id
         self._save(state)
-        log.info("人工咨询已创建 request_id=%s iter=%s scene=%s 触发轮次=%s 问题=%s 证据清单=%s",
+        log.info("Human consultation created request_id=%s iter=%s scene=%s trigger rounds=%s question=%s evidence manifest=%s",
                  request_id, iteration, scene, request["trigger_iterations"],
                  request["question_path"], request["evidence_manifest_path"])
         return request
@@ -323,11 +323,11 @@ class HumanReview:
         bundle = {"request": request, "messages": deepcopy(messages),
                   "human_response_received": any(message.get("kind") != "wait" for message in messages),
                   "question_text": "", "context": deepcopy(context), "evidence": manifest,
-                  "instructions": "人工实质意见作为 P0；纯提问先答疑，等待表达不算方案选择。"}
+                  "instructions": "Substantive human feedback becomes P0; pure questions are answered first, and a wait expression is not a scheme selection."}
         _write(directory / "request.json", request)
         path = directory / "feedback.json"
         _write(path, bundle)
-        log.info("主动人工意见已打包 request_id=%s iter=%s scene=%s message_ids=%s 反馈包=%s 证据清单=%s",
+        log.info("Proactive human feedback packaged request_id=%s iter=%s scene=%s message_ids=%s bundle=%s evidence manifest=%s",
                  request_id, iteration, scene, request["message_ids"], path, manifest_path)
         return str(path)
 
@@ -341,7 +341,7 @@ class HumanReview:
         source = Path(question_path or request["question_path"])
         text = source.read_text(encoding="utf-8")
         if not text.strip():
-            raise ValueError("咨询问题文档不能为空")
+            raise ValueError("The consultation question document must not be empty")
         target = Path(request["question_path"])
         if source.resolve() != target.resolve():
             atomic_write_text(str(target), text)
@@ -349,7 +349,7 @@ class HumanReview:
         request.update(status="waiting", question_text=text, notified_at=now,
                        original_deadline=now + WAIT_SECONDS, deadline=now + WAIT_SECONDS)
         self._save_request(request)
-        log.info("人工问题已就绪 request_id=%s iter=%s scene=%s 问题=%s 截止时间=%s 等待秒数=%s",
+        log.info("Human question ready request_id=%s iter=%s scene=%s question=%s deadline=%s wait seconds=%s",
                  request_id, request["iteration"], request["scene"], target,
                  _stamp(request["deadline"]), WAIT_SECONDS)
         return request
@@ -378,7 +378,7 @@ class HumanReview:
                 if not request["extension_used"]:
                     request["extension_used"] = True
                     request["deadline"] = request["original_deadline"] + EXTENSION_SECONDS
-                    log.info("人工咨询延期 request_id=%s message_id=%s 延长秒数=%s 截止时间=%s request=%s",
+                    log.info("Human consultation extended request_id=%s message_id=%s extension seconds=%s deadline=%s request=%s",
                              request_id, message["id"], EXTENSION_SECONDS,
                              _stamp(request["deadline"]), self._request_path(request))
             else:
@@ -389,7 +389,7 @@ class HumanReview:
             request.update(status="timed_out", response_message_ids=[], closed_at=now)
         self._save_request(request)
         if request["status"] != "waiting":
-            log.info("人工咨询等待结束 request_id=%s status=%s reply_ids=%s 截止时间=%s request=%s",
+            log.info("Human consultation wait finished request_id=%s status=%s reply_ids=%s deadline=%s request=%s",
                      request_id, request["status"], request["response_message_ids"],
                      _stamp(request["deadline"]), self._request_path(request))
         return request
@@ -419,12 +419,12 @@ class HumanReview:
                   "human_response_received": bool(request.get("response_message_ids")),
                   "question_text": request["question_text"], "context": request["context"],
                   "evidence": manifest["files"],
-                  "instructions": "人工实质意见作为 P0；纯提问先答疑，等待不算意见。超时按推荐继续，不能视为人工同意。"}
+                  "instructions": "Substantive human feedback becomes P0; pure questions are answered first, and waiting is not feedback. On timeout continue per the recommendation; it must not be treated as human consent."}
         path = Path(request["directory"]) / "feedback.json"
         first_bundle = not path.exists()
         _write(path, bundle)
         if first_bundle:
-            log.info("人工咨询反馈已打包 request_id=%s status=%s human_response_received=%s message_ids=%s 反馈包=%s",
+            log.info("Human consultation feedback packaged request_id=%s status=%s human_response_received=%s message_ids=%s bundle=%s",
                      request_id, request["status"], bundle["human_response_received"], request["message_ids"], path)
         return str(path)
 
@@ -435,7 +435,7 @@ class HumanReview:
         if request["status"] != "completed":
             request.update(status="completed", decision_path=str(decision_path), completed_at=self.clock())
             self._save_request(request)
-            log.info("人工咨询已形成最终决策 request_id=%s message_ids=%s decision=%s request=%s",
+            log.info("Human consultation produced the final decision request_id=%s message_ids=%s decision=%s request=%s",
                      request_id, request["message_ids"], decision_path, self._request_path(request))
         self.mark_processed(request["message_ids"], decision_path)
         state = self.state()

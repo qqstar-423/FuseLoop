@@ -90,21 +90,21 @@ class TritonRuntimeTests(unittest.TestCase):
     def test_unmarked_old_checkpoint_is_unchanged_and_not_adopted(self):
         state = self.write("old/.state.json", {"iteration": 8, "current_stage": "iter8_stage9"})
         before = state.read_bytes()
-        with self.assertRaisesRegex(ValueError, "禁止把旧"):
+        with self.assertRaisesRegex(ValueError, "resuming an old PyPTO task directly is forbidden"):
             ensure_workflow_target(state.parent)
         self.assertEqual(state.read_bytes(), before)
         self.assertFalse((state.parent / "workflow_target.json").exists())
 
     def test_wrong_marked_framework_cannot_resume(self):
         marker = self.write("old/workflow_target.json", dict(TARGET_IDENTITY, framework="PyPTO Pro"))
-        with self.assertRaisesRegex(ValueError, "禁止跨框架"):
+        with self.assertRaisesRegex(ValueError, "Cross-framework checkpoint resume is forbidden"):
             ensure_workflow_target(marker.parent)
 
     def test_missing_example_fails_and_existing_wrong_directory_is_not_adopted(self):
         work = self.root / "work"
         work.mkdir()
         bench = self.root / "bench"
-        with self.assertRaisesRegex(ValueError, "缺少 Triton Ascend 标准示例"):
+        with self.assertRaisesRegex(ValueError, "Missing the standard Triton Ascend example"):
             ensure_example_link(work, bench)
         source = bench / "examples/triton_ascend_cann_example"
         (source / "cann_bench").mkdir(parents=True)
@@ -113,7 +113,7 @@ class TritonRuntimeTests(unittest.TestCase):
             self.assertEqual(ensure_example_link(work, bench), source.resolve())
             link.assert_called_once_with(source.resolve(), work / "example", target_is_directory=True)
         (work / "example").mkdir()
-        with self.assertRaisesRegex(ValueError, "来源不匹配"):
+        with self.assertRaisesRegex(ValueError, "source does not match"):
             ensure_example_link(work, bench)
 
     def test_marking_old_pypto_implementation_as_triton_does_not_bypass_guard(self):
@@ -122,7 +122,7 @@ class TritonRuntimeTests(unittest.TestCase):
         (work / "impl").mkdir()
         path = work / "impl/kernel.py"
         path.write_text("import torch, pypto_pro.language as arbitrary_alias\n", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "仍导入旧"):
+        with self.assertRaisesRegex(ValueError, "still imports the old"):
             ensure_workflow_target(work)
         self.assertIn("pypto_pro", path.read_text(encoding="utf-8"))
 
@@ -220,12 +220,12 @@ class TritonRuntimeTests(unittest.TestCase):
         config = {"paths": {"cannbench_repo": str(self.root / "bench")}}
         before = orchestrator.comparison_context(self.root / "task", hardware, config)
         metadata.unlink()
-        with self.assertRaisesRegex(RuntimeError, "无法验证 CANN 工具链版本"):
+        with self.assertRaisesRegex(RuntimeError, "Cannot verify the CANN toolchain version"):
             orchestrator.comparison_context(self.root / "task", hardware, config)
         self.assertEqual(before["hardware"]["toolchain"]["version_files"][0]["version"], "synthetic-cann-A")
 
     def test_missing_cann_metadata_is_not_assumed_stable(self):
-        with self.assertRaisesRegex(RuntimeError, "无法验证 CANN 工具链版本"):
+        with self.assertRaisesRegex(RuntimeError, "Cannot verify the CANN toolchain version"):
             read_cann_toolchain({"ASCEND_HOME_PATH": str(self.root / "missing")})
 
     def test_resume_refreshes_hardware_before_any_stage(self):

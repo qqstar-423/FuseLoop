@@ -26,10 +26,10 @@ class ProfileReportRoutingTests(unittest.TestCase):
     def assert_report_hint(self, prompt, iteration):
         relative = f"profile/iter{iteration}/bottleneck_analysis.md"
         hints = [line for line in prompt.splitlines()
-                 if f"相对工作目录：`{relative}`" in line]
+                 if f"relative to working directory: `{relative}`" in line]
         self.assertTrue(hints, f"Missing report input description: {relative}")
         self.assertTrue(any(str(self.report(iteration)) in line for line in hints))
-        for token in ("用途：", "怎么看：", "profile/<iter>/bottleneck_analysis.md"):
+        for token in ("Purpose:", "how to read:", "profile/<iter>/bottleneck_analysis.md"):
             self.assertTrue(any(token in line for line in hints), token)
 
     def assert_stage9_report(self, iteration, decision_path=None):
@@ -350,7 +350,7 @@ class ProfileReportIntegrityTests(unittest.TestCase):
                     outputs.append(output)
                     if has_accepted_report and len(outputs) == 1:
                         payload["ledger_entry"]["evaluation_summary"] = "ACCEPTED_BEFORE_REREVIEW"
-                        flow.submit("请复议后再优化 tile")
+                        flow.submit("re-review first, then optimize the tile")
                         return
                     if has_accepted_report:
                         current = report.read_bytes()
@@ -391,7 +391,7 @@ class HumanProfileReportRoutingTests(unittest.TestCase):
                 outputs = []
                 reports_before_decision = []
                 reports_seen_by_stage3 = []
-                first = flow.submit("保留融合方案")
+                first = flow.submit("keep the fusion scheme")
                 second = []
 
                 def decision(output, payload, _iteration, _prompt):
@@ -402,7 +402,7 @@ class HumanProfileReportRoutingTests(unittest.TestCase):
                     payload["ledger_entry"]["evaluation_summary"] = f"ACCEPTED_REVIEW_{review_number}"
                     payload["ledger_entry"]["case_analysis"][0]["observation"] = f"CASE_REVIEW_{review_number}"
                     if review_number == 1:
-                        second.append(flow.submit("优先调整慢 case 的 tile"))
+                        second.append(flow.submit("prioritize the slow cases' tile"))
 
                 def stage(stage_name, _iteration, _prompt):
                     if stage_name == "stage3":

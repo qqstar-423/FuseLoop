@@ -165,7 +165,7 @@ class PerformancePatternTests(unittest.TestCase):
 
     def test_diagnostics_escape_case_id_newlines(self):
         value = complete_pattern()
-        value["case_analysis"][0] = {"case_id": "中文\ncase\rname", "observation": "Changed"}
+        value["case_analysis"][0] = {"case_id": "中文\ncase\rname", "observation": "Changed"}  # non-ASCII id is intentional
         with self.assertRaises(PerformancePatternValidationError) as caught:
             validate_performance_pattern_details(value, "proven_pattern")
         self.assertNotIn("\n", str(caught.exception))

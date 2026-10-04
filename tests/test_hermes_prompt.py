@@ -25,12 +25,12 @@ class HermesPromptTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name) / "hermes 中文 with spaces"
+        self.root = Path(temporary.name) / "hermes 中文 with spaces"  # non-ASCII path is intentional
         self.bin = self.root / "bin"
         self.bin.mkdir(parents=True)
         self.entry = self.bin / "hermes"
-        self.prompt = self.root / "prompt 中文.txt"
-        self.prompt.write_bytes("初始完整提示词\r\n".encode("utf-8"))
+        self.prompt = self.root / "prompt 中文.txt"  # non-ASCII filename is intentional
+        self.prompt.write_bytes("initial full prompt\r\n".encode("utf-8"))
         self.cwd = self.root / "working directory"
         self.cwd.mkdir()
         # Never inherit a user's provider credentials, HOME or Hermes config.
@@ -63,7 +63,7 @@ class HermesPromptTests(unittest.TestCase):
             "    Path(os.environ['CAPTURE']).write_text(json.dumps({\n"
             "        'argv': sys.argv, 'cwd': os.getcwd(), 'marker': MARKER,\n"
             "        'executable': sys.executable, 'path0': sys.path[0]}, ensure_ascii=False), encoding='utf-8')\n"
-            "    print('synthetic output 中文', flush=True)\n"
+            "    print('synthetic output 中文', flush=True)  # non-ASCII output is intentional\n"
             f"    return {returncode}\n", encoding="utf-8")
         self.env["CAPTURE"] = str(self.root / "capture.json")
 
@@ -88,7 +88,7 @@ class HermesPromptTests(unittest.TestCase):
 
     def test_multimegabyte_input_reaches_same_cli_with_all_flags_and_newlines(self):
         self.install_stub()
-        prompt = "中文原文 '引号' $(no-shell) `no-shell`\r\n" * 50000
+        prompt = "中文原文 '引号' $(no-shell) `no-shell`\r\n" * 50000  # non-ASCII payload is intentional
         self.assertGreater(len(prompt.encode("utf-8")), 2 * 1024 * 1024)
         self.prompt.write_bytes(prompt.encode("utf-8"))
         extra = ["-t", "web,file", "--yolo", "--in", str(self.cwd)]
@@ -180,7 +180,7 @@ class HermesPromptTests(unittest.TestCase):
         for source in samples:
             with self.subTest(source=source[:30]):
                 self.entry.write_bytes(source)
-                with self.assertRaisesRegex(ValueError, "不会退回"):
+                with self.assertRaisesRegex(ValueError, "will not fall back"):
                     self.command()
 
     def test_env_assignments_and_python_script_modes_are_not_guessed(self):
@@ -198,18 +198,18 @@ class HermesPromptTests(unittest.TestCase):
 
     def test_missing_prompt_is_reported_before_launch(self):
         self.prompt.unlink()
-        with self.assertRaisesRegex(ValueError, "提示词文件不存在"):
+        with self.assertRaisesRegex(ValueError, "the prompt file does not exist"):
             self.command()
 
     def test_reexec_guard_only_blocks_the_same_large_prompt(self):
-        prompt = "长提示词" * 30000
+        prompt = "long prompt " * 30000
         with patch.object(hermes_prompt.sys, "addaudithook") as add:
             hermes_prompt._guard_prompt_reexec(prompt)
         audit = add.call_args.args[0]
         for event in ("os.exec", "subprocess.Popen"):
             audit(event, ("python", ["python", "small unrelated tool argument"], {}))
             audit(event, ("python", ["python", "unrelated" * 30000], {}))
-            with self.assertRaisesRegex(RuntimeError, "再次传入子进程命令行"):
+            with self.assertRaisesRegex(RuntimeError, "into a subprocess command line again"):
                 audit(event, ("hermes", ["hermes", "-z", prompt], {}))
         audit("unrelated.audit.event", ("hermes", [prompt]))
         with patch.object(hermes_prompt.sys, "addaudithook") as add:

@@ -12,21 +12,21 @@ from .prompt_files import file_hint
 def evidence_sources(work_dir, iter_dirs):
     work = Path(work_dir)
     items = [
-        (work / "task", "算子需求、case 和 golden", "核对接口、精度和覆盖范围"),
-        (work / "ANALYSIS.md", "Stage1 需求分析", "核对实现约束"),
-        (work / "device_info.json", "当前硬件", "核对核数、存储容量和编程模型"),
-        (work / "impl", "本次实际实现", "对照入口、tiling 和数据流"),
-        (work / "fusion", "Stage1.5 初始方案与概率", "概率是先验，结合当前实测判断"),
-        (work / "selection", "最佳实现、代码绑定、窗口及 case 趋势", "核对快照指标与实现是否匹配"),
-        (work / "knowledge/history.json", "完整历轮账本", "比较已尝试方向和结果"),
-        (work / "knowledge/proven_patterns.md", "成功经验", "核对适用条件"),
-        (work / "knowledge/regression_patterns.md", "退步经验", "避免重复已证实的问题"),
-        (work / "knowledge/tech_lead_pitfalls.md", "争议裁定", "检查历史误判和正确做法"),
-        (work / "develop", "历轮融合方案选择依据与自测", "区分实现选择、自测和正式评测"),
+        (work / "task", "Operator requirements, cases and golden", "Verify interfaces, precision and coverage"),
+        (work / "ANALYSIS.md", "Stage1 requirements analysis", "Verify implementation constraints"),
+        (work / "device_info.json", "Current hardware", "Verify core counts, memory capacity and the programming model"),
+        (work / "impl", "This round's actual implementation", "Compare the entry point, tiling and dataflow"),
+        (work / "fusion", "Stage1.5 initial schemes and probabilities", "Probabilities are priors; judge together with current measurements"),
+        (work / "selection", "Best implementation, code binding, window and case trends", "Verify that snapshot metrics match the implementation"),
+        (work / "knowledge/history.json", "Complete cross-round ledger", "Compare attempted directions and results"),
+        (work / "knowledge/proven_patterns.md", "Success experience", "Verify applicability conditions"),
+        (work / "knowledge/regression_patterns.md", "Regression experience", "Avoid repeating proven problems"),
+        (work / "knowledge/tech_lead_pitfalls.md", "Dispute adjudications", "Check historical misjudgments and correct practices"),
+        (work / "develop", "Cross-round fusion selection rationale and self-tests", "Distinguish implementation choices, self-tests and formal evaluations"),
     ]
-    for key, purpose in (("build", "本轮编译日志"), ("eval", "精度、性能及原始 profiling"),
-                         ("profile", "Stage7 瓶颈结论"), ("search", "Stage8 搜索与建议")):
-        items.append((Path(iter_dirs[key]), purpose, "先读结论，再按 case 回查原始证据"))
+    for key, purpose in (("build", "This round's build log"), ("eval", "Precision, performance and raw profiling"),
+                         ("profile", "Stage7 bottleneck conclusions"), ("search", "Stage8 search and suggestions")):
+        items.append((Path(iter_dirs[key]), purpose, "Read the conclusions first, then check raw evidence per case"))
     return [{"path": str(path), "purpose": purpose, "read_hint": hint,
              "source_description": file_hint(work_dir, path, purpose, hint).strip()}
             for path, purpose, hint in items]
@@ -34,62 +34,62 @@ def evidence_sources(work_dir, iter_dirs):
 
 def validate_question(output, request_id):
     if not isinstance(output, dict) or output.get("request_id") != request_id:
-        raise ValueError("咨询输出必须匹配本次 request_id")
+        raise ValueError("the consultation output must match this request_id")
     for key in ("question", "difficulty", "current_scheme", "attempts", "evidence", "recommendation_reason"):
         if not isinstance(output.get(key), str) or not output[key].strip():
-            raise ValueError(f"咨询缺少 {key}")
+            raise ValueError(f"the consultation is missing {key}")
     options = output.get("options")
     if not isinstance(options, list) or not 2 <= len(options) <= 3:
-        raise ValueError("咨询必须提供 2～3 个实际选项")
+        raise ValueError("the consultation must provide 2-3 concrete options")
     ids = set()
     for option in options:
         if not isinstance(option, dict):
-            raise ValueError("咨询选项必须为对象")
+            raise ValueError("consultation options must be objects")
         for key in ("id", "title", "benefit", "cost", "risk"):
             if not isinstance(option.get(key), str) or not option[key].strip():
-                raise ValueError(f"咨询选项缺少 {key}")
+                raise ValueError(f"a consultation option is missing {key}")
         if option["id"] in ids:
-            raise ValueError("咨询选项编号不能重复")
+            raise ValueError("consultation option IDs must be unique")
         ids.add(option["id"])
     if output.get("recommended_option") not in ids:
-        raise ValueError("推荐选项必须出现在选项列表中")
+        raise ValueError("the recommended option must appear in the option list")
 
 
 def render_question(output, request, selection_status, work_dir):
     validate_question(output, request["request_id"])
-    lines = ["# Stage9 请求人工判断", "", output["question"], "",
-             f"当前方案：{output['current_scheme']}", f"难点：{output['difficulty']}",
-             f"已尝试：{output['attempts']}", "", f"依据：{output['evidence']}"]
+    lines = ["# Stage9 requests human judgment", "", output["question"], "",
+             f"Current scheme: {output['current_scheme']}", f"Difficulty: {output['difficulty']}",
+             f"Already tried: {output['attempts']}", "", f"Evidence: {output['evidence']}"]
     best = selection_status.get("best") or {}
-    lines += ["", f"程序记录的停滞触发轮次：{request.get('trigger_iterations', [])}",
-              f"最佳 avg_speedup：{best.get('avg_speedup', '暂无')}；HAP：{(best.get('hap') or {}).get('performance_score', '暂无')}",
-              f"窗口：{json.dumps(selection_status.get('window', {}), ensure_ascii=False)}", ""]
+    lines += ["", f"Stagnation trigger rounds recorded by the program: {request.get('trigger_iterations', [])}",
+              f"Best avg_speedup: {best.get('avg_speedup', 'n/a')}; HAP: {(best.get('hap') or {}).get('performance_score', 'n/a')}",
+              f"Window: {json.dumps(selection_status.get('window', {}), ensure_ascii=False)}", ""]
     for option in output["options"]:
-        lines += [f"- {option['id']}：{option['title']}。收益：{option['benefit']}；代价：{option['cost']}；风险：{option['risk']}。"]
-    lines += ["", f"推荐 {output['recommended_option']}：{output['recommendation_reason']}", "",
-              "请通过 tools/human_review.py 向此工作目录提交选项或意见。也可以提出其他方向；纯提问使用 --kind question。",
-              "通知后等待 2 分钟；回复“请等待”仅在原截止时间上加 10 分钟。超时按推荐方向继续，不能视为人工同意。", ""]
+        lines += [f"- {option['id']}: {option['title']}. Benefit: {option['benefit']}; cost: {option['cost']}; risk: {option['risk']}."]
+    lines += ["", f"Recommended {output['recommended_option']}: {output['recommendation_reason']}", "",
+              "Submit an option or feedback to this work directory via tools/human_review.py. Other directions may be proposed; use --kind question for a pure question.",
+              "After notification wait 2 minutes; replying \"please wait\" adds 10 minutes to the original deadline only. On timeout continue per the recommended direction; it must not be treated as human consent.", ""]
     manifest = request.get("evidence_manifest_path")
     if manifest:
-        lines.append(file_hint(work_dir, manifest, "咨询时全部证据的版本清单", "按用途和读法找快照；缺失材料有明确记录"))
+        lines.append(file_hint(work_dir, manifest, "Version manifest of all evidence at consultation time", "Find snapshots by purpose and reading hint; missing material is clearly recorded"))
     return "\n".join(lines) + "\n"
 
 
 def human_prompt(work_dir, messages, bundle_path=None, *, ending_reason=None):
     if not messages and not bundle_path:
         return ""
-    text = "\n=== 人类意见（逐条处理，实质方向为 P0） ===\n"
+    text = "\n=== Human feedback (handle item by item; substantive directions are P0) ===\n"
     if bundle_path:
-        text += file_hint(work_dir, bundle_path, "完整人工反馈包与咨询时证据", "先读原问题、全部选项和全部原话，再核对快照版本；超时不代表人工同意")
+        text += file_hint(work_dir, bundle_path, "Full human feedback bundle and consultation-time evidence", "Read the original question, all options and all verbatim messages first, then verify snapshot versions; timeout does not imply human consent")
     text += json.dumps(messages, ensure_ascii=False, indent=2) + "\n"
     text += (
-        "human_responses 必须逐条输出 {message_id, kind, answer}；kind 沿用提交类型 direction/question/wait。"
-        "实质方向不能改成提问；与正确性或硬件冲突时 kind=conflict，解释原因并增加 alternative。"
-        "每条 direction/conflict 必须有 suggest_next 的 P0，source=human，human_message_id 对应该消息编号；"
-        "action 明确写 P0（人工建议）的目标或可行替代。纯提问先回答，wait 不作为方向。"
-        "不得将超时推荐伪装为人工意见。\n")
+        "human_responses must output {message_id, kind, answer} for every message; kind reuses the submitted type direction/question/wait."
+        "A substantive direction must not become a question; when it conflicts with correctness or hardware use kind=conflict, explain why and add alternative."
+        "Every direction/conflict must have a P0 in suggest_next with source=human and human_message_id matching that message's number;"
+        "action must state the goal or a feasible alternative of the P0 (human suggestion) explicitly. Answer pure questions first; wait is not a direction."
+        "Do not disguise a timeout recommendation as human feedback.\n")
     if ending_reason:
-        text += f"程序已经决定退出：{ending_reason}。意见仍需处理并保留人工 P0，但不会再执行 Stage3；解释未执行原因，不能突破退出条件。\n"
+        text += f"The program has decided to exit: {ending_reason}. Feedback still must be handled and human P0s preserved, but Stage3 will not run again; explain why anything was not executed and never break the exit conditions.\n"
     return text
 
 
@@ -97,10 +97,10 @@ def development_human_prompt(work_dir, messages, output_path):
     if not messages:
         return ""
     return (
-        "\n=== 本次人工 P0 交付 ===\n" + json.dumps(messages, ensure_ascii=False, indent=2)
-        + "\n遵守 history 中 Stage9 对应人工 P0；在《融合方案选择决策依据.md》中按意见编号说明实际落实、修改文件或无法落实原因。"
-        + file_hint(work_dir, output_path, "本次人工意见执行回执（待生成）",
-                    "写 JSON 列表，每项 message_id、status（implemented 或 not_implemented）、details（具体改动或原因）。自测通过不能替代正式性能验证")
+        "\n=== This round's human P0 delivery ===\n" + json.dumps(messages, ensure_ascii=False, indent=2)
+        + "\nFollow the corresponding human P0 from Stage9 in history; in the fusion scheme selection rationale document, explain by feedback ID what was actually implemented, which files were modified, or why it could not be implemented."
+        + file_hint(work_dir, output_path, "Execution receipt for this round's human feedback (to be generated)",
+                    "Write a JSON list with each item's message_id, status (implemented or not_implemented) and details (concrete changes or reasons). Passing self-tests cannot substitute for formal performance verification")
     )
 
 
@@ -108,14 +108,14 @@ def validate_execution_receipt(path, messages):
     rows = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     expected = {message["id"] for message in messages}
     if not isinstance(rows, list):
-        raise ValueError("人工执行回执必须为 JSON 列表")
+        raise ValueError("the human execution receipt must be a JSON list")
     seen = set()
     for row in rows:
         if (not isinstance(row, dict) or row.get("message_id") not in expected
                 or row["message_id"] in seen or row.get("status") not in {"implemented", "not_implemented"}
                 or not isinstance(row.get("details"), str) or not row["details"].strip()):
-            raise ValueError("人工执行回执缺少有效编号、状态或具体落实依据")
+            raise ValueError("the human execution receipt lacks a valid ID, status or concrete implementation rationale")
         seen.add(row["message_id"])
     if seen != expected:
-        raise ValueError("人工执行回执必须覆盖本次全部意见")
+        raise ValueError("the human execution receipt must cover every piece of this round\'s feedback")
     return rows

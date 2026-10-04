@@ -94,18 +94,18 @@ def _check_translated_text(original, translated):
         raw_orig = sorted(_RAW_DIGITS.findall(original))
         raw_trans = sorted(_RAW_DIGITS.findall(translated))
         if raw_orig != raw_trans:
-            log.warning("[Jev 翻译] 数值校验差异（如 '1'→'one'），降级为警告: "
+            log.warning("[Jev translation] Numeric validation difference (e.g. '1'→'one'), downgraded to a warning: "
                         "orig=%s, trans=%s", dict(orig_nums - trans_nums),
                         dict(trans_nums - orig_nums))
         else:
-            log.debug("[Jev 翻译] 数字格式微调（如 Stage1.5→Stage 1.5），原始数字序列一致，放行")
+            log.debug("[Jev translation] Minor number formatting change (e.g. Stage1.5→Stage 1.5); raw digit sequence identical, allowed")
     original_ids, translated_ids = _technical_ids(original), _technical_ids(translated)
     # A Chinese technical term can legitimately become a new English acronym.
     # Existing identifiers must still survive unchanged with their multiplicity.
     missing = {token for token, count in original_ids.items()
                if translated_ids[token] != count}
     if missing:
-        log.warning("[Jev 翻译] 技术标识符差异，降级为警告: missing=%s", missing)
+        log.warning("[Jev translation] Technical identifier difference, downgraded to a warning: missing=%s", missing)
 
 
 def _collect_fields(value, fields, path=(), identity=False):
@@ -218,7 +218,7 @@ def prepare_english_payload(payload, run_dir, *, cli, timeout=240):
                 if not cli or not str(cli).strip():
                     raise ValueError("An existing Kerminal CLI is required to translate Jev inputs.")
                 text_fields = {name: text for name, text in fields.values()}
-                log.debug("[Jev 翻译] 开始翻译: fields=%d, artifacts=%s",
+                log.debug("[Jev translation] Starting translation: fields=%d, artifacts=%s",
                           len(text_fields), directory)
                 translations = kerminal_rpc.translate_fields(cli, text_fields, directory / "translation", timeout=timeout)
                 if not isinstance(translations, dict) or translations.keys() != text_fields.keys():
@@ -233,11 +233,11 @@ def prepare_english_payload(payload, run_dir, *, cli, timeout=240):
         _write_json(output_path, result)
         _write_json(manifest_path, manifest)
         published = True
-        log.debug("[Jev 翻译] 英文材料已校验并保存: fields=%d, output=%s",
+        log.debug("[Jev translation] English material validated and saved: fields=%d, output=%s",
                   len(fields), output_path)
         return result
     except Exception as exc:
-        log.error("[Jev 翻译] 英文材料准备失败: error_type=%s, artifacts=%s",
+        log.error("[Jev translation] English material preparation failed: error_type=%s, artifacts=%s",
                   type(exc).__name__, directory)
         raise
     finally:

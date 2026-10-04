@@ -1,4 +1,4 @@
-"""Bind a developer's fusion choice and self-tests to the evaluated source tree.
+﻿"""Bind a developer's fusion choice and self-tests to the evaluated source tree.
 
 This module records evidence, never performance winners or routing decisions.
 Missing or stale evidence is ineligible, without interrupting the existing
@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 SCHEMA_VERSION = 1
-DECISION_FILE = "融合方案选择决策依据.md"
+DECISION_FILE = "fusion_scheme_rationale.md"
 _IGNORED_DIRS = {".git", "__pycache__", "build", "dist"}
 log = logging.getLogger("triton-ascend-workflow")
 
@@ -293,10 +293,10 @@ def finalize_development(work_dir, develop_dir, stage, agent_ok=True, previous_r
         result = _invalid(exc)
     _write_binding(work, develop, stage, result)
     if result["eligible"]:
-        log.debug("融合证据：Stage%s 已绑定本轮方案及自测，目录=%s，代码 SHA256=%s",
+        log.debug("fusion evidence: Stage%s bound this round\'s scheme and self-tests, directory=%s, code SHA256=%s",
                   stage, develop, result["impl_sha256"])
     else:
-        log.debug("融合证据：Stage%s 尚不具备最佳实现入库资格，目录=%s，原因=%s",
+        log.debug("fusion evidence: Stage%s is not yet eligible for the best implementation library, directory=%s, reason=%s",
                   stage, develop, result["reason"])
     return result
 
@@ -435,8 +435,8 @@ def restore_imported_evidence(work_dir, manifest):
         result = {**_invalid(checked["reason"]), "imported_context": {**context, "restored": False}}
         _write_binding(work, develop, stage, result)
     log.log(logging.INFO if result["eligible"] else logging.WARNING,
-            "[应急导入证据] %s；来源开发目录=%s；新开发目录=%s；代码与自测资格=%s；原因=%s",
-            "已恢复对应代码的开发证据" if result["eligible"] else "仅保留开发材料供参考",
+            "[emergency import evidence] %s; source development directory=%s; new development directory=%s; code and self-test eligibility=%s; reason=%s",
+            "restored the development evidence for the corresponding code" if result["eligible"] else "kept the development material for reference only",
             context["source_develop_dir"], develop, result["eligible"], result["reason"])
     return result
 
@@ -453,26 +453,26 @@ def _imported_evidence_prompt(work_dir, result):
         return ""
     if not isinstance(context, dict):
         return ""
-    text = ("\n\n## 应急导入的开发材料\n"
-            f"来源实现：{context.get('source_impl_dir', '')}；"
-            f"来源开发目录：{context.get('source_develop_dir', '')}。\n"
-            "这是新 work，未继承旧评测、最佳版本、历史账本或人工意见。\n")
+    text = ("\n\n## Emergency-imported development material\n"
+            f"Source implementation: {context.get('source_impl_dir', '')}; "
+            f"source development directory: {context.get('source_develop_dir', '')}.\n"
+            "This is a new work directory; old evaluations, best versions, the history ledger and human feedback were not inherited.\n")
     if result.get("eligible"):
-        text += "对应代码与原开发证据已核对一致；本 work 仍须重新编译、精度和性能评测后才能产生最佳记录。\n"
+        text += "The corresponding code and original development evidence were verified as consistent; this work must still re-run build, precision and performance evaluation before a best record can be produced.\n"
     else:
-        text += ("原自测结果只作历史参考，不能当作当前代码已通过；本轮仍可先评测指定实现。"
-                 "Stage9 应安排 Stage3 核对当前融合方案并实际补测，证据齐全后重新评测；"
-                 "补齐前的性能结果不进入最佳记录和停滞窗口。\n")
+        text += ("The original self-test results are historical reference only and must not be treated as the current code passing; this round can still evaluate the specified implementation first."
+                 "Stage9 should arrange for Stage3 to verify the current fusion scheme and actually run the missing tests, then re-evaluate once evidence is complete; "
+                 "performance results before that are excluded from the best record and stagnation window.\n")
     if _text(context.get("optimize_hint")):
-        text += ("启动时给出的后续优化方向（首轮先实测，不是已批准的 P0；"
-                 "Stage9 应结合本轮证据分析后再形成具体建议）：\n"
+        text += ("Follow-up optimization direction given at startup (measure first in the first round; it is not an approved P0; "
+                 "Stage9 should form concrete suggestions after analyzing this round's evidence):\n"
                  + context["optimize_hint"] + "\n")
     descriptions = {
-        "design_rationale.md": ("导入实现的设计思路", "理解算法和数据流；与当前代码核对，不假定仍完全适用"),
-        DECISION_FILE: ("导入实现的融合选择依据", "看融合选择及理由；资格失效时仅作历史参考"),
-        "fusion_library.json": ("导入开发轮次的融合方案库", "看实际 selection 与初始 Jev 概率，勿与初始候选库混淆"),
-        "self_test_report.md": ("导入开发轮次的自测报告", "看原测试范围；是否支持当前代码以程序绑定校验为准"),
-        "self_test_result.json": ("导入开发轮次的自测结果", "核对实际执行与连续调用记录；不得把历史通过改写成新通过"),
+        "design_rationale.md": ("Design rationale of the imported implementation", "Understand the algorithm and dataflow; compare with the current code and do not assume it still fully applies"),
+        DECISION_FILE: ("Fusion selection rationale of the imported implementation", "Look at the fusion selection and reasons; when eligibility has lapsed it is historical reference only"),
+        "fusion_library.json": ("Fusion scheme library of the imported development round", "Look at the actual selection and initial Jev probabilities; do not confuse it with the initial candidate library"),
+        "self_test_report.md": ("Self-test report of the imported development round", "Look at the original test scope; whether it supports the current code is decided by program binding verification"),
+        "self_test_result.json": ("Self-test results of the imported development round", "Verify the actual execution and repeated-call records; historical passing must not be rewritten as new passing"),
     }
     for filename, description in descriptions.items():
         path = work / "develop/iter0" / filename
@@ -480,8 +480,8 @@ def _imported_evidence_prompt(work_dir, result):
             text += file_hint(work, path, *description)
     manifest = work / "init_impl_manifest.json"
     if manifest.is_file():
-        text += file_hint(work, manifest, "本次导入来源与逐文件校验清单",
-                          "核对源开发轮次、复制范围及源/目标校验值；不是评测历史")
+        text += file_hint(work, manifest, "Source and per-file verification manifest of this import",
+                          "Verify the source development round, copy scope and source/target checksums; this is not evaluation history")
     return text
 
 
@@ -492,47 +492,47 @@ def development_prompt(work_dir, develop_dir, stage):
     rationale = "design_rationale.md" if stage == 2 else DECISION_FILE
     legacy = _legacy_without_initial(work)
     initial_hint = (
-        "这是尚未接入 Stage1.5 的旧任务：不存在 fusion 目录和 fusion_requirements.en.json，"
-        "沿用原路由，不补调 Jev。根据当前实现和证据建立本轮 candidates，所有 probability 必须为 null。\n"
-        if legacy else file_hint(work, work / "fusion/fusion_library.json", "只读初始 Jev 融合候选库",
-                                 "查看 candidates 中的方法及 probability，原方法和概率必须保留")
+        "This is a legacy task not yet integrated with Stage1.5: there is no fusion directory or fusion_requirements.en.json; "
+        "keep the original routing and do not call Jev. Build this round's candidates from the current implementation and evidence; every probability must be null.\n"
+        if legacy else file_hint(work, work / "fusion/fusion_library.json", "Read-only initial Jev fusion candidate library",
+                                 "Look at the methods and probabilities in candidates; the original methods and probabilities must be preserved")
     )
-    candidate_hint = ("candidates 记录未评分的方案，所有 probability 必须为 null；"
-                      if legacy else "candidates 保留初始库的全部候选、method 和原 Jev probability；")
+    candidate_hint = ("candidates record unscored schemes; every probability must be null; "
+                      if legacy else "candidates keep the initial library's complete candidates, methods and original Jev probabilities; ")
     example = {"schema_version": 1, "provided_cases": {
         "executed": True, "passed": True, "total": 1, "passed_cases": 1, "evidence_path": "self_test.log"},
         "continuous_calls": {"executed": True, "passed": True, "same_shape": True, "call_count": 2,
             "reference_checked_each_call": True, "evidence_path": "self_test.log", "changes": {
                 "inputs": {"applicable": True, "changed": True, "passed": True},
-                "weights": {"applicable": False, "reason": "仅当接口确无该参数时填写，并在日志提供证据"},
-                "bias": {"applicable": False, "reason": "仅当接口确无该参数时填写，并在日志提供证据"}}}}
+                "weights": {"applicable": False, "reason": "fill in only when the interface truly has no such parameter, and provide evidence in the log"},
+                "bias": {"applicable": False, "reason": "fill in only when the interface truly has no such parameter, and provide evidence in the log"}}}}
     return (
-        f"\n\n## 本轮融合选择与自测证据（Stage{stage}）\n"
+        f"\n\n## This round's fusion selection and self-test evidence (Stage{stage})\n"
         + initial_hint +
-        f"本轮输出目录：{develop}。输出 fusion_library.json、{rationale}、self_test_report.md、"
-        "self_test_result.json 和实际测试日志。方案选择依据与测试结果分开写。\n"
-        + file_hint(work, develop / "fusion_library.json", "本轮实际融合选择与实现方案",
-                    "填写 selection 的 method_ids、implementation_plan 和选择理由，区分初始候选与新增方法")
-        + file_hint(work, develop / rationale, "本轮融合方案选择决策依据",
-                    "说明选什么、为什么、影响哪些 case；分析节点据此检查方案，不以自测报告代替")
-        + file_hint(work, develop / "self_test_report.md", "本轮自测过程与结果说明",
-                    "分别写给定 case 和同 shape 连续调用的执行结果，并指向实际测试日志")
-        + file_hint(work, develop / "self_test_result.json", "程序校验本轮自测资格的结构化结果",
-                    "按下方结构填写 provided_cases、continuous_calls 和 evidence_path，未执行不能写通过")
-        + file_hint(work, develop / "self_test.log", "实际自测原始日志的示例位置",
-                    "保存真实执行输出；文件名可不同，但 self_test_result.json 的 evidence_path 必须指向真实日志")
+        f"This round's output directory: {develop}. Output fusion_library.json, {rationale}, self_test_report.md, "
+        "self_test_result.json and the actual test logs. Write the scheme selection rationale separately from the test results.\n"
+        + file_hint(work, develop / "fusion_library.json", "This round's actual fusion selection and implementation scheme",
+                    "Fill in selection's method_ids, implementation_plan and selection reasons; distinguish initial candidates from newly added methods")
+        + file_hint(work, develop / rationale, "This round's fusion scheme selection rationale",
+                    "Explain what was chosen, why and which cases it affects; the analysis node checks the scheme against this, and self-test reports are not a substitute")
+        + file_hint(work, develop / "self_test_report.md", "This round's self-test process and results",
+                    "Describe the execution results for the given cases and same-shape repeated calls separately, pointing at the actual test logs")
+        + file_hint(work, develop / "self_test_result.json", "Structured result the program uses to validate this round's self-test eligibility",
+                    "Fill in provided_cases, continuous_calls and evidence_path following the structure below; unexecuted tests must not be marked as passing")
+        + file_hint(work, develop / "self_test.log", "Example location of the raw self-test log",
+                    "Save the real execution output; the filename may differ, but self_test_result.json's evidence_path must point at the real log")
         +
-        "本轮 fusion_library.json 格式：schema_version=1；" + candidate_hint +
-        "可在 attempts 记录本轮尝试，追加新方法时 probability 必须为 null，不能自行评分。selection 必须含"
-        " method_ids（实际选中候选 ID 数组，可组合）、implementation_plan（实现方案文字）、reason（选择理由）、"
-        "target_cases、actual_changes、expected_benefits（后三项为非空文字数组）。说明未选最高概率或保留旧方案的原因。\n"
-        "先完成代码，再执行所有给定 case；同 shape 连续调用更换输入、权重、偏置等适用参数，每次与参考实现"
-        "比较，确认没有复用旧值。参数不适用必须解释并给日志证据，已有 case 通过不能替代连续调用。"
-        "测试后改代码必须重测。未运行或失败如实写 false，不得照抄示例 true。\n"
-        "同一轮恢复或重跑时，重新产出本轮选择、依据、自测结果及真实日志；程序会拒绝未更新的旧文件。\n"
-        "self_test_result.json 结构示例（数量和结果必须替换为实测；evidence_path 可为本目录相对日志路径）：\n"
+        "This round's fusion_library.json format: schema_version=1; " + candidate_hint +
+        "This round's attempts may be recorded in attempts; when appending new methods the probability must be null and you must not score them yourself. selection must contain "
+        "method_ids (array of actually selected candidate IDs, combinable), implementation_plan (implementation scheme text), reason (selection rationale), "
+        "target_cases, actual_changes, expected_benefits (the last three are nonempty arrays of text). Explain why the highest probability was not chosen or why an old scheme was kept.\n"
+        "Finish the code first, then run every given case; for same-shape repeated calls change applicable parameters such as inputs, weights and bias, comparing each call against the reference implementation "
+        "to confirm no stale values are reused. Inapplicable parameters must be explained with log evidence; already-passing cases cannot substitute for repeated calls."
+        "If code changes after testing, retest. Write false honestly for unexecuted or failed items; do not copy the example's true.\n"
+        "When resuming or rerunning the same round, regenerate this round's selection, rationale, self-test results and real logs; the program rejects stale unupdated files.\n"
+        "self_test_result.json structure example (counts and results must be replaced with measured values; evidence_path may be a log path relative to this directory):\n"
         + json.dumps(example, ensure_ascii=False, indent=2) + "\n"
-        "程序在返回后绑定代码及文档哈希；自测或记录不完整的实现仍走原编译/精度处理流程，但不能进入最佳实现库。\n"
+        "The program binds code and document hashes after the agent returns; an implementation with incomplete self-tests or records still follows the original build/precision flow but cannot enter the best implementation library.\n"
     )
 
 
@@ -542,22 +542,22 @@ def format_evidence_for_prompt(work_dir):
     result = load_evidence(work_dir)
     imported_hint = _imported_evidence_prompt(work_dir, result)
     if not result.get("impl_sha256") or not result.get("fusion_scheme"):
-        return imported_hint + f"\n\n## 当前实现的融合选择证据\n不可用于最佳实现入库：{result['reason']}。不得把旧依据/旧自测挂到当前代码；需要 Stage3 更新并重测。\n"
+        return imported_hint + f"\n\n## Fusion selection evidence for the current implementation\nNot eligible for the best implementation library: {result['reason']}. Do not attach old rationale/old self-tests to the current code; Stage3 must update and retest.\n"
     paths = result["evidence_paths"]
     rationale = Path(paths["decision_rationale"]).read_text(encoding="utf-8-sig")
     descriptions = {
-        "decision_rationale": ("当前代码的融合选择决策依据", "先看选定方案、未选其他方案的原因及目标 case，再与实测核对"),
-        "fusion_library": ("当前轮实际融合选择与方案库", "看 selection 和新增方法；原始 Jev probability 只是先验参考"),
-        "self_test_report": ("当前代码的自测报告", "看给定 case 与连续调用是否实际执行，区分失败、未执行和通过"),
-        "self_test_result": ("程序校验使用的自测 JSON", "看 provided_cases、continuous_calls 的通过状态及 evidence_path"),
-        "selftest_log_provided": ("给定 case 的原始自测日志", "核对实际命令、case 数量及结果是否支持自测报告"),
-        "selftest_log_continuous": ("连续调用的原始自测日志", "核对相同 shape 更换参数后逐次对照参考实现的结果"),
+        "decision_rationale": ("Fusion selection rationale for the current code", "Look first at the chosen scheme, why others were not chosen and the target cases, then verify against measurements"),
+        "fusion_library": ("This round's actual fusion selection and scheme library", "Look at selection and newly added methods; the original Jev probability is only a prior reference"),
+        "self_test_report": ("Self-test report for the current code", "Check whether the given cases and repeated calls actually ran; distinguish failed, unexecuted and passed"),
+        "self_test_result": ("Self-test JSON used by the program's validation", "Look at provided_cases and continuous_calls pass statuses and evidence_path"),
+        "selftest_log_provided": ("Raw self-test log for the given cases", "Verify whether the actual commands, case counts and results support the self-test report"),
+        "selftest_log_continuous": ("Raw self-test log for repeated calls", "Verify the per-call results against the reference implementation for the same shape with changed parameters"),
     }
     hints = "".join(file_hint(work_dir, path, *descriptions.get(
-        key, ("当前实现的补充证据", "与融合选择及自测结果交叉核对"))) for key, path in paths.items())
-    return (imported_hint + "\n\n## 与当前代码绑定的融合选择依据\n"
-            f"实现 SHA256：{result['impl_sha256']}\n"
+        key, ("Additional evidence for the current implementation", "Cross-check against the fusion selection and self-test results"))) for key, path in paths.items())
+    return (imported_hint + "\n\n## Fusion selection rationale bound to the current code\n"
+            f"Implementation SHA256: {result['impl_sha256']}\n"
             + hints +
-            f"最佳实现入库资格：{result['eligible']}；{result['reason']}\n"
-            "本轮库与只读初始 Jev 库区分；真实评测优先于初始概率。\n"
+            f"Best implementation library eligibility: {result['eligible']}; {result['reason']}\n"
+            "This round's library is distinct from the read-only initial Jev library; real evaluation takes priority over initial probabilities.\n"
             + json.dumps(result["fusion_scheme"], ensure_ascii=False, indent=2) + "\n\n" + rationale + "\n")

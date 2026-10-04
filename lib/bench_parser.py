@@ -1,6 +1,7 @@
 """
-评测结果解析 — 读 cann-bench 产出的 JSON 报告，提取路由判断所需字段。
-支持精度评测和性能评测的自动解析。
+Evaluation result parsing — reads the JSON reports produced by cann-bench and extracts
+the fields needed for routing decisions. Supports automatic parsing of both precision
+and performance evaluations.
 """
 
 import json
@@ -17,23 +18,23 @@ from .profiler_archive import case_kernel_csv
 
 
 def parse_precision_result(path: str) -> Dict[str, Any]:
-    """读 precision_result.json，返回精度判定结果。path 为完整文件路径。"""
+    """Read precision_result.json and return the precision verdict. path is the full file path."""
     if not os.path.exists(path):
-        return {"precision_overall": False, "_error": f"文件不存在: {path}"}
+        return {"precision_overall": False, "_error": f"file does not exist: {path}"}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def parse_perf_result(path: str) -> Dict[str, Any]:
-    """读 perf_result.json，返回性能判定结果。path 为完整文件路径。"""
+    """Read perf_result.json and return the performance verdict. path is the full file path."""
     if not os.path.exists(path):
-        return {"perf_pass": False, "_error": f"文件不存在: {path}"}
+        return {"perf_pass": False, "_error": f"file does not exist: {path}"}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def check_build_success(path: str) -> bool:
-    """读 build.log，检查是否含 STATUS: SUCCESS。path 为完整文件路径。"""
+    """Read build.log and check whether it contains STATUS: SUCCESS. path is the full file path."""
     if not os.path.exists(path):
         return False
     with open(path, "r", encoding="utf-8") as f:
@@ -52,40 +53,40 @@ def analyze_kernel_csv_for_anticheat(perf_result: Dict[str, Any], max_cases: int
     from collections import Counter
     cases = perf_result.get("worst_6_cases", [])
     if not cases:
-        return "(无 worst_6_cases 数据)"
+        return "(no worst_6_cases data)"
     lines = []
     for index, case in enumerate(cases[:max_cases]):
         path = case.get("kernel_csv", "")
         case_id = case.get("case_id", f"case_{index}")
         if not path or not os.path.exists(path):
-            lines.append(f"- {case_id}: kernel_csv 不存在")
+            lines.append(f"- {case_id}: kernel_csv does not exist")
             continue
         try:
             with open(path, "r", encoding="utf-8-sig", newline="") as stream:
                 names = Counter((row.get("Name") or "").strip() for row in csv.DictReader(stream))
             names.pop("", None)
-            lines.append(f"- {case_id}: 共 {sum(names.values())} 条 kernel 事件；CSV={path}")
+            lines.append(f"- {case_id}: {sum(names.values())} kernel events in total; CSV={path}")
             if names:
                 shown = ", ".join(f"{name} ×{count}" for name, count in names.most_common(5))
-                lines.append(f"  采样名称及次数（含工具/辅助事件，不能据此认定来源）: {shown}")
+                lines.append(f"  Sampled names and counts (including tool/auxiliary events; this alone does not establish origin): {shown}")
             else:
-                lines.append("  未读到非空 kernel 名称；核对采集日志与原始报告。")
+                lines.append("  No nonempty kernel names were read; check the collection log against the raw report.")
         except Exception as exc:
-            lines.append(f"- {case_id}: csv 解析失败 ({exc})")
-    lines.append("名称和事件数量不能证明自定义 kernel、作弊或融合成功；请结合原报告错误码、"
-                 "实现代码、@triton.jit 和 kernel[grid](...) 实际调用核对。")
+            lines.append(f"- {case_id}: csv parsing failed ({exc})")
+    lines.append("Names and event counts cannot prove a custom kernel, cheating or successful fusion; verify against the original report's error code, "
+                 "the implementation code, @triton.jit and actual kernel[grid](...) calls.")
     return "\n".join(lines)
 
 
 # ═══════════════════════════════════════════════════════════════
-# cann-bench 直接执行 + 报告解析
+# cann-bench direct execution + report parsing
 # ═══════════════════════════════════════════════════════════════
 
 def _find_good_ctypes_dir() -> str:
     """
-    找到一个含可用 _ctypes.so 的 lib-dynload 目录，放到 PYTHONPATH 最前面。
-    自动适配当前 Python 版本和 CPU 架构。
-    仅选取与当前解释器扩展后缀匹配的 _ctypes 模块。
+    Find a lib-dynload directory containing a usable _ctypes.so and put it first on PYTHONPATH.
+    Automatically adapts to the current Python version and CPU architecture.
+    Only a _ctypes module matching the current interpreter's extension suffix is selected.
     """
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}"
     candidates = [
@@ -117,7 +118,7 @@ def _build_eval_env(config_path=None) -> Dict[str, str]:
 
 
 def _find_latest_report(reports_dir: str, op_name: str, suffix: str = ".json", after_ts: float = 0) -> Optional[str]:
-    """在 cann-bench reports 目录找最新的评测报告。after_ts>0 时只接受比该时间戳新的文件。"""
+    """Find the latest evaluation report in the cann-bench reports directory. With after_ts>0 only files newer than that timestamp are accepted."""
     pattern = os.path.join(reports_dir, f"{op_name}_eval_*{suffix}")
     files = sorted(glob.glob(pattern), reverse=True)
     if after_ts > 0:
@@ -128,9 +129,9 @@ def _find_latest_report(reports_dir: str, op_name: str, suffix: str = ".json", a
 def run_perf_eval(task_dir: str, cannbench_src: str, device_id: int = 0,
                   log_callback=None, reports_dir=None, config_path=None) -> Tuple[bool, str, str]:
     """
-    直接执行 cann-bench 性能评测（不通过 agent）。
-    使用 kernel_details 统计单次调用的各 kernel 执行时间；耗时与评分均由工具产出。
-    返回 (success, stdout, report_json_path)
+    Execute the cann-bench performance evaluation directly (not through an agent).
+    Uses kernel_details to tally per-kernel execution time of a single call; both timing and
+    scoring come from the tool. Returns (success, stdout, report_json_path).
     """
     cmd = [
         "python3", "-m", "kernel_eval.cli", "eval",
@@ -149,27 +150,27 @@ def run_perf_eval(task_dir: str, cannbench_src: str, device_id: int = 0,
     env["PYTHONPATH"] = f"{cannbench_src}:{cannbench_src}/cann_bench_utils:{env['PYTHONPATH']}"
 
     if log_callback:
-        log_callback(f"执行性能评测: {' '.join(cmd[:6])}...")
+        log_callback(f"Running performance evaluation: {' '.join(cmd[:6])}...")
 
     import time as _time
     start_ts = _time.time()
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=cannbench_src, timeout=3600)
 
     if log_callback:
-        log_callback(f"性能评测完成，returncode={proc.returncode}")
+        log_callback(f"Performance evaluation finished, returncode={proc.returncode}")
         if proc.returncode != 0:
-            stderr_tail = proc.stderr[-500:] if proc.stderr else "(空)"
-            stdout_tail = proc.stdout[-500:] if proc.stdout else "(空)"
+            stderr_tail = proc.stderr[-500:] if proc.stderr else "(empty)"
+            stdout_tail = proc.stdout[-500:] if proc.stdout else "(empty)"
             log_callback(f"stderr: {stderr_tail}")
             log_callback(f"stdout: {stdout_tail}")
 
-    # 找评测后新产出的报告（只接受比 start_ts 新的）
+    # Find a report newly produced by the evaluation (only files newer than start_ts are accepted)
     op_name = Path(task_dir).name.lower()
     report_path = _find_latest_report(reports_dir, op_name, ".json", after_ts=start_ts)
 
     if proc.returncode != 0 and not report_path:
         if log_callback:
-            log_callback(f"评测失败(returncode={proc.returncode})且无新报告产出")
+            log_callback(f"Evaluation failed (returncode={proc.returncode}) and produced no new report")
 
     return proc.returncode == 0, proc.stdout + proc.stderr, report_path or ""
 
@@ -177,8 +178,8 @@ def run_perf_eval(task_dir: str, cannbench_src: str, device_id: int = 0,
 def run_precision_eval(task_dir: str, cannbench_src: str, device_id: int = 0,
                        log_callback=None, reports_dir=None, config_path=None) -> Tuple[bool, str, str]:
     """
-    直接执行 cann-bench 精度评测（不通过 agent）。
-    返回 (success, stdout, report_json_path)
+    Execute the cann-bench precision evaluation directly (not through an agent).
+    Returns (success, stdout, report_json_path).
     """
     cmd = [
         "python3", "-m", "kernel_eval.cli", "eval",
@@ -194,14 +195,14 @@ def run_precision_eval(task_dir: str, cannbench_src: str, device_id: int = 0,
     env["PYTHONPATH"] = f"{cannbench_src}:{cannbench_src}/cann_bench_utils:{env['PYTHONPATH']}"
 
     if log_callback:
-        log_callback(f"执行精度评测: {' '.join(cmd[:6])}...")
+        log_callback(f"Running precision evaluation: {' '.join(cmd[:6])}...")
 
     import time as _time
     start_ts = _time.time()
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=cannbench_src, timeout=3600)
 
     if log_callback:
-        log_callback(f"精度评测完成，returncode={proc.returncode}")
+        log_callback(f"Precision evaluation finished, returncode={proc.returncode}")
 
     op_name = os.path.basename(task_dir.rstrip("/"))
     reports_dir = reports_dir or os.path.join(cannbench_src, "reports")
@@ -212,25 +213,25 @@ def run_precision_eval(task_dir: str, cannbench_src: str, device_id: int = 0,
 
 def parse_cannbench_report_to_perf_result(report_path: str, source_csv_dir: str = "") -> Dict[str, Any]:
     """
-    解析 cann-bench JSON 报告，生成 perf_result.json 的内容。
+    Parse the cann-bench JSON report into the contents of perf_result.json.
     """
     if not report_path or not os.path.exists(report_path):
         return {"perf_pass": False, "overall_score": 0.0, "avg_speedup": 0.0,
-                "_error": f"报告不存在: {report_path}"}
+                "_error": f"report does not exist: {report_path}"}
 
     with open(report_path, "r", encoding="utf-8") as stream:
         d = json.load(stream)
     op = d.get("operators", [{}])[0] if d.get("operators") else {}
     cases = op.get("cases", [])
 
-    # 提取指标
+    # Extract metrics
     overall_score = op.get("score", 0.0) or 0.0
     perf_score = op.get("performance_score", 0.0) or 0.0
     avg_speedup = op.get("avg_speedup", 0.0) or 0.0
     score_error_code = op.get("score_error_code")
     score_error = op.get("score_error")
 
-    # 仅判断报告中的完整 case 集合，不重新计时或计算 speedup/HAP。
+    # Judge only the report\'s complete case set; never re-time or recompute speedup/HAP.
     def positive_finite(value):
         return (isinstance(value, (int, float)) and not isinstance(value, bool)
                 and math.isfinite(value) and value > 0)
@@ -250,7 +251,7 @@ def parse_cannbench_report_to_perf_result(report_path: str, source_csv_dir: str 
         case_num = case_id.split("_")[-1] if "_" in case_id else "?"
         kernel_csv = case_kernel_csv(source_csv_dir, case_id)
         full_cases.append({
-            **c,  # 原样保留 perf_score(HAP)、t_hw_us、op_times 等工具指标。
+            **c,  # keep tool metrics such as perf_score (HAP), t_hw_us and op_times as-is.
             "case_id": case_id,
             "case_num": case_num,
             "baseline_us": c.get("baseline_perf_us", 0),
@@ -285,11 +286,11 @@ def parse_cannbench_report_to_perf_result(report_path: str, source_csv_dir: str 
 
 def parse_cannbench_report_to_precision_result(report_path: str) -> Dict[str, Any]:
     """
-    解析 cann-bench JSON 报告，生成 precision_result.json 的内容。
+    Parse the cann-bench JSON report into the contents of precision_result.json.
     """
     if not report_path or not os.path.exists(report_path):
         return {"precision_overall": False, "total_cases": 0, "passed_cases": 0,
-                "failed_cases": 0, "_error": f"报告不存在: {report_path}"}
+                "failed_cases": 0, "_error": f"report does not exist: {report_path}"}
 
     d = json.load(open(report_path, "r", encoding="utf-8"))
     op = d.get("operators", [{}])[0] if d.get("operators") else {}

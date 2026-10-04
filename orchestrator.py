@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-Triton Ascend Operator Workflow — 确定性控制平面
+Triton Ascend Operator Workflow — deterministic control plane
 ========================================
-唯一启动入口。Python if/else + while 控制路由，stage1.5 调用 Jev 评分。
-阶段切换完全由本程序控制，agent 只执行不判断流程。
+Single launch entry point. Python if/else + while controls routing; stage1.5 calls Jev for scoring.
+Stage switching is fully controlled by this program; agents only execute and never decide workflow flow.
 
-用法:
+Usage:
     python orchestrator.py --task-dir /path/to/cannbench/task/<op>
     python orchestrator.py --task-dir /path/to/task --max-iter 20
 """
@@ -108,9 +108,9 @@ def detect_npu_device(device_id=0, config_path=None) -> dict:
                         except (KeyError, ValueError):
                             pass
                     break
-            print(f"[芯片检测] 第{attempt}次失败: {result.stderr[-300:]}", file=sys.stderr)
+            print(f"[chip detection] attempt {attempt} failed: {result.stderr[-300:]}", file=sys.stderr)
         except Exception as exc:
-            print(f"[芯片检测] 第{attempt}次异常: {exc}", file=sys.stderr)
+            print(f"[chip detection] attempt {attempt} raised: {exc}", file=sys.stderr)
         if attempt < 3:
             _time_mod.sleep(5)
     if not soc_name:
@@ -139,9 +139,9 @@ def detect_npu_device(device_id=0, config_path=None) -> dict:
             info["ai_core_num"] = int(fields["CORE_NUM"])
             info["detect_method"] = "tbe_device_query"
         else:
-            print(f"[芯片检测] tbe 查询失败: {result.stderr[-300:]}", file=sys.stderr)
+            print(f"[chip detection] tbe query failed: {result.stderr[-300:]}", file=sys.stderr)
     except Exception as exc:
-        print(f"[芯片检测] tbe 查询异常: {exc}", file=sys.stderr)
+        print(f"[chip detection] tbe query error: {exc}", file=sys.stderr)
     # Device-reported SoC is authoritative; names only label the architecture.
     # Never derive core counts or buffer capacities from a chip name.
     soc = soc_name.lower()
@@ -160,26 +160,26 @@ def format_device_info_for_prompt(device_info: dict) -> str:
     """Show the measured chip and installed Triton Ascend runtime to all stages."""
     versions = device_info.get("runtime_versions", {})
     return (
-        "🔧 当前昇腾 NPU 与 Triton Ascend 环境（所有 stage 共享）\n"
-        f"  芯片型号: {device_info['chip_model']}\n"
-        f"  SoC 版本: {device_info['soc_version']}\n"
-        f"  NPU 架构: {device_info['npu_arch']}\n"
-        f"  框架: {FRAMEWORK}；后端: {BACKEND}；运行时版本: {_json_module.dumps(versions, ensure_ascii=False)}\n"
-        f"  编程模型: {device_info.get('programming_model', PROGRAMMING_MODEL)}\n"
-        f"  后端 target: {device_info.get('driver_backend', 'unknown')}/{device_info.get('target_arch', 'unknown')}\n"
-        f"  AI Core 数: {device_info['ai_core_num']}（Cube {device_info.get('cube_core_num', '?')} + Vector {device_info.get('vector_core_num', '?')}）\n"
-        f"  UB: {device_info['ub_size_kb']} KB；L1: {device_info['l1_size_kb']} KB\n"
+        "🔧 Current Ascend NPU and Triton Ascend environment (shared by all stages)\n"
+        f"  Chip model: {device_info['chip_model']}\n"
+        f"  SoC version: {device_info['soc_version']}\n"
+        f"  NPU architecture: {device_info['npu_arch']}\n"
+        f"  Framework: {FRAMEWORK}; backend: {BACKEND}; runtime versions: {_json_module.dumps(versions, ensure_ascii=False)}\n"
+        f"  Programming model: {device_info.get('programming_model', PROGRAMMING_MODEL)}\n"
+        f"  Backend target: {device_info.get('driver_backend', 'unknown')}/{device_info.get('target_arch', 'unknown')}\n"
+        f"  AI Core count: {device_info['ai_core_num']} (Cube {device_info.get('cube_core_num', '?')} + Vector {device_info.get('vector_core_num', '?')})\n"
+        f"  UB: {device_info['ub_size_kb']} KB; L1: {device_info['l1_size_kb']} KB\n"
         f"  L0A/L0B/L0C: {device_info.get('l0a_size_kb', '?')}/{device_info.get('l0b_size_kb', '?')}/{device_info.get('l0c_size_kb', '?')} KB\n"
         f"  L2 Cache: {device_info.get('l2_size_kb', '?')} KB\n"
-        f"  Device ID: {device_info['device_id']}（现有可见设备映射中的逻辑编号）\n"
-        f"  检测方式: {device_info['detect_method']}\n"
-        "  使用 import triton、import triton.language as tl、@triton.jit 与显式 grid。\n"
-        "  BLOCK 分块、mask、stride 和矩阵计算参数须结合这些资源与本机后端支持；片上缓冲区由编译器管理。\n"
-        "  不照搬 CUDA warp、shared-memory、PTX 或特定 GPU 的异步指令假设；以已安装 triton-ascend 的 API 为准。\n"
+        f"  Device ID: {device_info['device_id']} (logical index in the currently visible device mapping)\n"
+        f"  Detection method: {device_info['detect_method']}\n"
+        "  Use import triton, import triton.language as tl, @triton.jit and an explicit grid.\n"
+        "  BLOCK tiling, mask, stride and matrix computation parameters must be chosen against these resources and local backend support; on-chip buffers are managed by the compiler.\n"
+        "  Do not copy CUDA warp, shared-memory, PTX or GPU-specific async instruction assumptions; defer to the installed triton-ascend API.\n"
         + file_hint(Path(__file__).parent, Path(__file__).parent / "knowledge/arch_programming_guide.md",
-                    "Triton Ascend 架构编程指南", "核对本机 API、分块、边界 mask 和内存访问约束",
-                    base_label="项目根目录")
-        + "  example/ 示例只用于接口与基本写法参考；分块参数仍需针对当前算子和芯片验证。\n"
+                    "Triton Ascend architecture programming guide", "Verify local API, tiling, boundary masks and memory access constraints",
+                    base_label="project root")
+        + "  example/ samples are only for interface and basic writing reference; tiling parameters still need verification against the current operator and chip.\n"
     )
 
 
@@ -204,9 +204,9 @@ def append_work_record(work_dir: str, message: str):
 
 
 def log_io(log, stage: str, inputs: list, outputs: list):
-    """打印阶段的输入/输出文件路径"""
-    log.info(f"[{stage}] 输入: {', '.join(inputs)}")
-    log.info(f"[{stage}] 预期输出: {', '.join(outputs)}")
+    """Print the stage input/output file paths"""
+    log.info(f"[{stage}] Inputs: {', '.join(inputs)}")
+    log.info(f"[{stage}] Expected outputs: {', '.join(outputs)}")
 
 
 def fusion_review_hint(status: dict, iteration: int) -> str:
@@ -216,20 +216,20 @@ def fusion_review_hint(status: dict, iteration: int) -> str:
         return ""
     window = status["window"]
     return (
-        f"【场景2停滞：重点审查融合方案】仍有 case 的 speedup < 1；"
-        f"已连续完成 y={window['required_improvements']} 次有效性能迭代（不含基线），"
-        f"窗口 iter{window['start_iteration']}→iter{window['end_iteration']}，"
-        f"历史最佳 avg_speedup {window['start_best_avg_speedup']:.6g}→"
-        f"{window['end_best_avg_speedup']:.6g}，累计有效提升 "
-        f"{window['cumulative_improvement']:.2%} < {window['threshold']:.0%}。\n"
-        "请重点比较 JSON 融合候选库及概率、当前融合选择依据、瓶颈分析、搜索结果和未达标 case 趋势，"
-        "动态决定保留、局部优化或更换方案，并在原 P0/P1/P2 建议中说明依据。"
-        "若少数慢 case 持续改善，可继续局部优化；不得仅因平均提升不足 5% 强制换方案。"
+        f"[Scenario 2 stagnation: focus on reviewing the fusion scheme] Some cases still have speedup < 1; "
+        f"y={window['required_improvements']} valid performance iterations have completed in a row (baseline excluded), "
+        f"window iter{window['start_iteration']}→iter{window['end_iteration']}, "
+        f"historical best avg_speedup {window['start_best_avg_speedup']:.6g}→"
+        f"{window['end_best_avg_speedup']:.6g}, cumulative valid improvement "
+        f"{window['cumulative_improvement']:.2%} < {window['threshold']:.0%}.\n"
+        "Focus on comparing the JSON fusion candidate library and probabilities, the current fusion selection rationale, the bottleneck analysis, search results and trends of underperforming cases; "
+        "dynamically decide to keep, partially optimize or replace the scheme, and justify it within the original P0/P1/P2 suggestions."
+        "If a few slow cases keep improving, continue partial optimization; do not force a scheme change merely because average improvement is under 5%."
     )
 
 
 def transition(state, new_stage: str, state_log, reason: str = ""):
-    """状态切换 + 写日志（含切换原因）。"""
+    """Switch state + write log (including the reason)."""
     old = state.current_stage
     state.current_stage = f"iter{state.iteration}_{new_stage}"
     state.flush()
@@ -256,7 +256,7 @@ def comparison_context(task_dir, device_info, config):
     if isinstance(toolchain, dict) and toolchain.get("verified") is True:
         roots = toolchain.get("cann_roots")
         if not isinstance(roots, dict) or not roots:
-            raise RuntimeError("CANN 工具链原已验证，但缺少可复核的安装目录；禁止继续比较性能。")
+            raise RuntimeError("The CANN toolchain was previously verified, but a re-checkable install directory is missing; further performance comparison is forbidden.")
         hardware["toolchain"] = read_cann_toolchain(roots)
 
     def source_hash(root, suffixes):
@@ -338,23 +338,23 @@ def _record_performance_selection(work_dir, iteration, perf, context, config, be
             or perf.get("comparison_context") != context
             or perf.get("comparison_context_stable") is not True):
         evidence = {**evidence, "eligible": False,
-                    "reason": "精度、自测与性能的代码版本或评测口径未一致绑定；本轮不纳入最佳记录和停滞窗口。"}
+                    "reason": "Code version or evaluation protocol of precision, self-test and performance is not consistently bound; this round is excluded from the best record and stagnation window."}
     return record_evaluation(work_dir, iteration, perf=perf, precision=precision,
                              evidence=evidence, comparison_context=context, config=config)
 
 
-# cannbot 全局约束（拼在每次 cannbot prompt 末尾）
+# cannbot global constraints (appended to the end of every cannbot prompt)
 CANNBOT_CONSTRAINT = (
-    "\n⚠️ 约束：所有临时文件、调试脚本必须放在 /tmp 下，禁止在工作目录或项目根目录创建临时文件。\n"
+    "\n⚠️ Constraint: all temporary files and debug scripts must go under /tmp; creating temporary files in the working directory or project root is forbidden.\n"
     + file_hint(Path(__file__).parent, Path(__file__).parent / "knowledge/anti_cheat_reference.md",
-                "反作弊参考", "开发完成后按实际错误处理表与自检清单检查执行路径和评测行为", base_label="项目根目录")
+                "Anti-cheating reference", "After development, check execution paths and evaluation behavior against the actual error handling table and the self-check list", base_label="project root")
 )
 
 
 def allocate_work_directory(base_dir, op_name, timestamp):
     """Reserve a new run directory atomically, even for simultaneous launches."""
     if not op_name or op_name in {".", ".."} or any(char in op_name for char in "/\\"):
-        raise ValueError("算子名称必须是单个目录名，不能包含路径分隔符")
+        raise ValueError("Operator name must be a single directory name and must not contain path separators")
     base = Path(base_dir).resolve()
     base.mkdir(parents=True, exist_ok=True)
     stem = f"{op_name}_{timestamp}"
@@ -369,30 +369,30 @@ def allocate_work_directory(base_dir, op_name, timestamp):
 
 @isolated_agent_configuration
 def main():
-    parser = argparse.ArgumentParser(description="Triton Ascend Operator Workflow 控制平面")
-    parser.add_argument("--task-dir", required=True, help="cannbench task 目录路径")
-    parser.add_argument("--op-name", default=None, help="算子名称")
-    parser.add_argument("--max-iter", type=int, default=None, help="最大迭代次数")
-    parser.add_argument("--config", default=None, help="config.yaml 路径")
-    parser.add_argument("--work-dir", default=None, help="工作目录")
-    parser.add_argument("--init-impl", default=None, help="应急导入已有实现及对应开发材料，新建 work，跳过 Stage1/1.5/2，直接从 Stage4 评测")
+    parser = argparse.ArgumentParser(description="Triton Ascend Operator Workflow control plane")
+    parser.add_argument("--task-dir", required=True, help="Path to the cannbench task directory")
+    parser.add_argument("--op-name", default=None, help="Operator name")
+    parser.add_argument("--max-iter", type=int, default=None, help="Maximum number of iterations")
+    parser.add_argument("--config", default=None, help="Path to config.yaml")
+    parser.add_argument("--work-dir", default=None, help="Working directory")
+    parser.add_argument("--init-impl", default=None, help="Emergency import of an existing implementation and its development material; creates a new work directory, skips Stage1/1.5/2, and evaluates directly from Stage4")
     hint_source = parser.add_mutually_exclusive_group()
     hint_source.add_argument("--optimize-hint", default=None,
-                             help="新任务注入 Stage1/2；应急导入时保存为后续优化参考；长文本请用 --optimize-hint-file")
+                             help="Injected into Stage1/2 for new tasks; saved as an optimization reference for emergency imports; use --optimize-hint-file for long text")
     hint_source.add_argument("--optimize-hint-file", default=None,
-                             help="完整读取 UTF-8 方向说明文件，与 --optimize-hint 互斥；应急导入仍先评测，不提前修改代码")
+                             help="Reads a UTF-8 direction file in full; mutually exclusive with --optimize-hint; emergency import still evaluates first and does not modify code in advance")
     args = parser.parse_args()
     if args.optimize_hint_file:
         try:
             args.optimize_hint = Path(args.optimize_hint_file).read_text(encoding="utf-8-sig")
         except (OSError, UnicodeError) as exc:
-            parser.error(f"--optimize-hint-file 无法读取 UTF-8 文件（{type(exc).__name__}）: {args.optimize_hint_file}")
+            parser.error(f"--optimize-hint-file cannot read UTF-8 file ({type(exc).__name__}): {args.optimize_hint_file}")
 
     if args.init_impl and args.work_dir:
-        parser.error("--init-impl 和 --work-dir 不能同时使用：前者新建应急任务，后者恢复现有任务")
+        parser.error("--init-impl and --work-dir cannot be used together: the former creates an emergency task, the latter resumes an existing one")
     if args.init_impl:
         if not Path(args.init_impl).is_dir():
-            parser.error(f"--init-impl 目录不存在: {args.init_impl}")
+            parser.error(f"--init-impl directory does not exist: {args.init_impl}")
         assert_target_implementation(args.init_impl)
 
     reset_cann_cache()
@@ -436,20 +436,20 @@ def main():
         "N5": setup_node_logger(work_dir, "N5"),
     }
     log.info("=" * 60)
-    log.info("Triton Ascend Operator Workflow 启动")
-    log.info(f"算子: {op_name} | Task: {task_dir}")
-    log.info(f"Work: {work_dir} | 最大迭代: {max_iterations}")
+    log.info("Triton Ascend Operator Workflow started")
+    log.info(f"Operator: {op_name} | Task: {task_dir}")
+    log.info(f"Work: {work_dir} | max iterations: {max_iterations}")
     if args.init_impl:
-        log.info("===== 应急导入已有实现 ===== 来源=%s；新 work=%s", args.init_impl, work_dir)
+        log.info("===== Emergency import of existing implementation ===== source=%s; new work=%s", args.init_impl, work_dir)
     elif optimize_hint:
-        log.info(f"💡 融合方向提示: {optimize_hint[:200]}...")
+        log.info(f"💡 Fusion direction hint: {optimize_hint[:200]}...")
     log.info("=" * 60)
 
     imported = (prepare_init_impl(args.init_impl, work_dir, task_dir,
                                  optimize_hint=optimize_hint, log=log)
                 if args.init_impl else load_init_impl_manifest(work_dir))
     if imported:
-        log.info("[应急导入] 来源与复制清单：%s", Path(work_dir) / "init_impl_manifest.json")
+        log.info("[emergency import] Source and copy manifest: %s", Path(work_dir) / "init_impl_manifest.json")
         if not optimize_hint:
             optimize_hint = imported.get("optimize_hint", "")
 
@@ -479,7 +479,7 @@ def main():
                     consultation_enabled=state.human_review_config["consultation_enabled"])
     state.flush()
     if any(state.human_review_config.values()):
-        log.info('[人工入口] 另一终端运行 python tools/human_review.py --work-dir "%s" --message "你的意见"；纯提问加 --kind question', work_dir)
+        log.info('[human entry] In another terminal run python tools/human_review.py --work-dir "%s" --message "your direction"; add --kind question for a pure question', work_dir)
     atexit.register(state.flush)
     signal.signal(signal.SIGTERM, lambda s, f: (state.flush(), sys.exit(1)))
     signal.signal(signal.SIGINT, lambda s, f: (state.flush(), sys.exit(1)))
@@ -488,9 +488,9 @@ def main():
     # is historical evidence, not proof that today's device is the same chip.
     device_info_path = os.path.join(work_dir, "device_info.json")
     if imported:
-        log.info("[芯片复核] 保留导入的评分硬件文件；检查当前硬件和运行环境是否匹配，不调用开发节点")
+        log.info("[chip recheck] Keeping the imported scoring hardware file; check whether current hardware and runtime match; development nodes are not invoked")
     elif os.path.exists(device_info_path):
-        log.info("[芯片复核] 断点恢复将重新核对当前芯片，旧 device_info.json 不作为本次硬件来源")
+        log.info("[chip recheck] Checkpoint resume re-verifies the current chip; the old device_info.json is not the hardware source for this run")
     hw_config = config.get("hardware", {})
     if hw_config.get("chip_model"):
         device_info = {
@@ -510,17 +510,17 @@ def main():
             "device_id": hw_config.get("device_id", 0),
             "detect_method": "config_manual",
         }
-        log.info(f"芯片信息来自 config.yaml 手动配置: {device_info['chip_model']}")
+        log.info(f"Chip info comes from manual config.yaml settings: {device_info['chip_model']}")
     else:
         device_info = detect_npu_device(device_id=hw_config.get("device_id", 0), config_path=args.config)
         device_info["device_id"] = hw_config.get("device_id", 0)
 
-    # ── 检测结果校验：关键参数必须全部获取到，否则退出 ──
+    # ── Detection validation: all key parameters must be obtained, otherwise exit ──
     missing = []
     if device_info.get("soc_version", "unknown") == "unknown":
-        missing.append("soc_version（无法识别芯片型号，torch_npu/环境变量均失败）")
+        missing.append("soc_version (chip model unrecognized; torch_npu and environment variables both failed)")
     if device_info.get("detect_method") == "none" or device_info.get("ub_size_kb", 0) == 0:
-        missing.append("UB_SIZE（tbe 查询失败，CANN Toolkit 可能未正确安装）")
+        missing.append("UB_SIZE (tbe query failed; CANN Toolkit may not be installed correctly)")
     if device_info.get("l1_size_kb", 0) == 0:
         missing.append("L1_SIZE")
     if device_info.get("ai_core_num", 0) == 0:
@@ -530,18 +530,18 @@ def main():
 
     if missing:
         log.error("=" * 60)
-        log.error("❌ NPU 芯片参数检测失败，workflow 无法启动")
-        log.error(f"缺失参数: {', '.join(missing)}")
-        log.error(f"已获取到的信息: {_json_module.dumps(device_info, ensure_ascii=False, indent=2)}")
+        log.error("❌ NPU chip parameter detection failed; the workflow cannot start")
+        log.error(f"Missing parameters: {', '.join(missing)}")
+        log.error(f"Information obtained: {_json_module.dumps(device_info, ensure_ascii=False, indent=2)}")
         log.error("")
-        log.error("排查步骤：")
-        log.error("  1. 确认 NPU 设备可用: python3 -c \"import torch,torch_npu; print(torch_npu.npu.get_device_properties(0).name)\"")
-        log.error("  2. 确认 CANN Toolkit 安装完整: python3 -c \"from tbe.common.platform import get_soc_spec; print('OK')\"")
-        log.error("  3. 或在 config.yaml 的 hardware 段手动填写全部芯片参数；仍需安装兼容的 Triton Ascend 后端")
+        log.error("Troubleshooting steps:")
+        log.error("  1. Confirm the NPU device is available: python3 -c \"import torch,torch_npu; print(torch_npu.npu.get_device_properties(0).name)\"")
+        log.error("  2. Confirm the CANN Toolkit is fully installed: python3 -c \"from tbe.common.platform import get_soc_spec; print('OK')\"")
+        log.error("  3. Or fill in all chip parameters manually in the hardware section of config.yaml; a compatible Triton Ascend backend is still required")
         log.error("=" * 60)
         sys.exit(1)
 
-    log.info(f"芯片检测通过: {device_info['chip_model']} (soc={device_info['soc_version']}, "
+    log.info(f"Chip detection passed: {device_info['chip_model']} (soc={device_info['soc_version']}, "
              f"cores={device_info['ai_core_num']}, UB={device_info['ub_size_kb']}KB, "
              f"L1={device_info['l1_size_kb']}KB, L0C={device_info.get('l0c_size_kb', '?')}KB, "
              f"method={device_info['detect_method']})")
@@ -550,8 +550,8 @@ def main():
         runtime = detect_triton_runtime(device_id=config.get("hardware", {}).get("device_id", 0),
                                         config_path=args.config)
     except (RuntimeError, ValueError, OSError) as exc:
-        log.error("===== Triton Ascend 运行环境检测失败 ===== %s", exc)
-        state_log.error("===== Triton Ascend 运行环境检测失败 ===== %s", exc)
+        log.error("===== Triton Ascend runtime environment detection failed ===== %s", exc)
+        state_log.error("===== Triton Ascend runtime environment detection failed ===== %s", exc)
         raise SystemExit(1) from exc
     device_info.update(runtime)
     device_info["device_id"] = config.get("hardware", {}).get("device_id", 0)
@@ -563,14 +563,14 @@ def main():
         validate_init_impl_inputs(work_dir, device_info, task_dir)
     else:
         atomic_write_json(device_info_path, device_info)
-    log.info("[目标框架] framework=%s；backend=%s；driver=%s；versions=%s；device_id=%s；身份文件=%s",
+    log.info("[target framework] framework=%s; backend=%s; driver=%s; versions=%s; device_id=%s; identity file=%s",
              FRAMEWORK, BACKEND, runtime["driver_backend"], runtime["runtime_versions"],
              device_info["device_id"], Path(work_dir) / "workflow_target.json")
-    log.info("[CANN 工具链] 已核对版本文件及指纹：%s", runtime.get("toolchain", {}))
+    log.info("[CANN toolchain] Verified version files and fingerprint: %s", runtime.get("toolchain", {}))
 
     DEVICE_INFO_PROMPT = (
-        file_hint(work_dir, Path(work_dir) / "device_info.json", "本次硬件参数来源",
-                  "先核对芯片、编程模型、核数及 UB/L1 容量，再判断方案和 tiling 是否可行")
+        file_hint(work_dir, Path(work_dir) / "device_info.json", "Hardware parameter source for this run",
+                  "First verify the chip, programming model, core counts and UB/L1 capacities, then judge whether the scheme and tiling are feasible")
         + format_device_info_for_prompt(device_info)
     )
     evaluation_context = comparison_context(task_dir, device_info, config)
@@ -586,23 +586,23 @@ def main():
     if imported:
         if state.current_stage == "N1_phase1" or stage_number(state.current_stage) in (1, 1.5, 2):
             evidence = restore_imported_evidence(work_dir, imported)
-            log.info("[应急导入] 开发证据：eligible=%s；原因=%s；新绑定=%s",
+            log.info("[emergency import] Development evidence: eligible=%s; reason=%s; new binding=%s",
                      evidence.get("eligible"), evidence.get("reason"),
                      Path(work_dir) / "selection/current_implementation.json")
             if not evidence.get("eligible"):
-                log.warning("[应急导入] 代码仍直接进入正式评测；开发证据未匹配时，成绩会保留，"
-                            "但不进入最佳记录和停滞窗口，后续 Stage3 需补齐证据")
+                log.warning("[emergency import] Code still goes straight into formal evaluation; when development evidence does not match, scores are kept, "
+                            "but they do not enter the best record or stagnation window, and later Stage3 must complete the evidence")
             transition(state, "ready_for_iter", state_log,
-                       reason="应急导入完成，跳过 Stage1/1.5/2；从 Stage4 编译指定实现")
-        log.info("===== 应急导入：跳过 Stage1 需求分析、Stage1.5 Jev 评分、Stage2 首版开发 =====")
-        log.info("[应急导入] 沿用已导入的融合概率与 Top N；本次状态=%s；未继承旧评测、history、最佳记录或人工意见",
+                       reason="Emergency import complete, skipping Stage1/1.5/2; compiling the specified implementation from Stage4")
+        log.info("===== Emergency import: skipping Stage1 requirements analysis, Stage1.5 Jev scoring, Stage2 first implementation =====")
+        log.info("[emergency import] Reusing imported fusion probabilities and Top N; current state=%s; old evaluations, history, best records or human feedback were not inherited",
                  state.current_stage)
 
     # ═══════════════════════════════════════════════════════════════
-    # 阶段1：需求分析（cannbot）
+    # Stage1: requirements analysis (cannbot)
     # ═══════════════════════════════════════════════════════════════
     if state.current_stage == "N1_phase1" or stage_number(state.current_stage) == 1:
-        stage = "阶段1-需求分析"
+        stage = "Stage1-requirements analysis"
         jev_config = config.get("jev", {})
         requirements_budget = fusion_requirements_byte_budget(
             device_info,
@@ -618,26 +618,26 @@ def main():
 
         hint_block = ""
         if optimize_hint:
-            hint_block = f"\n💡 融合方向提示（用户指定）：\n{optimize_hint}\n请在分析中重点关注该融合方向的可行性，给出具体的片上数据流设计建议。\n"
-        prompt = (f"工作目录：{work_dir}\n算子：{op_name}\n"
-                  + file_hint(work_dir, Path(work_dir) / "task", "只读算子需求与评测基准",
-                              "依次读 desc.md 的定义、proto.yaml 的接口、cases.yaml 的覆盖范围、golden.py 的参考语义") +
-                  f"{DEVICE_INFO_PROMPT}\n{hint_block}请分析task需求，输出写入 {work_dir}/ANALYSIS.md\n"
-                  f"同时按 role 输出紧凑英文融合需求 {work_dir}/fusion_requirements.en.json，"
-                  "供 stage1.5 Jev 结合真实硬件和融合方法评分。"
-                  f"程序根据本次方法原文、选项和硬件估算的需求上限为 {requirements_budget} UTF-8 JSON字节，"
-                  "请用这个上限（包含 JSON 结构）组织摘要，不能删除影响融合选择的约束。"
-                  "stage1.5 会先统一翻译为英文，再检查实际请求大小。") + CANNBOT_CONSTRAINT
+            hint_block = f"\n💡 Fusion direction hint (user-specified):\n{optimize_hint}\nIn the analysis, focus on the feasibility of this fusion direction and give concrete on-chip dataflow design suggestions.\n"
+        prompt = (f"Working directory: {work_dir}\nOperator: {op_name}\n"
+                  + file_hint(work_dir, Path(work_dir) / "task", "Read-only operator requirements and evaluation benchmark",
+                              "Read in order: desc.md definitions, proto.yaml interfaces, cases.yaml coverage, golden.py reference semantics") +
+                  f"{DEVICE_INFO_PROMPT}\n{hint_block}Please analyze the task requirements and write the output to {work_dir}/ANALYSIS.md\n"
+                  f"Also output the compact English fusion requirements to {work_dir}/fusion_requirements.en.json following the role, "
+                  "for stage1.5 Jev to score against real hardware and fusion methods."
+                  f"The program estimates a requirements ceiling of {requirements_budget} UTF-8 JSON bytes from this round's method text, options and hardware; "
+                  "organize the summary within this ceiling (including the JSON structure) and do not drop constraints that affect fusion selection."
+                  "stage1.5 will translate everything to English first, then check the actual request size.") + CANNBOT_CONSTRAINT
         ok = run_agent("cannbot", role, work_dir, prompt, node_log=node_logs["N1"])
         if not ok:
-            log.error(f"[{stage}] cannbot 失败")
+            log.error(f"[{stage}] cannbot failed")
             raise RuntimeError("Stage1 failed; fusion selection requires completed requirements.")
-        transition(state, "stage1.5", state_log, reason="需求分析完成，开始 Jev 融合方案评分")
+        transition(state, "stage1.5", state_log, reason="Requirements analysis complete; starting Jev fusion scheme scoring")
 
-    # stage1.5 可独立恢复；只有有效 Jev 结果落盘后才允许进入首版实现。
+    # stage1.5 can resume independently; only a valid persisted Jev result allows proceeding to the first implementation.
     if stage_number(state.current_stage) in (1.5, 2):
-        stage = "阶段1.5-Jev融合方案选择"
-        transition(state, "stage1.5", state_log, reason="读取需求、硬件及融合方法，生成候选库")
+        stage = "Stage1.5-Jev fusion scheme selection"
+        transition(state, "stage1.5", state_log, reason="Reading requirements, hardware and fusion methods; generating the candidate library")
         log_io(log, stage,
                [f"{work_dir}/ANALYSIS.md", f"{work_dir}/fusion_requirements.en.json",
                 device_info_path, str(Path(__file__).parent / "knowledge/fusion_method.md"),
@@ -646,21 +646,21 @@ def main():
         append_work_record(work_dir, stage)
         run_fusion_selection(work_dir, config_path=args.config,
                              top_n=config.get("fusion_selection", {}).get("top_n", 3))
-        transition(state, "stage2", state_log, reason="Jev 评分完成，首版使用最高概率方案")
+        transition(state, "stage2", state_log, reason="Jev scoring complete; the first version uses the highest-probability scheme")
     elif not imported and stage_number(state.current_stage) != 10:
-        # 新流程的断点恢复复核输入指纹，并允许只调整 n 而不重复调用 Jev。
+        # The new workflow's checkpoint resume re-verifies input fingerprints and allows adjusting only n without re-calling Jev.
         if (Path(work_dir, "fusion_requirements.en.json").is_file()
                 or Path(work_dir, "fusion").exists()):
             run_fusion_selection(work_dir, config_path=args.config,
                                  top_n=config.get("fusion_selection", {}).get("top_n", 3))
         else:
-            log.warning("旧工作目录尚无 stage1.5 需求和候选库，沿用原迭代；新任务将自动生成融合库。")
+            log.warning("The old working directory has no stage1.5 requirements or candidate library yet; keeping the original iteration; new tasks will auto-generate the fusion library.")
 
     # ═══════════════════════════════════════════════════════════════
-    # 阶段2：编写第一版算子（cannbot）
+    # Stage2: write the first operator version (cannbot)
     # ═══════════════════════════════════════════════════════════════
     if stage_number(state.current_stage) == 2:
-        stage = "阶段2-编写第一版"
+        stage = "Stage2-write first version"
         role = os.path.join(roles_dir, "n1_stage2_first_impl.md")
         design_dir = os.path.join(work_dir, "develop", "iter0")
         Path(design_dir).mkdir(parents=True, exist_ok=True)
@@ -671,24 +671,24 @@ def main():
 
         hint_block = ""
         if optimize_hint:
-            hint_block = f"\n💡 融合方向提示（用户指定）：\n{optimize_hint}\n请在实现中重点按此融合方向设计数据流。\n"
+            hint_block = f"\n💡 Fusion direction hint (user-specified):\n{optimize_hint}\nIn the implementation, focus the dataflow design on this fusion direction.\n"
         prompt = (
-            f"工作目录：{work_dir}\n算子：{op_name}\n"
-            + file_hint(work_dir, Path(work_dir) / "task", "只读算子需求",
-                        "按 desc.md、proto.yaml、cases.yaml、golden.py 核对定义、接口、case 和参考结果")
-            + file_hint(work_dir, Path(work_dir) / "ANALYSIS.md", "Stage1 需求分析",
-                        "重点看注册名、精度与 shape 约束、目标芯片和实现难点")
-            + file_hint(work_dir, Path(work_dir) / "example", "Triton Ascend 示例工程",
-                        "参考包结构、注册和 API 用法，不能照搬示例算子的语义") +
+            f"Working directory: {work_dir}\nOperator: {op_name}\n"
+            + file_hint(work_dir, Path(work_dir) / "task", "Read-only operator requirements",
+                        "Verify definitions, interfaces, cases and reference results against desc.md, proto.yaml, cases.yaml and golden.py")
+            + file_hint(work_dir, Path(work_dir) / "ANALYSIS.md", "Stage1 requirements analysis",
+                        "Focus on the registered name, precision and shape constraints, target chip and implementation difficulties")
+            + file_hint(work_dir, Path(work_dir) / "example", "Triton Ascend example project",
+                        "Reference the package structure, registration and API usage; do not copy the example operator's semantics") +
             f"{DEVICE_INFO_PROMPT}\n"
             f"{hint_block}"
             f"{format_proven_patterns_for_prompt(work_dir)}"
             f"{format_regression_patterns_for_prompt(work_dir)}"
             f"{format_pitfalls_for_prompt(work_dir)}\n"
-            f"请在 {work_dir}/impl/ 交付完整可安装工程：核心实现放在 impl/cann_bench/，"
-            f"通过 impl/cann_bench/__init__.py 导出任务函数，并提供 impl/setup.py 和 impl/build.sh。\n"
-            f"设计思路文档输出到 {design_dir}/design_rationale.md\n"
-            f"自测报告输出到 {design_dir}/self_test_report.md"
+            f"Deliver a complete installable project under {work_dir}/impl/: put the core implementation in impl/cann_bench/, "
+            f"export the task function through impl/cann_bench/__init__.py, and provide impl/setup.py and impl/build.sh.\n"
+            f"Write the design rationale to {design_dir}/design_rationale.md\n"
+            f"Write the self-test report to {design_dir}/self_test_report.md"
         ) + CANNBOT_CONSTRAINT
         prompt += format_fusion_library_for_prompt(work_dir, "stage2")
         prompt += development_prompt(work_dir, design_dir, 2)
@@ -697,31 +697,31 @@ def main():
         evidence = finalize_development(work_dir, design_dir, 2, agent_ok=ok,
                                         previous_revisions=previous_revisions)
         if not evidence.get("eligible"):
-            log.warning(f"[{stage}] 方案/自测材料尚未满足最佳记录条件：{evidence.get('reason', '')}")
+            log.warning(f"[{stage}] Scheme/self-test material does not yet satisfy the best-record conditions: {evidence.get('reason', '')}")
         if not ok:
-            log.error(f"[{stage}] cannbot 失败")
-        transition(state, "ready_for_iter", state_log, reason="首版编写完成，进入迭代循环")
+            log.error(f"[{stage}] cannbot failed")
+        transition(state, "ready_for_iter", state_log, reason="First version written; entering the iteration loop")
 
     # ═══════════════════════════════════════════════════════════════
-    # 主迭代循环：阶段4→5→6→(7→8→3)→回4
-    # 支持断点续跑：根据 current_stage 决定从哪个阶段接着跑
+    # Main iteration loop: stage4→5→6→(7→8→3)→back to 4
+    # Supports checkpoint resume: decides which stage to continue from based on current_stage
     # ═══════════════════════════════════════════════════════════════
     def _get_resume_stage(current_stage: str) -> int:
-        """从 current_stage 提取要恢复的阶段号。如 iter1_stage5 → 5"""
+        """Extract the stage number to resume from current_stage. E.g. iter1_stage5 → 5"""
         if "stage" in current_stage:
             try:
                 return int(current_stage.split("stage")[-1])
             except ValueError:
                 pass
-        return 0  # 非 stage 格式，走新一轮
+        return 0  # not a stage format; start a new round
 
-    iter_dirs = None  # 初始化，防止 while 循环未执行时 stage10 引用报错
+    iter_dirs = None  # initialized so stage10 does not hit a reference error if the while loop never runs
     while (stage_number(state.current_stage) != 10
            and (state.iteration < state.max_iterations
                 or stage_number(state.current_stage) in (4, 5, 6, 7, 8, 9)
                 or (stage_number(state.current_stage) == 3
                     and state.stage9_context.get("phase") == "developing"))):
-        # 判断是否需要从中间恢复（断点续跑）
+        # Decide whether to resume from mid-flow (checkpoint resume)
         resume_stage = _get_resume_stage(state.current_stage)
         if (resume_stage == 3 and state.stage9_context.get("iteration") == state.iteration
                 and state.stage9_context.get("phase") == "developing"):
@@ -733,16 +733,16 @@ def main():
                              device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context)
             continue
         if resume_stage > 3 and resume_stage <= 9:
-            # 断点续跑，不增加 iteration
-            log.info(f"{'─'*40} ITER {state.iteration}/{state.max_iterations} (从stage{resume_stage}恢复) {'─'*40}")
+            # checkpoint resume; do not increase iteration
+            log.info(f"{'─'*40} ITER {state.iteration}/{state.max_iterations} (resuming from stage{resume_stage}) {'─'*40}")
         else:
-            # 正常新一轮
+            # normal new round
             state.iteration += 1
             state.flush()
             log.info(f"{'─'*40} ITER {state.iteration}/{state.max_iterations} {'─'*40}")
-            resume_stage = 4  # 新一轮从阶段4开始
+            resume_stage = 4  # a new round starts at stage4
 
-        # 当前轮次的 iter 目录
+        # iter directories for the current round
         iter_name = f"iter{state.iteration}"
         iter_dirs = {
             "build": os.path.join(work_dir, "build", iter_name),
@@ -776,61 +776,61 @@ def main():
                                  device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context)
                 continue
 
-        # ── 阶段4：编译部署（kerminal）─────────────────────
+        # ── Stage4: build & deploy (kerminal)─────────────────────
         if resume_stage <= 4:
-            stage = f"ITER{state.iteration}-阶段4-编译"
+            stage = f"ITER{state.iteration}-Stage4-build"
             role = os.path.join(roles_dir, "n2_stage4_build.md")
-            # 找最近的自测报告（stage2 在 iter0，stage3 在当前 iter）
+            # Find the most recent self-test report (stage2 in iter0, stage3 in the current iter)
             self_test_path = None
             for i in range(state.iteration, -1, -1):
                 candidate = os.path.join(work_dir, "develop", f"iter{i}", "self_test_report.md")
                 if os.path.exists(candidate):
                     self_test_path = candidate
                     break
-            self_test_hint = (file_hint(work_dir, self_test_path, "最近一版开发自测报告",
-                                       "看安装、import、给定 case 和连续调用结果；属于开发轮次，不等同于正式精度评测")
+            self_test_hint = (file_hint(work_dir, self_test_path, "Most recent development self-test report",
+                                       "Check install, import, given cases and repeated-call results; it is a development round and not equivalent to formal precision evaluation")
                               if self_test_path else "")
             if imported:
                 self_test_hint += file_hint(
-                    work_dir, Path(work_dir) / "init_impl_manifest.json", "应急导入来源及复制清单",
-                    "核对指定代码与对应开发轮次；导入自测是原开发证据，不代表本次编译或精度已经通过")
-                self_test_hint += "\n直接编译当前指定实现；导入报告的存在不能代替本次真实构建和正式评测。\n"
+                    work_dir, Path(work_dir) / "init_impl_manifest.json", "Emergency import source and copy manifest",
+                    "Verify the specified code against its development round; the imported self-test is the original development evidence and does not mean this build or precision has passed")
+                self_test_hint += "\nBuild the currently specified implementation directly; the existence of an imported report cannot substitute for this real build and formal evaluation.\n"
             inputs = [f"{work_dir}/impl/"]
             if self_test_path:
                 inputs.append(self_test_path)
             outputs = [f"{iter_dirs['build']}/build.log"]
             log_io(log, stage, inputs, outputs)
             append_work_record(work_dir, stage)
-            transition(state, "stage4", state_log, reason="开始编译部署")
+            transition(state, "stage4", state_log, reason="Starting build and deployment")
 
-            prompt = (f"工作目录：{work_dir}\n算子：{op_name}\n"
-                      + file_hint(work_dir, Path(work_dir) / "impl", "待编译部署的当前工程",
-                                  "从项目配置和 cann_bench 包检查依赖、注册入口及真实构建错误")
-                      + f"{DEVICE_INFO_PROMPT}\n请编译部署，结果写入 {iter_dirs['build']}/build.log\n{self_test_hint}")
+            prompt = (f"Working directory: {work_dir}\nOperator: {op_name}\n"
+                      + file_hint(work_dir, Path(work_dir) / "impl", "Current project awaiting build and deployment",
+                                  "Check dependencies, registration entry points and real build errors from the project config and the cann_bench package")
+                      + f"{DEVICE_INFO_PROMPT}\nPlease build and deploy, writing results to {iter_dirs['build']}/build.log\n{self_test_hint}")
             ok = run_agent("kerminal", role, work_dir, prompt, node_log=node_logs["N2"])
 
             build_log_path = f"{iter_dirs['build']}/build.log"
             build_success = check_build_success(build_log_path)
             if not ok and build_success:
-                log.warning(f"[{stage}] kerminal 进程异常退出但 build.log 显示 SUCCESS，信任 build.log")
+                log.warning(f"[{stage}] kerminal exited abnormally but build.log shows SUCCESS; trusting build.log")
             if not build_success:
-                log.warning(f"[{stage}] 编译失败 → tech_lead 总结 → 阶段3")
-                state_log.info(f"[判断] 编译失败: build.log 无 STATUS: SUCCESS")
-                append_work_record(work_dir, f"{stage} FAIL → 阶段3")
+                log.warning(f"[{stage}] Build failed → tech_lead summary → Stage3")
+                state_log.info(f"[verdict] Build failed: build.log has no STATUS: SUCCESS")
+                append_work_record(work_dir, f"{stage} FAIL → Stage3")
                 append_ledger_only(work_dir, state.iteration, "build_fail")
                 run_tech_lead(log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs, fail_reason="build_fail", device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context)
                 self_goto_stage3(log, roles_dir, work_dir, op_name, state, reason="build_fail", state_log=state_log, node_logs=node_logs, iter_dirs=iter_dirs, device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context)
                 continue
 
-        # ── 阶段5：精度评测（kerminal）─────────────────────
+        # ── Stage5: precision evaluation (kerminal)─────────────────────
         if resume_stage <= 5:
-            stage = f"ITER{state.iteration}-阶段5-精度评测"
+            stage = f"ITER{state.iteration}-Stage5-precision"
             role = os.path.join(roles_dir, "n2_stage5_precision_eval.md")
             inputs = [f"task_dir={task_dir}"]
             outputs = [f"{iter_dirs['eval']}/precision_result.json"]
             log_io(log, stage, inputs, outputs)
             append_work_record(work_dir, stage)
-            transition(state, "stage5", state_log, reason="编译成功，开始精度评测")
+            transition(state, "stage5", state_log, reason="Build succeeded; starting precision evaluation")
 
             precision_impl_hash = _implementation_hash_or_empty(work_dir)
             precision_context = comparison_context(task_dir, device_info, config)
@@ -838,10 +838,10 @@ def main():
             previous_precision_revision = _file_revision(precision_path)
             binding_path = Path(iter_dirs["eval"]) / "precision_binding.json"
             atomic_write_json(str(binding_path), {"eligible": False, "reason": "Precision evaluation pending"})
-            prompt = (f"工作目录：{work_dir}\n算子：{op_name}\ntask_dir：{task_dir}\n"
-                      + file_hint(work_dir, Path(work_dir) / "task", "精度评测的只读 task 入口（链接到上述 task_dir）",
-                                  "使用 cases.yaml 的完整用例及 golden.py 参考实现，遵守 proto.yaml 接口")
-                      + f"{DEVICE_INFO_PROMPT}\n结果写入 {iter_dirs['eval']}/precision_result.json")
+            prompt = (f"Working directory: {work_dir}\nOperator: {op_name}\ntask_dir: {task_dir}\n"
+                      + file_hint(work_dir, Path(work_dir) / "task", "Read-only task entry for precision evaluation (linked to the task_dir above)",
+                                  "Use the full cases from cases.yaml and the golden.py reference implementation, following the proto.yaml interface")
+                      + f"{DEVICE_INFO_PROMPT}\nWrite results to {iter_dirs['eval']}/precision_result.json")
             precision_agent_ok = run_agent("kerminal", role, work_dir, prompt, node_log=node_logs["N2"])
 
             precision = parse_precision_result(f"{iter_dirs['eval']}/precision_result.json")
@@ -854,8 +854,8 @@ def main():
                     "comparison_context": precision_context,
                 })
                 if precision_agent_ok is not True or not fresh_precision:
-                    log.warning(f"[{stage}] 本次精度执行未成功产出新报告，不绑定旧报告用于最佳实现选择")
-            # 创建精度报告软链接（链到具体文件，不是整个目录）
+                    log.warning(f"[{stage}] This precision run did not produce a new report; the old report is not bound for best-implementation selection")
+            # Create precision report symlink (to the specific file, not the whole directory)
             source_report = precision.get("source_report", "")
             if source_report and os.path.exists(source_report):
                 link_dir = os.path.join(iter_dirs['eval'], "precision_reports")
@@ -867,98 +867,98 @@ def main():
             if not precision.get("precision_overall", False):
                 prec_passed = precision.get("passed_cases", "?")
                 prec_total = precision.get("total_cases", "?")
-                log.warning(f"[{stage}] 精度不通过({prec_passed}/{prec_total}) → tech_lead 总结 → 阶段3")
-                state_log.info(f"[判断] 精度失败: passed={prec_passed}/{prec_total}")
-                append_work_record(work_dir, f"{stage} FAIL → 阶段3")
+                log.warning(f"[{stage}] Precision failed({prec_passed}/{prec_total}) → tech_lead summary → Stage3")
+                state_log.info(f"[verdict] Precision failed: passed={prec_passed}/{prec_total}")
+                append_work_record(work_dir, f"{stage} FAIL → Stage3")
                 append_ledger_only(work_dir, state.iteration, "precision_fail")
                 run_tech_lead(log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs, fail_reason="precision_fail", device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context)
                 self_goto_stage3(log, roles_dir, work_dir, op_name, state, reason="precision_fail", state_log=state_log, node_logs=node_logs, iter_dirs=iter_dirs, device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context)
                 continue
 
-        # ── 阶段6：性能评测（代码直接执行 cann-bench）─────────
+        # ── Stage6: performance evaluation (cann-bench executed directly by code)─────────
         if resume_stage <= 6:
-            stage = f"ITER{state.iteration}-阶段6-性能评测"
+            stage = f"ITER{state.iteration}-Stage6-performance"
             inputs = [f"task_dir={task_dir}"]
             outputs = [f"{iter_dirs['eval']}/perf_result.json"]
             log_io(log, stage, inputs, outputs)
             append_work_record(work_dir, stage)
-            transition(state, "stage6", state_log, reason="精度通过，开始性能评测")
+            transition(state, "stage6", state_log, reason="Precision passed; starting performance evaluation")
             measurement_impl_hash = _implementation_hash_or_empty(work_dir)
             evaluation_context = comparison_context(task_dir, device_info, config)
 
-            # 直接执行 cann-bench（不通过 agent）
+            # Execute cann-bench directly (not through an agent)
             _script_dir = os.path.dirname(os.path.abspath(__file__))
             cannbench_src = os.path.abspath(os.path.join(_script_dir, config.get("paths", {}).get("cannbench_repo", "../cann-bench"), "src"))
             if not os.path.isdir(cannbench_src):
                 cannbench_src = os.path.abspath(os.path.join(_script_dir, config.get("paths", {}).get("cannbench_repo", "../cann-bench")))
 
-            log.info(f"[{stage}] 执行 cann-bench 性能评测（代码直接执行）")
-            node_logs["N2"].info(f"性能评测开始，task={task_dir}")
+            log.info(f"[{stage}] Running cann-bench performance evaluation (executed directly by code)")
+            node_logs["N2"].info(f"Performance evaluation started, task={task_dir}")
 
-            # 最多重试 2 次（偶发段错误/NPU 设备占用）
+            # Retry at most 2 times (occasional segfault / NPU device busy)
             max_retries = 2
             for attempt in range(1, max_retries + 1):
                 # An isolated output root prevents retries/resume from using old profiler files.
                 reports_dir = os.path.join(iter_dirs["eval"], "perf_reports",
                                            f"attempt_{attempt}_{uuid.uuid4().hex}")
                 Path(reports_dir).mkdir(parents=True, exist_ok=True)
-                log.info(f"[{stage}] 本次评测输出目录：{reports_dir}")
+                log.info(f"[{stage}] Evaluation output directory for this run: {reports_dir}")
                 success, eval_output, report_path = run_perf_eval(
                     task_dir, cannbench_src, device_id=config.get("hardware", {}).get("device_id", 0),
                     log_callback=lambda msg: node_logs["N2"].info(msg), config_path=args.config,
                     reports_dir=reports_dir)
-                node_logs["N2"].info(f"性能评测（第{attempt}/{max_retries}次），success={success}, report={report_path}")
-                log.info(f"[{stage}] 第{attempt}次评测：success={success}, report={'有' if report_path else '无'}")
+                node_logs["N2"].info(f"Performance evaluation (attempt {attempt}/{max_retries}), success={success}, report={report_path}")
+                log.info(f"[{stage}] attempt {attempt}: success={success}, report={'yes' if report_path else 'none'}")
                 if success or report_path:
                     break
                 if attempt < max_retries:
-                    log.warning(f"[{stage}] 性能评测崩溃（第{attempt}次），等待10秒后重试...")
-                    node_logs["N2"].warning(f"评测崩溃（第{attempt}次），10秒后重试")
+                    log.warning(f"[{stage}] Performance evaluation crashed (attempt {attempt}); retrying in 10 seconds...")
+                    node_logs["N2"].warning(f"Evaluation crashed (attempt {attempt}); retrying in 10 seconds")
                     import time as _time; _time.sleep(10)
                 else:
-                    log.error(f"[{stage}] 性能评测连续{max_retries}次崩溃，workflow 停止")
-                    node_logs["N2"].error(f"评测连续{max_retries}次崩溃，workflow 停止")
-                    append_work_record(work_dir, f"{stage} cann-bench 连续{max_retries}次崩溃，workflow 停止在 stage6")
+                    log.error(f"[{stage}] Performance evaluation crashed {max_retries} times in a row; workflow stopping")
+                    node_logs["N2"].error(f"Evaluation crashed {max_retries} times in a row; workflow stopping")
+                    append_work_record(work_dir, f"{stage} cann-bench crashed {max_retries} times in a row; workflow stopped at stage6")
                     state.flush()
-                    raise RuntimeError(f"cann-bench 性能评测连续{max_retries}次崩溃，workflow 停止在 {state.current_stage}。排查 NPU 设备状态后重新运行即可从 stage6 断点续跑。")
+                    raise RuntimeError(f"cann-bench performance evaluation crashed {max_retries} times in a row; workflow stopped at {state.current_stage}. After checking the NPU device state, rerun to resume from the stage6 checkpoint.")
 
             # Save the complete profiler tree first; every JSON link points at this work copy.
             source_csv_dir = archive_profiler_data(
                 report_path, iter_dirs["eval"], log_callback=log.info)
 
-            # 解析报告生成 perf_result.json
+            # Parse the report to generate perf_result.json
             if report_path:
                 perf = parse_cannbench_report_to_perf_result(report_path, source_csv_dir)
                 missing_csv = [case.get("case_id", "?") for case in perf.get("cases", [])
                                if not case.get("kernel_csv")]
-                log.info(f"[{stage}] profiler 关联：source_csv_dir={source_csv_dir or '无'}；"
-                         f"kernel_csv 已关联 {len(perf.get('cases', [])) - len(missing_csv)}/"
-                         f"{len(perf.get('cases', []))} 个 case")
+                log.info(f"[{stage}] profiler association: source_csv_dir={source_csv_dir or 'none'}; "
+                         f"kernel_csv associated for {len(perf.get('cases', [])) - len(missing_csv)}/"
+                         f"{len(perf.get('cases', []))} cases")
                 if missing_csv:
-                    log.warning(f"[{stage}] kernel_csv 未关联 case={missing_csv}；"
-                                "缺少或存在多份独立 CSV；批量采集不强行逐 case 关联，"
-                                "请查本轮 prof_data 原始文件")
+                    log.warning(f"[{stage}] kernel_csv not associated for cases={missing_csv}; "
+                                "CSV missing or multiple independent CSVs; batch collection does not force per-case association; "
+                                "check this round's raw prof_data files")
             elif not success:
                 perf = {"perf_pass": False, "overall_score": 0.0, "avg_speedup": 0.0,
                         "score_error_code": "eval_crash",
-                        "score_error": f"cann-bench 评测进程崩溃(returncode={eval_output[-200:] if eval_output else '无输出'})",
-                        "_error": "cann-bench 评测崩溃且无新报告产出"}
-                log.error(f"[{stage}] cann-bench 评测崩溃且无新报告（可能使用了旧报告，已过滤）")
+                        "score_error": f"cann-bench evaluation process crashed (returncode={eval_output[-200:] if eval_output else 'no output'})",
+                        "_error": "cann-bench evaluation crashed and produced no new report"}
+                log.error(f"[{stage}] cann-bench evaluation crashed with no new report (an old report may have been used; it was filtered out)")
             else:
                 perf = {"perf_pass": False, "overall_score": 0.0, "avg_speedup": 0.0,
-                        "_error": "cann-bench 未产出报告"}
-                log.error(f"[{stage}] cann-bench 未产出报告")
+                        "_error": "cann-bench produced no report"}
+                log.error(f"[{stage}] cann-bench produced no report")
 
             # Bind the context at measurement time. Never retrofit this stamp
             # onto old reports using the environment of a later resumed run.
             perf["comparison_context"] = copy.deepcopy(evaluation_context)
             perf["comparison_context_stable"] = (
                 evaluation_context == comparison_context(task_dir, device_info, config))
-            # 写 perf_result.json
+            # Write perf_result.json
             atomic_write_json(f"{iter_dirs['eval']}/perf_result.json", perf)
-            log.info(f"[{stage}] perf_result.json 已写入: overall={perf.get('overall_score')}, avg_speedup={perf.get('avg_speedup')}")
+            log.info(f"[{stage}] perf_result.json written: overall={perf.get('overall_score')}, avg_speedup={perf.get('avg_speedup')}")
 
-            # 创建性能报告软链接（链到具体文件，不是整个目录）
+            # Create performance report symlinks (to the specific file, not the whole directory)
             source_json = perf.get("source_json", "")
             if source_json and os.path.exists(source_json):
                 link_dir = os.path.join(iter_dirs['eval'], "perf_reports")
@@ -968,7 +968,7 @@ def main():
                     os.unlink(link_path)
                 if not os.path.exists(link_path):
                     os.symlink(source_json, link_path)
-                # 同名的 md 和 html 也链过来
+                # also link the identically named md and html files
                 for ext in [".md", ".html"]:
                     src = source_json.replace(".json", ext)
                     if os.path.exists(src):
@@ -982,7 +982,7 @@ def main():
                 "perf_pass": perf.get("perf_pass", False),
                 "perf_speedup": perf.get("avg_speedup", 0.0),
             })
-            # 自动写入 rounds/ledger 硬数据到 history.json
+            # Automatically write rounds/ledger hard data into history.json
             perf_diff = _compute_perf_diff(work_dir, state.iteration, expected_context=evaluation_context,
                                            log=log, state_log=state_log)
             prev_speedup = _history_previous_average(work_dir, state, log, comparison=perf_diff)
@@ -990,64 +990,64 @@ def main():
                          comparison=perf_diff)
             import json as _json
             _h = load_history(work_dir)
-            history_log.info(f"ITER{state.iteration} [stage6 程序写入 rounds/ledger]\n{_json.dumps(_h, ensure_ascii=False, indent=2)}")
-            log.info(f"[{stage}] history.json rounds/ledger 已更新 (iter{state.iteration})")
+            history_log.info(f"ITER{state.iteration} [stage6 program wrote rounds/ledger]\n{_json.dumps(_h, ensure_ascii=False, indent=2)}")
+            log.info(f"[{stage}] history.json rounds/ledger updated (iter{state.iteration})")
 
             # ═══════════════════════════════════════════════════
-            # stage6 后：程序算性能 diff（一次算好，后续 stage 共享）
+            # after stage6: the program computes the performance diff (computed once, shared by later stages)
             # ═══════════════════════════════════════════════════
             perf_diff_text = (perf_diff.get("comparison_text", "") + perf_diff.get("diff_text", "")
                               + perf_diff.get("regression_text", ""))
             if perf_diff.get("has_improvement"):
-                state_log.info(f"[判断] 性能提升: avg_speedup {perf_diff['prev_avg_speedup']}→{perf_diff['curr_avg_speedup']} (+{perf_diff['delta_pct']}%), iter{perf_diff['prev_iter']}→iter{state.iteration}")
+                state_log.info(f"[verdict] Performance improvement: avg_speedup {perf_diff['prev_avg_speedup']}→{perf_diff['curr_avg_speedup']} (+{perf_diff['delta_pct']}%), iter{perf_diff['prev_iter']}→iter{state.iteration}")
             elif perf_diff.get("has_regression"):
-                state_log.info(f"[判断] 性能退步: avg_speedup {perf_diff['prev_avg_speedup']}→{perf_diff['curr_avg_speedup']} ({perf_diff['delta_pct']}%), iter{perf_diff['prev_iter']}→iter{state.iteration}")
+                state_log.info(f"[verdict] Performance regression: avg_speedup {perf_diff['prev_avg_speedup']}→{perf_diff['curr_avg_speedup']} ({perf_diff['delta_pct']}%), iter{perf_diff['prev_iter']}→iter{state.iteration}")
             else:
                 delta = perf_diff.get("delta_pct", 0)
                 if delta != 0:
-                    state_log.info(f"[判断] 性能变化不显著: delta={delta}% (±5%以内)")
+                    state_log.info(f"[verdict] Performance change not significant: delta={delta}% (within ±5%)")
                 elif perf_diff.get("comparable"):
-                    state_log.info("[判断] 同口径性能持平：delta=0%，不生成涨跌经验")
+                    state_log.info("[verdict] Same-protocol performance flat: delta=0%, no up/down experience generated")
                 else:
-                    state_log.info("[判断] 本轮不比较涨跌：%s", perf_diff.get("comparison_reason", "缺少可比数据"))
+                    state_log.info("[verdict] Not comparing up/down this round: %s", perf_diff.get("comparison_reason", "missing comparable data"))
 
             # ═══════════════════════════════════════════════════
-            # stage6 后路由判断（顺序很重要，不能调换）
-            # ① 先判反作弊 → ② 再判性能达标 → ③ 正常性能优化
+            # post-stage6 routing decisions (order matters; do not swap)
+            # ① anti-cheating first → ② then performance target → ③ normal performance optimization
             # ═══════════════════════════════════════════════════
 
-            # ── ① 反作弊/零分检测（最高优先级）──
+            # ── ① Anti-cheating/zero-score detection (highest priority)──
             score_error = perf.get("score_error_code") or perf.get("score_error", "")
             avg_speedup = perf.get("avg_speedup", 0.0)
             valid_average = (isinstance(avg_speedup, (int, float)) and not isinstance(avg_speedup, bool)
                              and math.isfinite(avg_speedup) and avg_speedup > 0)
             if score_error or not valid_average:
-                reason_detail = score_error or ("avg_speedup=0（所有case性能数据为零）" if avg_speedup == 0.0
-                                                else "avg_speedup 无有效正数测量")
-                state_log.info(f"[判断] 性能评测异常或零分: {reason_detail}, avg_speedup={avg_speedup}")
+                reason_detail = score_error or ("avg_speedup=0 (all case performance data is zero)" if avg_speedup == 0.0
+                                                else "avg_speedup has no valid positive measurement")
+                state_log.info(f"[verdict] Performance evaluation abnormal or zero score: {reason_detail}, avg_speedup={avg_speedup}")
                 csv_analysis = analyze_kernel_csv_for_anticheat(perf)
-                log.warning(f"[{stage}] 反作弊触发或零分: {reason_detail} → tech_lead 总结 → 阶段3")
-                log.info(f"[{stage}] kernel_csv 分析:\n{csv_analysis}")
-                append_work_record(work_dir, f"{stage} 反作弊/零分({reason_detail}) → 阶段3")
+                log.warning(f"[{stage}] Anti-cheating triggered or zero score: {reason_detail} → tech_lead summary → Stage3")
+                log.info(f"[{stage}] kernel_csv analysis:\n{csv_analysis}")
+                append_work_record(work_dir, f"{stage} anti-cheat/zero score({reason_detail}) → Stage3")
                 anticheat_context = (
                     f"score_error_code: {score_error}\n"
-                    + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "反作弊/零分性能汇总",
-                                "核对 score_error_code、逐 case 状态及 kernel_csv 路径")
-                    + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_reports', "零分对应的原始性能报告",
-                                "对照错误码和原始事件证据，区分执行失败与普通性能问题")
-                    + file_hint(work_dir, Path(iter_dirs['eval']) / 'prof_data', "零分对应的 profiler 数据",
-                                "核对自定义 NPU kernel 是否实际执行及有无禁止的 host 侧计算") +
-                    f"\n=== kernel_details.csv 自动分析 ===\n{csv_analysis}\n"
+                    + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "Anti-cheat/zero-score performance summary",
+                                "Verify score_error_code, per-case status and kernel_csv paths")
+                    + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_reports', "Raw performance reports for the zero score",
+                                "Compare error codes with raw event evidence to distinguish execution failure from ordinary performance issues")
+                    + file_hint(work_dir, Path(iter_dirs['eval']) / 'prof_data', "Profiler data for the zero score",
+                                "Verify whether the custom NPU kernel actually executed and whether any forbidden host-side computation occurred") +
+                    f"\n=== kernel_details.csv automatic analysis ===\n{csv_analysis}\n"
                 )
                 anticheat_directive = (
-                    f"\n本轮评分异常，先核实错误类型和原始证据。缺报告或零分本身不能证明违规。\n"
+                    f"\nThis round's scoring is abnormal; first verify the error type and raw evidence. A missing report or zero score alone does not prove a violation.\n"
                     f"score_error_code: {reason_detail}\n"
-                    f"\n=== kernel_details.csv 自动分析结果（程序已替你解析）===\n{csv_analysis}\n"
-                    f"\n请按以下步骤执行：\n"
-                    f"1. 对照实际错误码、报告是否生成、执行日志和 kernel CSV，区分报告/采集故障与代码问题。\n"
-                    f"2. 若证据涉及反作弊，读取 knowledge/anti_cheat_reference.md 对照实际错误处理表；未证实时不得编造违规结论。\n"
-                    f"3. 只对已经定位的根因给出修复方向，并明确尚待验证的假设。\n"
-                    f"4. 保持反作弊规则，禁止缓存结果、sleep 等绕过评测的方案；不能为缺报告盲目重写核心算法。\n"
+                    f"\n=== kernel_details.csv automatic analysis (parsed for you by the program) ===\n{csv_analysis}\n"
+                    f"\nProceed as follows:\n"
+                    f"1. Compare the actual error code, whether a report was generated, execution logs and kernel CSV to distinguish reporting/collection failures from code problems.\n"
+                    f"2. If the evidence involves cheating, read knowledge/anti_cheat_reference.md against the actual error handling table; do not fabricate violation conclusions without proof.\n"
+                    f"3. Give a fix direction only for root causes already located, and state hypotheses still awaiting verification.\n"
+                    f"4. Keep the anti-cheating rules; caching results, sleep and similar evaluation-bypassing schemes are forbidden; do not blindly rewrite the core algorithm over a missing report.\n"
                 )
                 run_tech_lead(log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs,
                               fail_reason=f"score_zero: {reason_detail}\n{anticheat_directive}", device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context, perf_diff=perf_diff)
@@ -1061,33 +1061,33 @@ def main():
             selection_status = _record_performance_selection(
                 work_dir, state.iteration, perf, evaluation_context, config, measurement_impl_hash)
             if not selection_status.get("eligible"):
-                log.warning(f"[{stage}] 不更新最佳实现或停滞窗口：{selection_status.get('reason', '')}")
+                log.warning(f"[{stage}] Not updating the best implementation or stagnation window: {selection_status.get('reason', '')}")
             else:
                 best = selection_status["best"]
                 window_status = selection_status["window"]
                 best_changed = best['record_id'] != previous_best_id
-                log.info(f"[最佳实现] {'更新' if best_changed else '保留'} iter{best['iteration']}: "
+                log.info(f"[best implementation] {'updated' if best_changed else 'kept'} iter{best['iteration']}: "
                          f"avg_speedup={best['avg_speedup']}, avg_speed={best['avg_speed']}, "
                          f"HAP.performance_score={best['hap'].get('performance_score')}, "
                          f"all_cases_pass={best['all_cases_pass']}, "
                          f"min_case_speedup={min(c['speedup'] for c in best['case_results'])}, "
-                         f"融合方法={best['fusion_scheme'].get('method_ids', [])}")
-                log.info(f"[最佳实现] 代码快照={best['implementation_dir']}；"
-                         f"性能报告={best['performance_report']}；性能汇总={best['performance_result']}；"
-                         f"清单={best['manifest_path']}；"
-                         f"方案依据={best['evidence_paths'].get('decision_rationale', '')}")
+                         f"fusion methods={best['fusion_scheme'].get('method_ids', [])}")
+                log.info(f"[best implementation] code snapshot={best['implementation_dir']}; "
+                         f"performance report={best['performance_report']}; performance summary={best['performance_result']}; "
+                         f"manifest={best['manifest_path']}; "
+                         f"scheme rationale={best['evidence_paths'].get('decision_rationale', '')}")
                 if best_changed:
-                    log.debug("[最佳实现] HAP 原始逐 case 指标（不重算）=%s",
+                    log.debug("[best implementation] HAP raw per-case metrics (not recomputed)=%s",
                               _json_module.dumps(best['hap']['cases'], ensure_ascii=False))
                 event = log_semantic_trigger(work_dir, state.iteration, selection_status, log, state_log)
                 if not event:
-                    state_log.info(f"[语义窗口] {window_status['status']}: "
+                    state_log.info(f"[semantic window] {window_status['status']}: "
                                    f"{window_status['completed_improvements']}/{window_status['required_improvements']}, "
-                                   f"累计提升={window_status['cumulative_improvement']:.2%}, "
-                                   f"退出={selection_status['should_exit']}, "
-                                   f"审查融合方案={selection_status['review_fusion']}")
+                                   f"cumulative improvement={window_status['cumulative_improvement']:.2%}, "
+                                   f"exit={selection_status['should_exit']}, "
+                                   f"review fusion scheme={selection_status['review_fusion']}")
 
-        # ── ② 达标后由程序窗口决定退出；Stage9 仍完成原有知识积累 ──
+        # ── ② After meeting the target, the program window decides exit; Stage9 still completes its original knowledge accumulation ──
         # This also handles a checkpoint resumed in Stage9 after a passing run.
         if resume_stage > 6:
             perf = parse_perf_result(f"{iter_dirs['eval']}/perf_result.json")
@@ -1100,11 +1100,11 @@ def main():
             should_exit = (selection_status.get("should_exit", False)
                            and selection_status.get("latest_iteration") == state.iteration)
             directive = (
-                "所有 case 的 speedup 已达标。保留 P0/P1/P2，结合实测瓶颈审查下一步；"
-                "不得仅因多 kernel 或中间经过 HBM 强制更换融合方案。"
-                "退出由程序的有效性能窗口判断，exit_decision 不控制路由。"
-                + ("本轮已满足语义退出条件，请完成经验记录，随后总结最佳已评测实现。"
-                   if should_exit else "本轮尚未满足语义退出条件，继续提出有证据的优化建议。")
+                "All cases have reached the target speedup. Keep P0/P1/P2 and review next steps against measured bottlenecks; "
+                "do not force a fusion scheme change merely because of multiple kernels or HBM intermediates."
+                "Exit is decided by the program's valid performance window; exit_decision does not control routing."
+                + ("This round met the semantic exit condition; complete the experience records, then summarize the best evaluated implementation."
+                   if should_exit else "This round has not met the semantic exit condition; continue offering evidence-backed optimization suggestions.")
             )
             run_tech_lead(log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs,
                           fail_reason=restored_reason or f"perf_pass_semantic_review\n{directive}",
@@ -1118,20 +1118,20 @@ def main():
                                         state.stage9_context.get("decision_path"), log, state_log,
                                         comparison_context=evaluation_context)
                 state.stopped_by = "semantic_stagnation"
-                append_work_record(work_dir, "达标实现的 x 次有效改进累计不足 5%，选最佳已评测快照退出")
-                transition(state, "stage10", state_log, reason="程序语义退出，交付最佳达标实现")
+                append_work_record(work_dir, "The passing implementation\'s cumulative valid improvements over x iterations are under 5%; exiting with the best evaluated snapshot")
+                transition(state, "stage10", state_log, reason="Program semantic exit; delivering the best passing implementation")
                 break
             self_goto_stage3(log, roles_dir, work_dir, op_name, state, reason="perf_pass_optimize",
                              state_log=state_log, node_logs=node_logs, iter_dirs=iter_dirs,
                              device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context)
             continue
 
-        # ── ③ 性能不达标仍走 stage7/8/9/3；y 窗口仅触发方案审查 ──
-        state_log.info("[判断] 性能不达标 → stage7→8→9→3；是否换融合方案由 stage9 结合证据决定")
+        # ── ③ Performance below target still goes stage7/8/9/3; the y window only triggers a scheme review ──
+        state_log.info("[verdict] Performance below target → stage7→8→9→3; whether to change the fusion scheme is decided by stage9 based on evidence")
 
-        # ── 阶段7：Profiling 分析（kerminal）───────────────
+        # ── Stage7: Profiling analysis (kerminal)───────────────
         if resume_stage <= 7:
-            stage = f"ITER{state.iteration}-阶段7-profiling"
+            stage = f"ITER{state.iteration}-Stage7-profiling"
             role = os.path.join(roles_dir, "n2_stage7_kerminal_profile.md")
             inputs = [f"{iter_dirs['eval']}/perf_result.json", f"{iter_dirs['eval']}/perf_reports/"]
             if Path(fusion_library_path(work_dir)).is_file():
@@ -1139,7 +1139,7 @@ def main():
             outputs = [f"{iter_dirs['profile']}/bottleneck_analysis.md"]
             log_io(log, stage, inputs, outputs)
             append_work_record(work_dir, stage)
-            transition(state, "stage7", state_log, reason="性能不达标，开始profiling分析")
+            transition(state, "stage7", state_log, reason="Performance below target; starting profiling analysis")
 
             prev_design_path = None
             for i in range(state.iteration - 1, -1, -1):
@@ -1150,7 +1150,7 @@ def main():
             if prev_design_path is None:
                 # Imported Stage3 material may only have its fusion-decision
                 # document; never inject a nonexistent Stage2 design filename.
-                imported_rationale = Path(work_dir) / "develop/iter0/融合方案选择决策依据.md"
+                imported_rationale = Path(work_dir) / "develop/iter0/fusion_scheme_rationale.md"
                 if imported and imported_rationale.is_file():
                     prev_design_path = str(imported_rationale)
                 else:
@@ -1158,28 +1158,28 @@ def main():
 
             profiling_skill_path = os.path.join(os.path.dirname(roles_dir), "skills", "triton-profiling-analysis", "SKILL.md")
             profiling_skill_hint = (
-                "\n" + file_hint(work_dir, profiling_skill_path, "Profiling 分析指南",
-                                  "先读五文件分析流程和指标权重，再解释瓶颈证据",
-                                  base_dir=Path(__file__).parent, base_label="项目根目录") +
-                f"请加载上述 skill 文件，按其中定义的五文件分析流程（kernel_details→op_statistic→step_trace_time→api_statistic→trace_view）"
-                f"和权重分配（50%/20%/15%/10%/5%）对每个 case 的 profiler 数据进行结构化分析。\n"
+                "\n" + file_hint(work_dir, profiling_skill_path, "Profiling analysis guide",
+                                  "Read the five-file analysis process and metric weights first, then explain the bottleneck evidence",
+                                  base_dir=Path(__file__).parent, base_label="project root") +
+                f"Please load the skill file above and run a structured analysis of each case's profiler data using its five-file analysis process (kernel_details→op_statistic→step_trace_time→api_statistic→trace_view) "
+                f"and weight allocation (50%/20%/15%/10%/5%).\n"
             ) if os.path.exists(profiling_skill_path) else ""
 
             prompt = (
-                f"工作目录：{work_dir}\n算子：{op_name}\n"
-                + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "本轮正式性能汇总",
-                            "先看 avg_speedup、每个 case 的 speedup 和 worst_6_cases，再找性能瓶颈")
-                + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_reports', "本轮原始性能报告",
-                            "按 case 对照原始计时、kernel 和 profiler 证据，核验汇总结论")
-                + file_hint(work_dir, prev_design_path, "最近可用的历史设计参考",
-                            "看 tiling、数据流和改动目的；它不自动代表被评测版本，需与另附的代码绑定依据核对") +
+                f"Working directory: {work_dir}\nOperator: {op_name}\n"
+                + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "This round's formal performance summary",
+                            "Look at avg_speedup, each case's speedup and worst_6_cases first, then find performance bottlenecks")
+                + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_reports', "This round's raw performance reports",
+                            "Compare raw timing, kernel and profiler evidence per case to verify the summary conclusions")
+                + file_hint(work_dir, prev_design_path, "Most recent usable historical design reference",
+                            "Look at tiling, dataflow and change intent; it does not automatically represent the evaluated version and must be checked against the separately attached code binding") +
                 f"{DEVICE_INFO_PROMPT}\n"
                 f"{perf_diff_text}\n"
                 f"{format_proven_patterns_for_prompt(work_dir)}"
                 f"{format_regression_patterns_for_prompt(work_dir)}"
                 f"{format_pitfalls_for_prompt(work_dir)}\n"
                 f"{profiling_skill_hint}"
-                f"输出写入 {iter_dirs['profile']}/bottleneck_analysis.md"
+                f"Write output to {iter_dirs['profile']}/bottleneck_analysis.md"
             )
             prompt += format_fusion_library_for_prompt(work_dir, "stage7")
             prompt += format_evidence_for_prompt(work_dir)
@@ -1189,24 +1189,24 @@ def main():
             stale_report = validate_profile_report_directory(work_dir, state.iteration)
             if stale_report.exists():
                 stale_report.unlink()
-                log.info("[性能分析报告] iter=%s 重新执行 Stage7，已移除本轮旧报告，等待重新生成：%s",
+                log.info("[performance analysis report] iter=%s re-running Stage7; removed this round's old report and waiting for regeneration: %s",
                          state.iteration, stale_report)
             if not run_agent("kerminal", role, work_dir, prompt, node_log=node_logs["N2"]):
-                raise RuntimeError(f"[{stage}] Stage7 未成功完成，不交付分析报告")
+                raise RuntimeError(f"[{stage}] Stage7 did not complete successfully; the analysis report will not be delivered")
 
         # Each evaluated iteration exposes one canonical report. This also
         # stamps existing Stage7 reports when resuming at Stage8/9.
         try:
             report_path = stamp_stage7_report(work_dir, state.iteration)
         except (OSError, ValueError) as exc:
-            log.error("[性能分析报告] iter=%s 来源=Stage7；检查失败，不进入后续阶段：%s",
+            log.error("[performance analysis report] iter=%s source=Stage7; check failed, not proceeding to later stages: %s",
                       state.iteration, exc)
-            raise RuntimeError(f"Stage7 分析报告不可交付：{exc}") from exc
+            raise RuntimeError(f"Stage7 analysis report is not deliverable: {exc}") from exc
         _log_profile_report(log, state_log, state.iteration, 7, report_path)
 
-        # ── 阶段8：搜索优化方案（hermes）───────────────────
+        # ── Stage8: search for optimization schemes (hermes)───────────────────
         if resume_stage <= 8:
-            stage = f"ITER{state.iteration}-阶段8-搜索"
+            stage = f"ITER{state.iteration}-Stage8-search"
             role = os.path.join(roles_dir, "n3_stage8_search.md")
             inputs = [f"{iter_dirs['profile']}/bottleneck_analysis.md", f"{work_dir}/impl/"]
             if Path(fusion_library_path(work_dir)).is_file():
@@ -1214,43 +1214,43 @@ def main():
             outputs = [f"{iter_dirs['search']}/SEARCH_REPORT.md", f"{iter_dirs['search']}/FIX_DIRECTIVE.md"]
             log_io(log, stage, inputs, outputs)
             append_work_record(work_dir, stage)
-            transition(state, "stage8", state_log, reason="profiling完成，开始搜索优化方案")
+            transition(state, "stage8", state_log, reason="profiling complete; starting search for optimization schemes")
 
             prompt = (
-                f"工作目录：{work_dir}\n算子：{op_name}\n"
-                + file_hint(work_dir, Path(iter_dirs['profile']) / 'bottleneck_analysis.md', "本轮瓶颈分析",
-                            "按慢 case、根因和证据确定搜索问题，区分已证实瓶颈与待验证假设")
-                + file_hint(work_dir, Path(work_dir) / 'impl', "当前算子实现工程",
-                            "定位 cann_bench 中的算子入口、tiling 和数据流，核实搜索方案是否适用") +
+                f"Working directory: {work_dir}\nOperator: {op_name}\n"
+                + file_hint(work_dir, Path(iter_dirs['profile']) / 'bottleneck_analysis.md', "This round's bottleneck analysis",
+                            "Determine the search questions from slow cases, root causes and evidence; separate proven bottlenecks from unverified hypotheses")
+                + file_hint(work_dir, Path(work_dir) / 'impl', "Current operator implementation project",
+                            "Locate the operator entry, tiling and dataflow in cann_bench and verify whether the search scheme applies") +
                 f"{DEVICE_INFO_PROMPT}\n"
                 f"{perf_diff_text}\n"
                 f"{format_proven_patterns_for_prompt(work_dir)}"
                 f"{format_regression_patterns_for_prompt(work_dir)}\n"
-                f"输出：{iter_dirs['search']}/SEARCH_REPORT.md 和 {iter_dirs['search']}/FIX_DIRECTIVE.md"
+                f"Outputs: {iter_dirs['search']}/SEARCH_REPORT.md and {iter_dirs['search']}/FIX_DIRECTIVE.md"
             )
             prompt += format_fusion_library_for_prompt(work_dir, "stage8")
             prompt += format_evidence_for_prompt(work_dir)
             prompt += format_selection_for_prompt(work_dir, comparison_context=evaluation_context)
             run_agent("hermes", role, work_dir, prompt, node_log=node_logs["N3"])
 
-        # ── 阶段9：Tech Lead 经验提炼（kerminal）──────────
+        # ── Stage9: Tech Lead experience distillation (kerminal)──────────
         if resume_stage <= 9:
             run_tech_lead(log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs, fail_reason="perf_optimize", device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context, perf_diff=perf_diff)
 
-        # ── 阶段3：修改优化（cannbot）──────────────────────
+        # ── Stage3: fix and optimize (cannbot)──────────────────────
         self_goto_stage3(log, roles_dir, work_dir, op_name, state, reason="perf_optimize", state_log=state_log, node_logs=node_logs, iter_dirs=iter_dirs, device_info_prompt=DEVICE_INFO_PROMPT, selection_context=evaluation_context)
 
-        # 一轮完成，iteration 在下一轮顶部递增
+        # one round done; iteration increments at the top of the next round
 
-    # 迭代上限
+    # iteration limit
     if state.iteration >= state.max_iterations and not state.stopped_by:
         state.stopped_by = "max_iterations"
-        log.warning(f"达到最大迭代次数 {state.max_iterations}")
+        log.warning(f"Reached the maximum iteration count {state.max_iterations}")
 
     # ═══════════════════════════════════════════════════════════════
-    # 阶段10：最终报告（kerminal）— N5 节点
+    # Stage10: final report (kerminal) — N5 node
     # ═══════════════════════════════════════════════════════════════
-    # 确保 iter_dirs 有值（兜底：用最后一轮的）
+    # Ensure iter_dirs has a value (fallback: use the last round\'s)
     if iter_dirs is None:
         iter_name = f"iter{state.iteration}"
         iter_dirs = {
@@ -1266,7 +1266,7 @@ def main():
                        if item.get("kind") == "direction" and item.get("status") == "processed"]
     if remaining_human:
         human.mark_unexecuted(remaining_human, state.stopped_by or "workflow_final_report")
-    stage = "阶段10-最终报告"
+    stage = "Stage10-final report"
     role = os.path.join(roles_dir, "n5_stage10_kerminal_report.md")
     evaluation_context = comparison_context(task_dir, device_info, config)
     final_selection = load_selection_status(work_dir, comparison_context=evaluation_context, config=config)
@@ -1282,64 +1282,64 @@ def main():
     outputs = [f"{work_dir}/FINAL_REPORT.md"]
     log_io(log, stage, inputs, outputs)
     append_work_record(work_dir, stage)
-    transition(state, "stage10", state_log, reason="生成最终报告")
+    transition(state, "stage10", state_log, reason="Generating the final report")
 
-    # ── 扫描未处理的 question.md（下级反馈但从未被 tech_lead 裁定）──
+    # ── Scan unhandled question.md files (subordinate feedback never adjudicated by tech_lead)──
     import glob as _glob
     unhandled_questions = []
     for qpath in _glob.glob(os.path.join(work_dir, "develop", "iter*", "question.md")):
         with open(qpath, "r", encoding="utf-8") as f:
             qcontent = f.read()
-        # 已裁定的会在错题本里，简单判断：question 提出后是否有对应 pitfall
-        if "## tech_lead 裁定" not in qcontent:
+        # Adjudicated ones are in the pitfall log; simple check: whether the question has a corresponding pitfall
+        if "## tech_lead adjudication" not in qcontent:
             unhandled_questions.append(qpath)
     if unhandled_questions:
-        log.warning(f"[{stage}] ⚠️ 有 {len(unhandled_questions)} 个未裁定的 question.md（迭代提前结束导致）:")
+        log.warning(f"[{stage}] ⚠️ {len(unhandled_questions)} unadjudicated question.md files (caused by early iteration termination):")
         for q in unhandled_questions:
             log.warning(f"    {q}")
-        state_log.info(f"[提示] {len(unhandled_questions)} 个 question.md 未被 tech_lead 裁定（迭代提前退出）")
+        state_log.info(f"[note] {len(unhandled_questions)} question.md files were not adjudicated by tech_lead (early iteration exit)")
 
     question_hint = ""
     if unhandled_questions:
-        question_hint = "".join(file_hint(work_dir, path, "未裁定的开发反馈",
-                                        "看被质疑的建议和硬件/框架证据，在最终报告中列为待处理问题，不当作已裁定结论")
+        question_hint = "".join(file_hint(work_dir, path, "Unadjudicated development feedback",
+                                        "Look at the questioned suggestions and hardware/framework evidence; list them as open issues in the final report rather than as settled conclusions")
                                 for path in unhandled_questions)
 
     prompt = (
-        f"工作目录：{work_dir}\n算子：{op_name}\n"
-        + file_hint(work_dir, final_precision_path, "最终报告采用的精度结果",
-                    "核对通过数量、失败 case 和正确性；有最佳快照时采用快照内结果")
-        + file_hint(work_dir, final_perf_path, "最终报告采用的性能结果",
-                    "核对 avg_speedup、HAP 和逐 case 达标情况；不能把最后修改当作最佳已评测版本")
-        + file_hint(work_dir, Path(work_dir) / 'WORK_RECORD.md', "工作流执行记录",
-                    "按时间回顾阶段、失败原因与退出经过")
-        + file_hint(work_dir, Path(work_dir) / '.state.json', "程序最终状态与退出原因",
-                    "读取 iteration、stopped_by 和阶段；与语义窗口核对，不能自行推断退出原因")
-        + file_hint(work_dir, Path(work_dir) / 'knowledge/history.json', "跨轮优化经验与账本",
-                    "从 rounds、ledger、insights 总结实测变化、已验证经验和未解决问题") +
+        f"Working directory: {work_dir}\nOperator: {op_name}\n"
+        + file_hint(work_dir, final_precision_path, "Precision results used by the final report",
+                    "Verify the pass counts, failed cases and correctness; when a best snapshot exists, use the results inside the snapshot")
+        + file_hint(work_dir, final_perf_path, "Performance results used by the final report",
+                    "Verify avg_speedup, HAP and per-case target attainment; do not present the last modification as the best evaluated version")
+        + file_hint(work_dir, Path(work_dir) / 'WORK_RECORD.md', "Workflow execution record",
+                    "Review stages, failure reasons and the exit course chronologically")
+        + file_hint(work_dir, Path(work_dir) / '.state.json', "Program final state and exit reason",
+                    "Read iteration, stopped_by and the stage; cross-check with the semantic window; do not infer the exit reason yourself")
+        + file_hint(work_dir, Path(work_dir) / 'knowledge/history.json', "Cross-round optimization experience and ledger",
+                    "Summarize measured changes, verified experience and unresolved issues from rounds, ledger and insights") +
         f"{question_hint}"
         f"{DEVICE_INFO_PROMPT}\n"
-        f"输出写入 {work_dir}/FINAL_REPORT.md"
+        f"Write output to {work_dir}/FINAL_REPORT.md"
     )
     if selected:
         prompt += (
-            "\n" + file_hint(work_dir, selected['manifest_path'], "最终选定实现清单",
-                              "核对代码指纹、指标、融合方案及报告关联，保证结论属于同一份快照")
-            + file_hint(work_dir, selected['implementation_dir'], "最终选定实现的不可变代码快照",
-                        "作为最终交付代码来源，不用当前 impl/ 的未评测修改替代") +
-            "请用这份快照及其评测报告说明最终交付结果；当前 impl/ 可能有未评测修改。"
-            "明确该实现是否全部 case 达标，不把最佳未达标候选写成达标。\n"
+            "\n" + file_hint(work_dir, selected['manifest_path'], "Manifest of the finally selected implementation",
+                              "Verify the code fingerprint, metrics, fusion scheme and report associations to ensure the conclusions belong to the same snapshot")
+            + file_hint(work_dir, selected['implementation_dir'], "Immutable code snapshot of the finally selected implementation",
+                        "Use it as the source of the finally delivered code; do not substitute unevaluated changes from the current impl/") +
+            "Use this snapshot and its evaluation reports to describe the final delivery; the current impl/ may contain unevaluated changes. "
+            "State clearly whether this implementation passes all cases, and do not present the best non-passing candidate as passing.\n"
         )
     else:
-        prompt += "\n尚无满足正确性、自测与统一口径要求的最佳记录。请明确报告这一事实，不将最后一次修改宣称为最佳已验证实现。\n"
+        prompt += "\nNo best record yet satisfies the correctness, self-test and unified-protocol requirements. Report this fact explicitly, and do not proclaim the last modification as the best verified implementation.\n"
     prompt += format_selection_for_prompt(work_dir, comparison_context=evaluation_context)
     if human.all_messages():
-        prompt += file_hint(work_dir, human.root / "state.json", "人工意见处理与执行状态",
-                            "逐条区分已处理、已执行但待正式验证、受退出条件限制未执行；列出原因")
-        prompt += file_hint(work_dir, human.root / "inbox", "人工原话与问题", "按消息编号与 Stage9 裁定关联，不能把已处理写成已执行")
+        prompt += file_hint(work_dir, human.root / "state.json", "Human feedback processing and execution status",
+                            "Distinguish item by item: processed, executed but awaiting formal verification, or not executed due to exit conditions; list the reasons")
+        prompt += file_hint(work_dir, human.root / "inbox", "Human verbatim messages and questions", "Associate by message number with Stage9 adjudications; do not write processed as executed")
     while True:
         if not run_agent("kerminal", role, work_dir, prompt, node_log=node_logs["N5"]):
-            raise RuntimeError("Stage10 总结失败，保留状态供恢复；人工入口尚未关闭")
+            raise RuntimeError("Stage10 summarization failed; state kept for resume; the human entry is not yet closed")
         if not human.pending_messages():
             human.close_workflow(state.stopped_by or "completed")
             if not human.pending_messages():
@@ -1349,21 +1349,21 @@ def main():
         human.mark_unexecuted([item["id"] for item in human.all_messages()
                                if item.get("kind") == "direction" and item.get("status") == "processed"],
                               state.stopped_by or "workflow_final_report")
-        transition(state, "stage10", state_log, reason="补充人工意见处理结果后更新最终报告")
-        prompt += "\n总结期间收到的人工意见已由 Stage9 复议，请重新读取 human_review/state.json 与 history，并明确未执行原因。\n"
-        prompt += file_hint(work_dir, human.root / "state.json", "人工意见最终处理状态", "按消息编号列出未执行原因，不把已处理当作已执行")
-        prompt += file_hint(work_dir, human.root / "inbox", "人的全部原话", "与状态及 history 中的 human_responses 逐条对应")
+        transition(state, "stage10", state_log, reason="Updating the final report after supplementing human feedback processing results")
+        prompt += "\nHuman feedback received during summarization has been re-reviewed by Stage9; re-read human_review/state.json and history, and state the reasons anything was not executed.\n"
+        prompt += file_hint(work_dir, human.root / "state.json", "Final processing status of human feedback", "List the reasons for non-execution by message number; do not treat processed as executed")
+        prompt += file_hint(work_dir, human.root / "inbox", "The human's complete verbatim messages", "Match item by item with human_responses in state and history")
 
     log.info("=" * 60)
-    log.info(f"完成！stopped_by={state.stopped_by}")
-    log.info(f"报告：{work_dir}/FINAL_REPORT.md")
+    log.info(f"Done! stopped_by={state.stopped_by}")
+    log.info(f"Report: {work_dir}/FINAL_REPORT.md")
     log.info("=" * 60)
     state.flush()
 
 
 def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, log=None, state_log=None) -> dict:
     """
-    程序计算本轮和上一轮的性能 diff。返回 dict：
+    The program computes the performance diff between this round and the previous one. Returns a dict:
     {
         "has_improvement": True/False,
         "prev_iter": 2, "curr_iter": 3,
@@ -1371,17 +1371,17 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
         "delta_pct": 100.0,
         "prev_design_path": "develop/iter2/design_rationale.md",
         "curr_design_path": "develop/iter3/design_rationale.md",
-        "case_diffs": [  # 按提升幅度降序
+        "case_diffs": [  # sorted by improvement, descending
             {"case_id": "14", "prev_speedup": 0.69, "curr_speedup": 3.29, "delta": "+377%"},
             ...
         ],
-        "diff_text": "格式化好的文本，可直接注入 prompt"
+        "diff_text": "formatted text that can be injected into a prompt directly"
     }
     """
     import json as _json
     result = {"has_improvement": False, "has_regression": False, "diff_text": "", "regression_text": "",
               "comparable": False, "comparison_status": "unavailable", "curr_iter": iteration,
-              "comparison_reason": "本轮没有完整可核对的性能报告"}
+              "comparison_reason": "no complete, verifiable performance report for this round"}
 
     def finish():
         # A small durable record explains both normal comparisons and new
@@ -1399,8 +1399,8 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
                 pass
         if directory.is_dir() and summary != previous_summary:
             atomic_write_json(str(comparison_path), summary)
-            message = ("===== 性能比较口径检查 ===== iter=%s previous_iter=%s；状态=%s；原因=%s；"
-                       "当前报告=%s；上轮报告=%s；检查记录=%s")
+            message = ("===== Performance comparison protocol check ===== iter=%s previous_iter=%s; status=%s; reason=%s; "
+                       "current report=%s; previous report=%s; check record=%s")
             args = (iteration, result.get("prev_iter"), result["comparison_status"],
                     result["comparison_reason"], result.get("current_report"),
                     result.get("previous_report"), comparison_path)
@@ -1408,25 +1408,25 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
                 if logger is not None:
                     (logger.info if result["comparable"] else logger.warning)(message, *args)
         if not result["comparable"]:
-            action = ("本轮作为新基线，后续仅与同口径完整结果比较。"
-                      if result["comparison_status"] == "new_baseline" else "需要完整且口径明确的评测后才能比较。")
+            action = ("This round becomes the new baseline; subsequent comparisons use only complete results with the same protocol."
+                      if result["comparison_status"] == "new_baseline" else "A complete evaluation with a clear protocol is required before comparing.")
             result["comparison_text"] = (
-                f"\n===== 本轮不比较性能涨跌 =====\n{result['comparison_reason']}；{action}"
-                "不得用本次均值差推断优化收益或退步，不填写本次 proven_pattern/regression_pattern。\n"
-                + file_hint(work_dir, comparison_path, "程序的性能比较口径检查",
-                            "查看不比较的原因和两轮报告来源，不跨口径归因")
+                f"\n===== No performance up/down comparison this round =====\n{result['comparison_reason']}; {action}"
+                "Do not infer optimization gains or regressions from this mean difference, and do not fill in proven_pattern/regression_pattern for this round.\n"
+                + file_hint(work_dir, comparison_path, "The program's performance comparison protocol check",
+                            "See why no comparison was made and the source of both rounds' reports; do not attribute across protocols")
             )
         if result.get("current_report_source") == "verified_selection_archive":
             result["comparison_text"] = result.get("comparison_text", "") + file_hint(
-                work_dir, result["current_report"], "工作副本缺失时使用的本轮已验证性能归档",
-                "已核对快照完整性及轮次；读取实际成绩和存档口径，不使用旧缓存中的涨跌结论")
+                work_dir, result["current_report"], "This round's verified performance archive used when the working copy is missing",
+                "Snapshot integrity and round were verified; read the actual scores and the archive's protocol; do not use up/down conclusions from an old cache")
         return result
 
     def positive_number(value):
         return (isinstance(value, (int, float)) and not isinstance(value, bool)
                 and math.isfinite(value) and value > 0)
 
-    # 读本轮 perf_result
+    # read this round\'s perf_result
     curr_path = os.path.join(work_dir, "eval", f"iter{iteration}", "perf_result.json")
     result["current_report"] = curr_path
     if not os.path.exists(curr_path):
@@ -1453,7 +1453,7 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
     if not current_check["comparable"]:
         # Both operands above are the current report; name it accurately in
         # diagnostics even when validation rejects the first operand.
-        result["comparison_reason"] = current_check["reason"].replace("上一轮报告", "当前轮报告", 1)
+        result["comparison_reason"] = current_check["reason"].replace("previous report", "current report", 1)
         result["comparison_mismatch_fields"] = [
             "current." + field[len("previous."):] if field.startswith("previous.") else field
             for field in current_check["mismatch_fields"]
@@ -1462,7 +1462,7 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
     curr_avg = curr_perf.get("avg_speedup", 0)
     result["curr_avg_speedup"] = curr_avg
 
-    # 找上一轮有效的 perf_result（跳过 build_fail/precision_fail 没跑性能的轮次）
+    # Find the previous round\'s valid perf_result (skipping rounds that never ran performance due to build_fail/precision_fail)
     prev_avg = 0
     prev_iter = None
     prev_perf = {}
@@ -1481,7 +1481,7 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
                 continue
 
     if prev_iter is None:
-        result.update(comparison_status="new_baseline", comparison_reason="没有上一轮有效性能结果，不计算涨跌")
+        result.update(comparison_status="new_baseline", comparison_reason="no valid previous-round performance result; not computing up/down")
         return finish()
 
     result["prev_iter"] = prev_iter
@@ -1504,7 +1504,7 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
     result["has_improvement"] = delta_pct >= 5
     result["has_regression"] = delta_pct <= -5
 
-    # design_rationale 路径
+    # design_rationale paths
     for i in range(iteration, -1, -1):
         p = os.path.join(work_dir, "develop", f"iter{i}", "design_rationale.md")
         if os.path.exists(p):
@@ -1516,7 +1516,7 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
             result["prev_design_path"] = p
             break
 
-    # 保留所有可对齐 case 的变化，提示词仅展示最相关的六个。
+    # Keep changes for all alignable cases; the prompt shows only the six most relevant.
     case_diffs = []
     curr_cases = curr_perf.get("cases") or curr_perf.get("worst_6_cases") or []
     prev_cases_map = {}
@@ -1539,46 +1539,46 @@ def _compute_perf_diff(work_dir: str, iteration: int, *, expected_context=None, 
     case_diffs.sort(key=lambda x: float(x["delta"].replace("%", "").replace("+", "")), reverse=True)
     result["case_diffs"] = case_diffs
 
-    # 格式化 diff 文本
+    # Format the diff text
     if result["has_improvement"]:
         lines = [
-            f"\n📊 性能提升检测（程序自动计算，数据可信）",
+            f"\n📊 Performance improvement detected (computed automatically by the program; data is trustworthy)",
             f"  avg_speedup: {prev_avg} → {curr_avg} (+{delta_pct}%)",
-            f"  对比轮次: iter{prev_iter} → iter{iteration}",
+            f"  Compared rounds: iter{prev_iter} → iter{iteration}",
         ]
         if result.get("prev_design_path"):
-            lines.append(file_hint(work_dir, result['prev_design_path'], "上轮评测附近的历史设计参考",
-                                   "用于回顾改动意图；实际被评测版本以代码绑定的选择依据和快照为准").rstrip())
+            lines.append(file_hint(work_dir, result['prev_design_path'], "Historical design reference near the previous round's evaluation",
+                                   "For reviewing change intent; the actually evaluated version is determined by the code-bound selection rationale and snapshot").rstrip())
         if result.get("curr_design_path"):
-            lines.append(file_hint(work_dir, result['curr_design_path'], "本轮评测附近的历史设计参考",
-                                   "与上轮参考比较；先用代码绑定依据或快照确认版本，再归因成功经验").rstrip())
+            lines.append(file_hint(work_dir, result['curr_design_path'], "Historical design reference near this round's evaluation",
+                                   "Compare with the previous round's reference; first confirm the version via the code binding or snapshot, then attribute the success").rstrip())
         if case_diffs:
-            lines.append(f"  逐 case 对比（提升最大的在前）:")
+            lines.append(f"  Per-case comparison (largest improvement first):")
             for cd in case_diffs[:6]:
                 lines.append(f"    case_{cd['case_id']}: {cd['prev_speedup']} → {cd['curr_speedup']} ({cd['delta']})")
         lines.append("")
-        lines.append("⚡ 本轮性能大幅提升！请对照上面两轮的 design_rationale，总结这次改动为什么有效，填写 proven_pattern 字段。")
+        lines.append("⚡ Big performance gain this round! Compare the two rounds\' design_rationale above, summarize why this change worked, and fill in the proven_pattern field.")
         result["diff_text"] = "\n".join(lines)
 
     elif result["has_regression"]:
         lines = [
-            f"\n⚠️ 性能退步检测（程序自动计算，数据可信）",
+            f"\n⚠️ Performance regression detected (computed automatically by the program; data is trustworthy)",
             f"  avg_speedup: {prev_avg} → {curr_avg} ({delta_pct}%)",
-            f"  对比轮次: iter{prev_iter} → iter{iteration}",
+            f"  Compared rounds: iter{prev_iter} → iter{iteration}",
         ]
         if result.get("prev_design_path"):
-            lines.append(file_hint(work_dir, result['prev_design_path'], "上轮评测附近的历史设计参考",
-                                   "用于回顾退步前的设计意图；实际被评测版本以绑定依据和快照为准").rstrip())
+            lines.append(file_hint(work_dir, result['prev_design_path'], "Historical design reference near the previous round's evaluation",
+                                   "For reviewing the pre-regression design intent; the actually evaluated version is determined by the binding and snapshot").rstrip())
         if result.get("curr_design_path"):
-            lines.append(file_hint(work_dir, result['curr_design_path'], "本轮评测附近的历史设计参考",
-                                   "先用代码绑定依据或快照确认版本，再结合慢 case 核对改动并归因失败教训").rstrip())
+            lines.append(file_hint(work_dir, result['curr_design_path'], "Historical design reference near this round's evaluation",
+                                   "First confirm the version via the code binding or snapshot, then check the change against slow cases and attribute the failure lesson").rstrip())
         if case_diffs:
-            lines.append(f"  逐 case 对比（退步最大的在前）:")
+            lines.append(f"  Per-case comparison (largest regression first):")
             regression_cases = sorted(case_diffs, key=lambda x: float(x["delta"].replace("%", "").replace("+", "")))
             for cd in regression_cases[:6]:
                 lines.append(f"    case_{cd['case_id']}: {cd['prev_speedup']} → {cd['curr_speedup']} ({cd['delta']})")
         lines.append("")
-        lines.append("🚨 本轮性能退步！请对照上面两轮的 design_rationale，分析原因并填写 regression_pattern，明确适用条件；在已验证条件下避免重复失败，改变条件后须重新验证。")
+        lines.append("🚨 Performance regression this round! Compare the two rounds\' design_rationale above, analyze the cause and fill in regression_pattern with explicit applicability conditions; avoid repeating failures under the verified conditions, and re-verify when conditions change.")
         result["regression_text"] = "\n".join(lines)
 
     return finish()
@@ -1620,7 +1620,7 @@ def _history_previous_average(work_dir, state, log=None, *, comparison=None):
     if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0:
         return value
     if log:
-        log.warning("[历史账本] iter%s 的上一轮 iter%s 缺少有效 avg_speedup；前值记为 null，不使用旧 state.speedup 代替。",
+        log.warning("[history ledger] iter%s's previous round iter%s lacks a valid avg_speedup; the previous value is recorded as null and old state.speedup is not used instead.",
                     state.iteration, previous_iteration)
     return None
 
@@ -1630,7 +1630,7 @@ def _review_pending_humans(log, roles_dir, work_dir, op_name, state, state_log,
     if not HumanReview(work_dir).pending_messages():
         return
     context = state.stage9_context
-    reason = context.get("fail_reason") or "score_zero: 尚无有效评测，仅处理人工意见与未执行原因"
+    reason = context.get("fail_reason") or "score_zero: no valid evaluation yet; only handling human feedback and non-execution reasons"
     run_tech_lead(log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs,
                   fail_reason=reason, device_info_prompt=device_info_prompt,
                   perf_diff=context.get("perf_diff"), selection_context=selection_context)
@@ -1668,7 +1668,7 @@ def run_tech_lead(log, roles_dir: str, work_dir: str, op_name: str, state, state
             context["semantic_event"] = event
         prepare_regression_action(work_dir, state.iteration, perf_diff, selection, log, state_log)
     state.stage9_context = context
-    transition(state, "stage9", state_log, reason=f"保留原场景 {scene}")
+    transition(state, "stage9", state_log, reason=f"keeping the original scene {scene}")
     valid = bool(is_performance_scene(scene) and selection.get("eligible")
                  and selection.get("latest_iteration") == state.iteration)
     counter = human.record_evaluation(
@@ -1686,7 +1686,7 @@ def run_tech_lead(log, roles_dir: str, work_dir: str, op_name: str, state, state
     bundle_path = context.get("bundle_path")
     if consultation:
         if consultation["iteration"] != state.iteration or consultation["fail_reason"] != fail_reason:
-            raise RuntimeError("人工咨询与当前 Stage9 场景不一致，禁止将旧问题用于新版本")
+            raise RuntimeError("Human consultation does not match the current Stage9 scene; using the old question for a new version is forbidden")
         context["consultation_id"] = consultation["request_id"]
         context["phase"] = "consulting"
         state.flush()
@@ -1697,16 +1697,16 @@ def run_tech_lead(log, roles_dir: str, work_dir: str, op_name: str, state, state
                     log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs,
                     fail_reason, device_info_prompt, perf_diff, selection_context,
                     consultation=consultation, human_messages=human.pending_messages(), scene=scene)
-            log.warning("[人工咨询] 已连续 3 次触发有效提升不足 5%%，请阅读 %s；等待 2 分钟，回复“请等待”仅额外延长一次 10 分钟。", question_path)
-            state_log.warning("[人工咨询] 问题=%s；原场景=%s", question_path, scene)
+            log.warning("[human consultation] Three consecutive triggers of valid improvement under 5%%; please read %s; wait 2 minutes; replying \"please wait\" extends the wait once by 10 minutes.", question_path)
+            state_log.warning("[human consultation] question=%s; original scene=%s", question_path, scene)
             consultation = human.start_wait(consultation["request_id"])
         if consultation["status"] == "waiting":
-            log.info("[人工等待] 请求=%s，沿用截止时间=%s", consultation["request_id"], consultation["deadline"])
+            log.info("[human wait] request=%s, reusing deadline=%s", consultation["request_id"], consultation["deadline"])
             consultation = human.wait_consultation(consultation["request_id"])
         bundle_path = human.build_feedback_bundle(consultation["request_id"])
         context.update(bundle_path=bundle_path, phase="feedback")
         state.flush()
-        log.info("[人工复议] 状态=%s，完整问题/对话/证据=%s", consultation["status"], bundle_path)
+        log.info("[human re-review] status=%s, full question/dialogue/evidence=%s", consultation["status"], bundle_path)
 
     while True:
         pending = human.pending_messages()
@@ -1736,7 +1736,7 @@ def run_tech_lead(log, roles_dir: str, work_dir: str, op_name: str, state, state
         state.flush()
         if not human.pending_messages():
             return str(decision_path)
-        log.info("[人工复议] Stage9 决策生成期间收到新意见，同一轮重新审查后再交付")
+        log.info("[human re-review] New feedback arrived while the Stage9 decision was being generated; re-reviewing within the same round before delivery")
 
 
 def _stage9_case_catalog(work_dir, iteration, scene):
@@ -1744,7 +1744,7 @@ def _stage9_case_catalog(work_dir, iteration, scene):
     report = Path(work_dir) / "eval" / f"iter{iteration}" / "perf_result.json"
     catalog = {"iteration": iteration, "case_ids": None, "source": None,
                "complete": False, "observed_case_ids": [],
-               "read_hint": "未获得本轮完整 case ID 清单；按 task/cases.yaml 与实际代码核对，不能声称程序已验证映射。"}
+               "read_hint": "No complete case ID list for this round was obtained; verify against task/cases.yaml and the actual code; do not claim the program has verified the mapping."}
     if is_performance_scene(scene) or scene == "evaluation_error":
         try:
             payload = _json_module.loads(report.read_text(encoding="utf-8-sig"))
@@ -1758,7 +1758,7 @@ def _stage9_case_catalog(work_dir, iteration, scene):
             catalog.update(source=f"eval/iter{iteration}/perf_result.json", observed_case_ids=observed)
             if type(total) is int and total > 0 and len(observed) == len(cases) == total:
                 catalog.update(case_ids=observed, complete=True,
-                               read_hint="原样使用本轮全部 case ID；不局限最慢六例。文件映射须另附实际路由和代码依据。")
+                               read_hint="Use all of this round's case IDs as-is; do not limit to the six slowest. File mappings require separately attached routing and code evidence.")
     return catalog
 
 
@@ -1779,12 +1779,12 @@ def _write_stage9_plan_contract(work_dir, request_dir, iteration, request_id,
         perf_diff=perf_diff, has_question=has_question))
     atomic_write_json(str(catalog_path), case_catalog)
     hint = (
-        file_hint(work_dir, schema_path, "程序定义的 Stage9 JSON 格式（只读）",
-                  "按本轮字段、类型及层级填写；未列出的经验字段必须省略；case_analysis 按本轮要求填写；修改文件由 changes 自动汇总")
-        + file_hint(work_dir, template_path, "本请求的决策填写模板（只读）",
-                    "复制 iteration/request_id，填写真实结论、任务和已列出的性能经验；经验 case 按实测增补受益及受损项；空白及 null 必须按 schema 填写")
-        + file_hint(work_dir, catalog_path, "本轮可核对的完整 case ID 清单（只读）",
-                    "已列出 ID 时按原名选择；没有清单时回查 task，不把最慢六例当成全部用例")
+        file_hint(work_dir, schema_path, "Program-defined Stage9 JSON format (read-only)",
+                  "Fill in according to this round's fields, types and hierarchy; unlisted experience fields must be omitted; fill case_analysis per this round's requirements; modified files are aggregated automatically from changes")
+        + file_hint(work_dir, template_path, "Decision filling template for this request (read-only)",
+                    "Copy iteration/request_id, and fill in real conclusions, tasks and the listed performance experience; add benefited and harmed items to experience cases per measurements; blanks and nulls must follow the schema")
+        + file_hint(work_dir, catalog_path, "Complete verifiable case ID list for this round (read-only)",
+                    "When IDs are listed, select by their original names; without a list, check back against the task and do not treat the six slowest as all cases")
     )
     return {"schema_path": str(schema_path), "template_path": str(template_path),
             "case_catalog_path": str(catalog_path)}, hint
@@ -1834,7 +1834,7 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
 
     def path_value(value, field):
         if not isinstance(value, str):
-            error(f"{field}: 文件路径必须是字符串，收到 {value!r}")
+            error(f"{field}: file path must be a string, got {value!r}")
             return None
         try:
             return _path(value, field)
@@ -1844,7 +1844,7 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
 
     def paths(value, field):
         if not isinstance(value, list):
-            error(f"{field}: 必须是文件路径数组")
+            error(f"{field}: must be an array of file paths")
             return []
         result = []
         for index, item in enumerate(value):
@@ -1864,7 +1864,7 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
             except (FileNotFoundError, NotADirectoryError):
                 stat_cache[path] = None
             except OSError as exc:
-                error(f"{field}: Stage9 无法核对文件属性：{path} ({exc})", key=("stat", path))
+                error(f"{field}: Stage9 cannot check file attributes: {path} ({exc})", key=("stat", path))
                 stat_cache[path] = stat_failed
         return stat_cache[path]
 
@@ -1880,16 +1880,16 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
         resolution_cache[cache_key] = None
         logical = Path(path)
         if writing and protected(logical):
-            error(f"{field}: Stage9 不可修改只读输入或程序维护文件：{path}",
+            error(f"{field}: Stage9 must not modify read-only inputs or program-maintained files: {path}",
                   key=("protected", path))
             return None
         try:
             target = physical(path).resolve()
         except (OSError, RuntimeError, ValueError) as exc:
-            error(f"{field}: Stage9 无法解析文件路径：{path} ({exc})", key=("resolve", path))
+            error(f"{field}: Stage9 cannot resolve the file path: {path} ({exc})", key=("resolve", path))
             return None
         if writing and (not target.is_relative_to(root) or target == root):
-            error(f"{field}: Stage9 文件范围必须位于工作目录内：{path}", key=("outside", path))
+            error(f"{field}: Stage9 file scope must be inside the working directory: {path}", key=("outside", path))
             return None
         if writing:
             relative = target.relative_to(root)
@@ -1901,14 +1901,14 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
                 and os.path.normcase(relative.parts[0]) == os.path.normcase("selection")
             )
             if protected(relative) and not selected_snapshot:
-                error(f"{field}: Stage9 修改路径实际指向只读输入或程序维护文件：{path}",
+                error(f"{field}: Stage9 modification path actually points to a read-only input or program-maintained file: {path}",
                       key=("actual_protected", path))
                 return None
         info = file_stat(target, field)
         if info is stat_failed:
             return None
         if info is not None and stat.S_ISDIR(info.st_mode):
-            error(f"{field}: Stage9 必须列出具体文件，不能用目录代替：{path}",
+            error(f"{field}: Stage9 must list concrete files; directories are not a substitute: {path}",
                   key=("directory", path))
             return None
         result = (target, info, path, field)
@@ -1923,44 +1923,44 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
         # intentionally permitted to point outside the work directory.
         info = file_stat(physical(path), field)
         if info is not stat_failed and (info is None or not stat.S_ISREG(info.st_mode)):
-            error(f"{field}: {message}：{path}", key=("missing", path))
+            error(f"{field}: {message}: {path}", key=("missing", path))
 
     if not isinstance(decision, dict):
-        raise Stage9DecisionValidationError(["Stage9 文件检查需要 decision 对象"])
+        raise Stage9DecisionValidationError(["Stage9 file check requires a decision object"])
     # The request requires v2 even when the model forgot/invalidated its version
     # field. Do not invent a missing legacy writable list as another error.
     raw_v2 = raw_plan or decision.get("plan_version") == 2
     ledger = decision.get("ledger_entry", {})
     if not isinstance(ledger, dict):
-        error("ledger_entry: 必须是对象")
+        error("ledger_entry: must be an object")
         ledger = {}
     suggestions = decision.get("suggest_next", [])
     if not isinstance(suggestions, list):
-        error("suggest_next: 必须是数组")
+        error("suggest_next: must be an array")
         suggestions = []
     tasks, all_writes = [], {}
     for index, suggestion in enumerate(suggestions):
         label = f"suggest_next[{index}]"
         if not isinstance(suggestion, dict):
-            error(f"{label}: 必须是任务对象")
+            error(f"{label}: must be a task object")
             continue
         task_id = suggestion.get("task_id")
         if isinstance(task_id, str) and task_id.strip():
             label += f" ({task_id})"
         changes = suggestion.get("changes", [])
         if not isinstance(changes, list):
-            error(f"{label}.changes: 必须是数组")
+            error(f"{label}.changes: must be an array")
             changes = []
         writes, created = {}, set()
         for change_index, change in enumerate(changes):
             field = f"{label}.changes[{change_index}]"
             if not isinstance(change, dict):
-                error(f"{field}: 必须是对象")
+                error(f"{field}: must be an object")
                 continue
             path = path_value(change.get("file"), f"{field}.file")
             operation = change.get("operation")
             if operation not in ("create", "modify", "inspect"):
-                error(f"{field}.operation: 必须是 create、modify 或 inspect")
+                error(f"{field}.operation: must be create, modify or inspect")
                 continue
             if path is None:
                 continue
@@ -1973,10 +1973,10 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
                 created.add(path)
                 info = file_stat(physical(path), record[3])
                 if info is not None and info is not stat_failed and not allow_existing_creates:
-                    error(f"{record[3]}: 声明新建但文件已存在，请改为 modify：{path}",
+                    error(f"{record[3]}: declared as create but the file already exists; use modify instead: {path}",
                           key=("create_exists", path))
             else:
-                require_file(record, "检查/修改的实际文件不存在")
+                require_file(record, "the actual file to inspect/modify does not exist")
         if not raw_v2:
             for path, field in paths(suggestion.get("modify_files", []), f"{label}.modify_files"):
                 record = resolve(path, field, writing=True)
@@ -2010,18 +2010,18 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
         if conflict is None and info is not None and info.st_ino:
             conflict = readonly_identities.get((info.st_dev, info.st_ino))
         if conflict is not None:
-            error(f"{field}: Stage9 允许修改与只读路径实际指向同一文件：{path}；"
+            error(f"{field}: Stage9 writable path and read-only path actually point to the same file: {path}; "
                   f"{conflict[3]}={conflict[2]}", key=("readonly_conflict", target))
         if info is not None and info.st_nlink > 1:
-            error(f"{field}: Stage9 待写文件存在多个硬链接，需先使用独立副本：{path}",
+            error(f"{field}: Stage9 file to write has multiple hard links; use an independent copy first: {path}",
                   key=("hardlink", target))
         for parent in target.parents:
             if parent in writable or parent in all_writes:
-                error(f"{field}: Stage9 待写文件不能同时作为另一待写文件的目录：{parent}；{path}",
+                error(f"{field}: Stage9 file to write cannot simultaneously be the directory of another file to write: {parent}; {path}",
                       key=("write_parent", parent, target))
             parent_info = file_stat(parent, field)
             if parent_info is not None and parent_info is not stat_failed and not stat.S_ISDIR(parent_info.st_mode):
-                error(f"{field}: Stage9 待写文件的父级已是文件，无法创建或修改：{parent}；{path}",
+                error(f"{field}: Stage9 parent of the file to write is already a file; cannot create or modify: {parent}; {path}",
                       key=("file_parent", parent, target))
                 break
             if parent_info is stat_failed or parent == root:
@@ -2030,33 +2030,33 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
     for suggestion, label, writes, created in tasks:
         for target, record in writes.items():
             if target not in writable:
-                error(f"{record[3]}: 修改目标与实际文件权限范围冲突：{record[2]}",
+                error(f"{record[3]}: modification target conflicts with the actual file permission scope: {record[2]}",
                       key=("undeclared_write", target))
         bindings = suggestion.get("case_bindings", [])
         if not isinstance(bindings, list):
-            error(f"{label}.case_bindings: 必须是数组")
+            error(f"{label}.case_bindings: must be an array")
             continue
         for index, binding in enumerate(bindings):
             field = f"{label}.case_bindings[{index}]"
             if not isinstance(binding, dict):
-                error(f"{field}: 必须是对象")
+                error(f"{field}: must be an object")
                 continue
             for path, location in paths(binding.get("implementation_files", []), f"{field}.implementation_files"):
                 record = resolve(path, location)
                 if path not in created:
-                    require_file(record, "case 关联的实现文件不存在")
+                    require_file(record, "the implementation file associated with the case does not exist")
             evidence_items = binding.get("route_evidence", [])
             if not isinstance(evidence_items, list):
-                error(f"{field}.route_evidence: 必须是数组")
+                error(f"{field}.route_evidence: must be an array")
                 continue
             for evidence_index, evidence in enumerate(evidence_items):
                 location = f"{field}.route_evidence[{evidence_index}].file"
                 if not isinstance(evidence, dict):
-                    error(f"{field}.route_evidence[{evidence_index}]: 必须是对象")
+                    error(f"{field}.route_evidence[{evidence_index}]: must be an object")
                     continue
                 path = path_value(evidence.get("file"), location)
                 if path is not None:
-                    require_file(resolve(path, location), "路由依据文件不存在")
+                    require_file(resolve(path, location), "the routing evidence file does not exist")
     if errors:
         raise Stage9DecisionValidationError(errors)
 
@@ -2066,12 +2066,12 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                             selection_context=None, *, human_messages=None, bundle_path=None,
                             consultation=None, scene=None):
     """
-    接收本次 Stage9 decision，由程序合并 history 并保存经验。
-    支持在任意回退点调用（build_fail/precision_fail/score_zero/perf_optimize）。
-    根据实际存在的文件灵活组装 prompt。
+    Receives this round's Stage9 decision; the program merges history and saves experience.
+    Supports being invoked at any fallback point (build_fail/precision_fail/score_zero/perf_optimize).
+    Assembles the prompt flexibly based on the files that actually exist.
     """
     import json as _json
-    stage = f"ITER{state.iteration}-阶段9-tech_lead({fail_reason})"
+    stage = f"ITER{state.iteration}-Stage9-tech_lead({fail_reason})"
     # A resumed state may contain an old unguarded diff. Rebuild it from the
     # stored measurement context before generating a role or committing knowledge.
     if scene is None:
@@ -2105,34 +2105,34 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         perf_diff = {}
 
     append_work_record(work_dir, stage)
-    transition(state, "stage9", state_log, reason=f"tech_lead经验总结({fail_reason})")
+    transition(state, "stage9", state_log, reason=f"tech_lead experience summary({fail_reason})")
 
-    # 收集所有已存在的 design_rationale
+    # Collect all existing design_rationale files
     all_designs = []
     for i in (range(0, state.iteration + 1) if performance_scene
               else range(max(0, state.iteration - 1), state.iteration + 1)):
         candidate = os.path.join(work_dir, "develop", f"iter{i}", "design_rationale.md")
         if os.path.exists(candidate):
-            all_designs.append(file_hint(work_dir, candidate, f"iter{i} 的实现设计思路",
-                                         "按轮比较算法、tiling、数据流与改动理由，再对照实际性能验证").rstrip())
-    design_hint = "历轮设计思路：\n" + "\n".join(all_designs) + "\n" if all_designs else ""
+            all_designs.append(file_hint(work_dir, candidate, f"Implementation design rationale for iter{i}",
+                                         "Compare algorithm, tiling, dataflow and change reasons across rounds, then verify against actual performance").rstrip())
+    design_hint = "Design rationale from previous rounds:\n" + "\n".join(all_designs) + "\n" if all_designs else ""
 
-    # 根据可用文件组装 prompt
+    # Assemble the prompt from available files
     data_lines = []
     default_inputs = []
     missing_inputs = []
     for key, name, path, reading in [
-        ("fusion_library", "JSON 融合算子库", str(fusion_library_path(work_dir)), "比较候选数据流、前提与初始概率，以实测证据决定保留或更换"),
-        ("perf_result", "本轮性能结果", f"{iter_dirs['eval']}/perf_result.json", "看 avg_speedup、各 case 的 speedup 和最慢用例，不只看平均值"),
-        ("profiler", "本轮 profiler 数据（按需回查）", f"{iter_dirs['eval']}/prof_data/", "仅在结论矛盾或缺少证据时按 case 回查"),
-        ("perf_reports", "本轮性能报告", f"{iter_dirs['eval']}/perf_reports/", "回查原始计时与评分，核实性能汇总及反作弊信号"),
-        ("bottleneck", "本轮瓶颈分析", f"{iter_dirs['profile']}/bottleneck_analysis.md", "优先读 Stage7 结论，区分已证实根因和推测"),
-        ("fix_directive", "本轮修改指令", f"{iter_dirs['search']}/FIX_DIRECTIVE.md", "优先读 Stage8 结论，转成原有 P0/P1/P2 优先级"),
-        ("search_report", "本轮搜索报告", f"{iter_dirs['search']}/SEARCH_REPORT.md", "按需检查候选方法、依据及适用条件"),
-        ("build_log", "本轮编译日志", f"{iter_dirs['build']}/build.log", "看 STATUS 和首个真实错误，定位构建/接口问题"),
-        ("precision_result", "本轮精度结果", f"{iter_dirs['eval']}/precision_result.json", "核对总数、通过数及失败 case，优先处理正确性"),
-        ("precision_reports", "本轮精度报告详情", f"{iter_dirs['eval']}/precision_reports/", "按失败 case 查误差、输入和原始报错"),
-        ("self_test", "同编号开发轮次的自测报告（若存在）", f"{iter_dirs['develop']}/self_test_report.md", "查看开发自测记录；评测代码的依据以另附的哈希绑定文件为准"),
+        ("fusion_library", "JSON fusion operator library", str(fusion_library_path(work_dir)), "Compare candidate dataflows, prerequisites and initial probabilities; use measured evidence to decide keep or replace"),
+        ("perf_result", "This round's performance result", f"{iter_dirs['eval']}/perf_result.json", "Look at avg_speedup, each case's speedup and the slowest cases, not just the average"),
+        ("profiler", "This round's profiler data (check on demand)", f"{iter_dirs['eval']}/prof_data/", "Check per case only when conclusions conflict or evidence is missing"),
+        ("perf_reports", "This round's performance reports", f"{iter_dirs['eval']}/perf_reports/", "Check raw timing and scoring to verify the performance summary and anti-cheating signals"),
+        ("bottleneck", "This round's bottleneck analysis", f"{iter_dirs['profile']}/bottleneck_analysis.md", "Read Stage7 conclusions first; separate proven root causes from speculation"),
+        ("fix_directive", "This round's modification directive", f"{iter_dirs['search']}/FIX_DIRECTIVE.md", "Read Stage8 conclusions first and convert them to the original P0/P1/P2 priorities"),
+        ("search_report", "This round's search report", f"{iter_dirs['search']}/SEARCH_REPORT.md", "Check candidate methods, evidence and applicability conditions as needed"),
+        ("build_log", "This round's build log", f"{iter_dirs['build']}/build.log", "Look at STATUS and the first real error to locate build/interface problems"),
+        ("precision_result", "This round's precision result", f"{iter_dirs['eval']}/precision_result.json", "Verify totals, pass counts and failed cases; prioritize correctness"),
+        ("precision_reports", "This round's precision report details", f"{iter_dirs['eval']}/precision_reports/", "For failed cases, check errors, inputs and raw error messages"),
+        ("self_test", "Self-test report of the same-numbered development round (if present)", f"{iter_dirs['develop']}/self_test_report.md", "Review the development self-test records; the basis for evaluated code is the separately attached hash binding file"),
     ]:
         if key in scene_input_keys(scene):
             entry = {"key": key, "path": str(Path(path)), "purpose": name, "read_hint": reading}
@@ -2142,15 +2142,15 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
             else:
                 missing_inputs.append(entry)
 
-    fail_hint = f"本轮失败原因：{fail_reason}\n" if fail_reason else ""
+    fail_hint = f"This round\'s failure reason: {fail_reason}\n" if fail_reason else ""
 
-    # 注入已验证的成功经验 + 失败教训 + 错题本供 tech_lead 参考
+    # Inject verified success experience + failure lessons + the pitfall log for tech_lead reference
     patterns_hint = ((format_proven_patterns_for_prompt(work_dir)
                      + format_regression_patterns_for_prompt(work_dir)
                      + format_pitfalls_for_prompt(work_dir)) if performance_scene
                      else format_pitfalls_for_prompt(work_dir))
 
-    # ── 查找上一轮的 question.md（下级反馈），存在且未裁定则注入让 tech_lead 裁定 ──
+    # ── Find the previous round\'s question.md (subordinate feedback); if present and unadjudicated, inject it for tech_lead to adjudicate ──
     question_hint = ""
     question_path_found = None
     for i in range(state.iteration - 1, -1, -1):
@@ -2158,94 +2158,94 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         if os.path.exists(cand):
             with open(cand, "r", encoding="utf-8") as _qf:
                 _qcontent = _qf.read()
-            if "## tech_lead 裁定" in _qcontent:
-                continue  # 已裁定过，跳过
+            if "## tech_lead adjudication" in _qcontent:
+                continue  # already adjudicated; skip
             question_path_found = cand
             question_hint = (
-                "\n" + file_hint(work_dir, cand, "下级反馈待裁定（question.md）",
-                                  "核对被质疑的历史建议和硬证据，再决定 confirmed 或 rejected") +
-                f"stage3 cannbot 反馈你上一轮的某条建议有误。请按当前条件任务裁定：\n"
-                f"读该文件 → 对照 history 中它引用的意见 → 输出 pitfall 字段（confirmed/rejected）。\n"
+                "\n" + file_hint(work_dir, cand, "Subordinate feedback awaiting adjudication (question.md)",
+                                  "Verify the questioned historical suggestion and the hard evidence, then decide confirmed or rejected") +
+                f"stage3 cannbot reports that one of your previous-round suggestions was wrong. Adjudicate as a task under current conditions:\n"
+                f"Read the file → compare the opinion it cites in history → output the pitfall field (confirmed/rejected).\n"
             )
             break
 
-    # ── 使用外部传入的 perf_diff（程序在 stage6 后已算好）──
+    # ── Use the externally supplied perf_diff (already computed by the program after stage6)──
     perf_diff_hint = (perf_diff.get("comparison_text", "") + perf_diff.get("diff_text", "")
                       + perf_diff.get("regression_text", ""))
     if consultation:
-        perf_diff_hint = "\n程序计算的性能变化（仅作为咨询依据）：" + _json.dumps(
+        perf_diff_hint = "\nPerformance change computed by the program (consultation reference only): " + _json.dumps(
             {key: value for key, value in perf_diff.items() if not key.endswith("_text")}, ensure_ascii=False) + "\n"
         if question_path_found:
-            question_hint = file_hint(work_dir, question_path_found, "待裁定开发异议（咨询背景）",
-                                      "本次仅用于问题背景，最终复议阶段再形成裁定")
+            question_hint = file_hint(work_dir, question_path_found, "Development objection awaiting adjudication (consultation background)",
+                                      "Used only as question background this time; the adjudication is formed in the final re-review phase")
 
     profiling_skill_path_9 = os.path.join(os.path.dirname(roles_dir), "skills", "triton-profiling-analysis", "SKILL.md")
     profiling_skill_hint_9 = (
-        "\n" + file_hint(work_dir, profiling_skill_path_9, "Profiling 分析指南",
-                          "使用五文件分析流程和权重核实瓶颈结论",
-                          base_dir=Path(__file__).parent, base_label="项目根目录") +
-        f"分析 profiler 数据时，请加载上述 skill 文件，按五文件分析流程和权重分配进行结构化解读，"
-        f"重点关注 kernel_details.csv（权重50%）中是否有多余 kernel、核是否打满、有无编译降级。\n"
+        "\n" + file_hint(work_dir, profiling_skill_path_9, "Profiling analysis guide",
+                          "Use the five-file analysis process and weights to verify bottleneck conclusions",
+                          base_dir=Path(__file__).parent, base_label="project root") +
+        f"When analyzing profiler data, load the skill file above and interpret it in a structured way following the five-file analysis process and weight allocation, "
+        f"paying special attention to kernel_details.csv (weight 50%) for redundant kernels, saturated cores and compilation downgrades.\n"
     ) if scene == "all_passed" and os.path.exists(profiling_skill_path_9) else ""
 
     decision_output_hint = file_hint(
-        work_dir, decision_path, "本次 Stage9 决策输出（待你生成）",
-        "按 role 写 iteration、request_id、ledger_entry 和模型结论；经验使用 proven_pattern/regression_pattern/pitfall 公共字段")
+        work_dir, decision_path, "This round's Stage9 decision output (to be generated by you)",
+        "Write iteration, request_id, ledger_entry and model conclusions per the role; use the common proven_pattern/regression_pattern/pitfall fields for experience")
     prompt = (
-        f"工作目录：{work_dir}\n算子：{op_name}\n"
-        + file_hint(work_dir, Path(work_dir) / 'task', "只读算子需求和评测基准",
-                    "对照 desc.md、proto.yaml、cases.yaml、golden.py 判断建议是否保持语义和完整 case 覆盖")
-        + file_hint(work_dir, Path(work_dir) / 'ANALYSIS.md', "Stage1 需求分析",
-                    "核对接口、精度、硬件约束和实现难点，避免偏离需求")
-        + (file_hint(work_dir, Path(roles_dir).parent / 'knowledge/anti_cheat_reference.md', "反作弊判定参考",
-                    "按实际错误处理表对照错误码、kernel CSV 和真实代码定位违规或零分原因",
-                    base_dir=Path(roles_dir).parent, base_label="项目根目录") if scene == "evaluation_error" or performance_scene else "")
-        + file_hint(work_dir, Path(work_dir) / 'impl', "当前代码", "按本场景问题核对入口和相关实现")
-        + file_hint(work_dir, history_path, "跨轮经验、性能轮次与修改账本",
-                    ("只读：查看与本次问题相关的历史方向和实测；此时不提交账本" if consultation else
-                     "只读：先读 suggest_next、insights、ledger 和 rounds；仅向本次 decision 提交当前轮账本，程序负责合并历史")) +
+        f"Working directory: {work_dir}\nOperator: {op_name}\n"
+        + file_hint(work_dir, Path(work_dir) / 'task', "Read-only operator requirements and evaluation benchmark",
+                    "Judge against desc.md, proto.yaml, cases.yaml and golden.py whether suggestions preserve semantics and complete case coverage")
+        + file_hint(work_dir, Path(work_dir) / 'ANALYSIS.md', "Stage1 requirements analysis",
+                    "Verify interfaces, precision, hardware constraints and implementation difficulties; avoid deviating from requirements")
+        + (file_hint(work_dir, Path(roles_dir).parent / 'knowledge/anti_cheat_reference.md', "Anti-cheating verdict reference",
+                    "Use the actual error handling table to compare error codes, kernel CSV and real code to locate violation or zero-score causes",
+                    base_dir=Path(roles_dir).parent, base_label="project root") if scene == "evaluation_error" or performance_scene else "")
+        + file_hint(work_dir, Path(work_dir) / 'impl', "Current code", "Verify the entry point and related implementation against this scene's question")
+        + file_hint(work_dir, history_path, "Cross-round experience, performance rounds and modification ledger",
+                    ("Read-only: review historical directions and measurements related to this question; do not submit the ledger now" if consultation else
+                     "Read-only: read suggest_next, insights, ledger and rounds first; submit only the current round's ledger with this decision; the program merges history")) +
         f"{device_info_prompt}\n"
         f"{fail_hint}"
         f"{patterns_hint}"
         f"{perf_diff_hint}"
         f"{question_hint}"
         + "\n".join(data_lines) + "\n"
-        + ("当前场景缺失材料（不能当作已完成结论）：\n" + "".join(
-            file_hint(work_dir, item["path"], item["purpose"] + "（缺失）", "未生成或不可用；明确证据不足，不使用旧结论替代")
+        + ("Materials missing for the current scene (cannot be treated as finished conclusions):\n" + "".join(
+            file_hint(work_dir, item["path"], item["purpose"] + " (missing)", "Not generated or unavailable; state clearly that evidence is insufficient and do not substitute old conclusions")
             for item in missing_inputs if item["key"] != "self_test") if missing_inputs else "")
         + design_hint
         + profiling_skill_hint_9
-        + ("请分析本轮结果，回顾历轮设计思路；" if performance_scene
-           else "请定位本轮故障，回顾与该问题有关的设计和上轮建议；")
-        + f"只读 {history_path}，不要覆盖它。\n"
-        + f"Stage9 输出文件：{decision_path}\n"
-        + f"Stage9 请求编号：{request_id}\n"
-        + f"Stage9 当前轮次：{state.iteration}\n"
+        + ("Analyze this round's results and review previous rounds' design rationale;" if performance_scene
+           else "Locate this round's failure and review the design and previous-round suggestions related to this question;")
+        + f"read {history_path} read-only; do not overwrite it.\n"
+        + f"Stage9 output file: {decision_path}\n"
+        + f"Stage9 request ID: {request_id}\n"
+        + f"Stage9 current iteration: {state.iteration}\n"
         + decision_output_hint
     )
     if performance_scene and not consultation:
-        prompt += ("\n本次 ledger_entry.case_analysis 必须逐一覆盖以下 case_id（原样复制，不能缩写；"
-                   "每例写 observation、explanation、evidence、next_action；根因未证实须注明待验证）：\n"
+        prompt += ("\nThis round's ledger_entry.case_analysis must cover each of the following case_ids one by one (copy verbatim, no abbreviation; "
+                   "for each case write observation, explanation, evidence, next_action; unproven root causes must be marked as pending verification):\n"
                    + _json.dumps(performance_case_ids, ensure_ascii=False) + "\n")
     if state.stage9_context.get("scope_review_error") and not consultation:
-        prompt += ("\nStage3 交付前检查发现旧计划缺少明确文件范围或存在冲突，尚未执行；"
-                   "请重新提交本轮完整决策，并消除以下问题：\n"
+        prompt += ("\nThe pre-delivery check in Stage3 found the old plan lacks a clear file scope or has conflicts and was not executed; "
+                   "please resubmit this round's complete decision and resolve the following problems:\n"
                    + state.stage9_context["scope_review_error"] + "\n")
 
     if performance_scene:
         prompt += format_fusion_library_for_prompt(work_dir, "stage9")
     else:
-        prompt += file_hint(work_dir, fusion_library_path(work_dir), "初始融合候选库（仅按需回查）", "本次先修编译或正确性；人工方向涉及融合方法时可回查概率及前提")
+        prompt += file_hint(work_dir, fusion_library_path(work_dir), "Initial fusion candidate library (consult on demand only)", "Fix build or correctness first this time; when a human direction involves fusion methods, check probabilities and prerequisites")
     prompt += format_evidence_for_prompt(work_dir)
     if performance_scene:
         prompt += format_selection_for_prompt(work_dir, comparison_context=selection_context)
         prompt += regression_action_prompt(work_dir, state.iteration)
         event = state.stage9_context.get("semantic_event")
         if event:
-            prompt += (f"\n程序记录：本轮第 {event['entry_count']} 次进入 {event['scene']} 停滞场景；"
-                       "这是历次触发的累计次数，与人工咨询的三次计数独立。\n")
-            prompt += file_hint(work_dir, event["state_path"], "语义停滞触发及次数记录",
-                                "核对当前迭代、比较组、窗口和 entry_count；恢复同一轮不重复计数")
+            prompt += (f"\nProgram record: this is entry {event['entry_count']} into the {event['scene']} stagnation scene; "
+                       "this is the cumulative count across triggers, independent of the human consultation's three-count.\n")
+            prompt += file_hint(work_dir, event["state_path"], "Semantic stagnation trigger and count record",
+                                "Verify the current iteration, comparison group, window and entry_count; resuming the same round does not double count")
     # Read the persisted window here too, so a Stage9 resume gets the same review
     # instructions without counting another evaluation or changing failure routes.
     selection_status = load_selection_status(work_dir, comparison_context=selection_context)
@@ -2253,36 +2253,36 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                    if fail_reason == "perf_optimize" else "")
     if review_hint:
         prompt += "\n\n" + review_hint + "\n"
-        log.warning("[Stage9 提示词追加]\n%s", review_hint)
+        log.warning("[Stage9 prompt addition]\n%s", review_hint)
         evidence = load_evidence(work_dir)
         sources = [
-            ("Stage9 role", role), ("需求分析", f"{work_dir}/ANALYSIS.md"),
-            ("task", f"{work_dir}/task"), ("历史经验", history_path),
-            ("硬件来源", f"{work_dir}/device_info.json"),
-            ("反作弊参考", os.path.join(os.path.dirname(roles_dir), "knowledge", "anti_cheat_reference.md")),
-            ("成功经验", f"{work_dir}/knowledge/proven_patterns.md"),
-            ("退步教训", f"{work_dir}/knowledge/regression_patterns.md"),
-            ("错题本", f"{work_dir}/knowledge/tech_lead_pitfalls.md"),
-            ("当前代码与证据绑定", f"{work_dir}/selection/current_implementation.json"),
-            ("语义窗口及历史索引", f"{work_dir}/selection/state.json"),
-            ("历史评测快照及 case 趋势来源", f"{work_dir}/selection/records"),
-            ("Profiling 指南", profiling_skill_path_9),
+            ("Stage9 role", role), ("Requirements analysis", f"{work_dir}/ANALYSIS.md"),
+            ("task", f"{work_dir}/task"), ("Historical experience", history_path),
+            ("Hardware source", f"{work_dir}/device_info.json"),
+            ("Anti-cheating reference", os.path.join(os.path.dirname(roles_dir), "knowledge", "anti_cheat_reference.md")),
+            ("Success experience", f"{work_dir}/knowledge/proven_patterns.md"),
+            ("Regression lessons", f"{work_dir}/knowledge/regression_patterns.md"),
+            ("Pitfall log", f"{work_dir}/knowledge/tech_lead_pitfalls.md"),
+            ("Current code and evidence binding", f"{work_dir}/selection/current_implementation.json"),
+            ("Semantic window and history index", f"{work_dir}/selection/state.json"),
+            ("Historical evaluation snapshots and case trend source", f"{work_dir}/selection/records"),
+            ("Profiling guide", profiling_skill_path_9),
         ]
-        sources += [(f"当前实现证据/{name}", path)
+        sources += [(f"current implementation evidence/{name}", path)
                     for name, path in evidence.get("evidence_paths", {}).items()]
         best = selection_status["best"]
-        sources += [(f"最佳实现/{name}", best[name]) for name in
+        sources += [(f"best implementation/{name}", best[name]) for name in
                     ("manifest_path", "implementation_dir", "performance_report", "precision_report")]
         if question_path_found:
-            sources.append(("待裁定问题", question_path_found))
-        input_lines = data_lines + all_designs + [f"{name}：{Path(path)}" for name, path in sources
+            sources.append(("question awaiting adjudication", question_path_found))
+        input_lines = data_lines + all_designs + [f"{name}: {Path(path)}" for name, path in sources
                                                  if os.path.exists(path)]
-        log.info("[Stage9 融合重点审查输入及证据来源]\n%s", "\n".join(input_lines))
+        log.info("[Stage9 fusion review inputs and evidence sources]\n%s", "\n".join(input_lines))
     allow_empty = bool(selection_status.get("eligible") and selection_status.get("should_exit")
                        and selection_status.get("latest_iteration") == state.iteration
                        and fail_reason.startswith("perf_pass"))
     if allow_empty and not consultation:
-        prompt += "\n程序已确认本轮语义退出，suggest_next 可为 []，完成经验记录即可。\n"
+        prompt += "\nThe program has confirmed this round\'s semantic exit; suggest_next may be []; just complete the experience records.\n"
     if not consultation:
         prompt += human_prompt(work_dir, human_messages or [], bundle_path,
                                ending_reason=state.stopped_by or ("semantic_stagnation" if allow_empty else None))
@@ -2292,10 +2292,10 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         contract_paths, contract_hint = _write_stage9_plan_contract(
             work_dir, request_dir, state.iteration, request_id, performance_case_ids,
             allow_empty, case_catalog, perf_diff=perf_diff, has_question=bool(question_path_found))
-        prompt += "\n程序定义的填写格式（先读后填）：\n" + contract_hint
+        prompt += "\nProgram-defined filling format (read first, then fill):\n" + contract_hint
         prompt += file_hint(
-            work_dir, implementation_base, "本轮建议实际实施的代码基底（只读查阅）",
-            "在此核对 case 路由与待改函数；changes 仍填写实施时的 impl/... 相对路径。若本轮需回退最佳版本，不按退步代码臆造修改位置")
+            work_dir, implementation_base, "Code base on which this round's suggestions will actually be implemented (read-only reference)",
+            "Verify case routing and functions to change here; changes still use impl/... relative paths as implemented. If this round restores the best version, do not invent modification locations from the regressed code")
     atomic_write_text(role, build_scene_role(
         roles_dir, scene, phase=phase, perf_diff=perf_diff,
         has_question=bool(question_path_found), has_human=bool(human_messages)))
@@ -2305,15 +2305,15 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         # Retain version-bound implementation/fusion/selection evidence that follows
         # the normal output lines; remove only the final-decision contract itself.
         prompt = "\n".join(line for line in prompt.splitlines()
-                           if not line.startswith(("Stage9 输出文件：", "Stage9 请求编号：", "Stage9 当前轮次："))
+                           if not line.startswith(("Stage9 output file:", "Stage9 request ID:", "Stage9 current iteration:"))
                            and str(decision_path) not in line)
-        prompt += (f"\nStage9 咨询输出文件：{question_output}\n"
-                   f"Stage9 咨询请求编号：{consultation['request_id']}\n"
-                   f"程序记录的三次停滞轮次：{consultation['trigger_iterations']}\n"
-                   "本次只输出问题，禁止提交最终 decision 或改写 history。不要执行 Stage3。\n"
-                   + file_hint(work_dir, consultation["evidence_manifest_path"], "咨询上下文的版本快照及缺失清单",
-                               "按用途和读法查看实现、最佳成绩、慢 case 趋势及历史尝试，问题引用具体证据路径")
-                   + "既有主动意见：" + _json.dumps(human_messages or [], ensure_ascii=False))
+        prompt += (f"\nStage9 consultation output file: {question_output}\n"
+                   f"Stage9 consultation request ID: {consultation['request_id']}\n"
+                   f"The three stagnation rounds recorded by the program: {consultation['trigger_iterations']}\n"
+                   "Output only the question this time; submitting a final decision or rewriting history is forbidden. Do not execute Stage3.\n"
+                   + file_hint(work_dir, consultation["evidence_manifest_path"], "Version snapshot and missing-item list of the consultation context",
+                               "Review the implementation, best scores, slow case trends and historical attempts by purpose and reading hint; cite concrete evidence paths in the question")
+                   + "Existing proactive feedback: " + _json.dumps(human_messages or [], ensure_ascii=False))
     request_record = {
         "iteration": state.iteration, "request_id": request_id, "fail_reason": fail_reason,
         "perf_diff": perf_diff, "question_path": question_path_found,
@@ -2338,12 +2338,12 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
     }
     atomic_write_json(str(request_dir / "request.json"), request_record)
     atomic_write_text(str(request_dir / "prompt.md"), prompt)
-    log.info("[Stage9 场景] iter=%s scene=%s phase=%s request=%s consultation=%s human_ids=%s；role=%s；prompt=%s；输入清单=%s",
+    log.info("[Stage9 scene] iter=%s scene=%s phase=%s request=%s consultation=%s human_ids=%s; role=%s; prompt=%s; input list=%s",
              state.iteration, scene, phase, request_id,
              consultation["request_id"] if consultation else state.stage9_context.get("consultation_id", "-"),
              [item["id"] for item in human_messages or []], role, request_dir / "prompt.md", request_dir / "request.json")
     output_path = question_output if consultation else decision_path
-    log.info("[%s] 启动 tech_lead，phase=%s，输出=%s", stage, phase, output_path)
+    log.info("[%s] launching tech_lead, phase=%s, output=%s", stage, phase, output_path)
     max_attempts = 3
     root_request_dir, root_request_id = request_dir, request_id
     base_prompt, base_output_path = prompt, decision_path
@@ -2367,7 +2367,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
             target.unlink(missing_ok=True)
         else:
             atomic_write_text(str(target), report_before)
-        log.warning("[Stage9 报告保护] iter=%s 已撤销 agent 对分析报告的直接改写；仅接收 decision.json：%s",
+        log.warning("[Stage9 report protection] iter=%s reverted the agent's direct rewrite of the analysis report; only decision.json is accepted: %s",
                     state.iteration, target)
 
     try:
@@ -2379,7 +2379,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
             finally:
                 restore_report_input()
             if not agent_ok:
-                raise RuntimeError("Stage9 agent 未成功完成")
+                raise RuntimeError("Stage9 agent did not complete successfully")
             if consultation:
                 output = _json.loads(question_output.read_text(encoding="utf-8-sig"))
                 question_status = consultation.get("context", {}).get("selection_status", selection_status)
@@ -2391,7 +2391,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                 with decision_path.open("r", encoding="utf-8-sig") as decision_file:
                     decision = _json.load(decision_file)
                 if not isinstance(decision, dict) or decision.get("request_id") != request_id:
-                    raise ValueError("Stage9 输出不属于本次请求")
+                    raise ValueError("Stage9 output does not belong to this request")
                 # These checks are read-only. A task-binding error must not hide
                 # an independent directory/missing-file error until the retry.
                 validation_errors = []
@@ -2438,19 +2438,19 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                     "will_retry": attempt + 1 < max_attempts,
                 })
                 will_retry = attempt + 1 < max_attempts
-                next_action = (f"同轮修正{attempt + 1}/2次，不增加性能迭代次数" if will_retry
-                               else "停止于 Stage9，不进入 Stage3")
+                next_action = (f"in-round correction {attempt + 1}/2, without increasing performance iterations" if will_retry
+                               else "stop at Stage9; do not enter Stage3")
                 failure_message = (
-                    "===== Stage9 决策校验失败：iter=%s scene=%s request=%s 尝试次数=%s/3 修正次数=%s/2；"
-                    "原因=%s；下一步=%s；决策=%s；错误记录=%s =====")
+                    "===== Stage9 decision validation failed: iter=%s scene=%s request=%s attempts=%s/3 corrections=%s/2; "
+                    "reason=%s; next step=%s; decision=%s; error record=%s =====")
                 failure_args = (state.iteration, scene, request_id, attempt + 1, attempt, exc,
                                 next_action, decision_path, error_path)
                 log.warning(failure_message, *failure_args)
                 state_log.warning(failure_message, *failure_args)
                 if not will_retry:
                     stopped_message = (
-                        "===== Stage9 修正失败，停止交付 ===== iter=%s request=%s；不进入 Stage3；"
-                        "原历史已恢复；原因=%s；决策=%s；错误记录=%s")
+                        "===== Stage9 correction failed; delivery stopped ===== iter=%s request=%s; not entering Stage3; "
+                        "original history restored; reason=%s; decision=%s; error record=%s")
                     stopped_args = (state.iteration, request_id, exc, decision_path, error_path)
                     log.error(stopped_message, *stopped_args)
                     state_log.error(stopped_message, *stopped_args)
@@ -2465,35 +2465,35 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                 # Keep the full original scene/human context. Replace only the
                 # output contract, and provide the rejected version as evidence.
                 new_output_hint = file_hint(
-                    work_dir, decision_path, "本次 Stage9 决策输出（待你生成）",
-                    "按 role 写 iteration、request_id、ledger_entry 和模型结论；经验使用 proven_pattern/regression_pattern/pitfall 公共字段")
+                    work_dir, decision_path, "This round's Stage9 decision output (to be generated by you)",
+                    "Write iteration, request_id, ledger_entry and model conclusions per the role; use the common proven_pattern/regression_pattern/pitfall fields for experience")
                 prompt = base_prompt.replace(base_output_hint, new_output_hint)
                 contract_paths, new_contract_hint = _write_stage9_plan_contract(
                     work_dir, request_dir, state.iteration, request_id, performance_case_ids,
                     allow_empty, case_catalog, perf_diff=perf_diff, has_question=bool(question_path_found))
                 prompt = prompt.replace(base_contract_hint, new_contract_hint)
                 prompt = prompt.replace(str(base_output_path), str(decision_path)).replace(
-                    f"Stage9 请求编号：{root_request_id}", f"Stage9 请求编号：{request_id}")
+                    f"Stage9 request ID: {root_request_id}", f"Stage9 request ID: {request_id}")
                 prompt += (
-                    f"\n===== 同轮 Stage9 决策修正（第 {attempt + 1}/2 次，总尝试第 {attempt + 2}/3 次）=====\n"
-                    "上一份输出未通过程序检查，尚未交给 Stage3，也未写入经验。"
-                    "请修正完整 decision，不要只输出补丁；保持当前轮次、原场景和全部人工意见。\n"
-                    + file_hint(work_dir, error_path, "上次决策的校验错误", "逐项处理 errors 中的完整字段路径及 case ID；同时核对本轮完整 schema，不能只修第一条")
-                    + file_hint(work_dir, previous_output, "被拒绝的原始决策（若存在）", "只读对照，不能直接复用；本次须写新的请求编号与输出文件")
-                    + f"程序拒绝原因：{exc}\n"
-                    "需要修改某文件时，必须写入 changes 的 modify/create 步骤，并与目标 case 的 implementation_files 对应，"
-                    "且不能在 ledger.readonly_files 中；允许修改列表由程序汇总，不要自行填写 modify_files/inspect_files。"
-                    "若文件必须只读，应调整方案或安排 inspect 任务，不得将修改伪装成检查。\n"
-                    "文件检查修正：changes.file 中 inspect 也必须填写实际文件，不能填 prof_data 等目录。"
-                    "可先浏览目录定位对应报告再列出路径；case_scope=cases 的 inspect 任务须逐 case 包含对绑定实现文件的检查。"
-                    "按 errors 列表同时修正任务绑定和文件类型问题，不猜测不存在的报告路径。\n"
+                    f"\n===== In-round Stage9 decision correction (correction {attempt + 1}/2, overall attempt {attempt + 2}/3) =====\n"
+                    "The previous output failed the program's checks; it was not handed to Stage3 nor written into experience."
+                    "Fix the complete decision; do not output only a patch; keep the current iteration, original scene and all human feedback.\n"
+                    + file_hint(work_dir, error_path, "Validation errors of the previous decision", "Address each full field path and case ID in errors; also recheck this round's complete schema; do not fix only the first item")
+                    + file_hint(work_dir, previous_output, "Rejected original decision (if present)", "Read-only reference; it cannot be reused directly; this time write a new request ID and output file")
+                    + f"Program rejection reason: {exc}\n"
+                    "When a file must be modified, it must be written as a modify/create step in changes and correspond to the target case's implementation_files, "
+                    "and it must not be in ledger.readonly_files; the writable list is aggregated by the program; do not fill in modify_files/inspect_files yourself."
+                    "If a file must stay read-only, adjust the scheme or arrange an inspect task; do not disguise modifications as inspections.\n"
+                    "File-check correction: in changes.file, inspect must also name an actual file, not a directory like prof_data."
+                    "You may browse the directory first to locate the corresponding report and then list paths; inspect tasks with case_scope=cases must include a check of the bound implementation files per case."
+                    "Fix both task bindings and file type issues together per the errors list; do not guess nonexistent report paths.\n"
                 )
                 if any(perf_diff.get(flag) for flag in ("has_improvement", "has_regression")):
                     prompt += (
-                        "性能经验修正：按本次 schema/template 核对 proven_pattern/regression_pattern 的全部必填字段。"
-                        "applicability 必须是非空文字；每条 case_analysis 都要有独立 explanation。"
-                        "ledger_entry.case_analysis 的解释和总体 why_it_worked/why_it_failed 不能替代经验里的逐 case 解释。"
-                        "根因不确定时如实标为推测或待验证，并说明验证方法；不得编造原因或删除 case 来绕过检查。\n"
+                        "Performance experience correction: verify all required fields of proven_pattern/regression_pattern against this schema/template."
+                        "applicability must be non-empty text; each case_analysis needs its own explanation."
+                        "The explanations in ledger_entry.case_analysis and the overall why_it_worked/why_it_failed cannot replace the per-case explanations in the experience."
+                        "When the root cause is uncertain, honestly mark it as speculation or pending verification and state the verification method; do not fabricate causes or drop cases to bypass checks.\n"
                     )
                 request_record.update({
                     "request_id": request_id, "decision_path": str(decision_path),
@@ -2511,25 +2511,25 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                 atomic_write_text(role, base_role)
                 atomic_write_text(str(request_dir / "prompt.md"), prompt)
                 retry_message = (
-                    "===== Stage9 同轮修正 ===== iter=%s scene=%s；尝试次数=%s/3 修正次数=%s/2，不增加性能迭代次数；"
-                    "原请求=%s；新请求=%s；错误记录=%s；原决策=%s；prompt=%s；输入清单=%s；输出=%s")
+                    "===== Stage9 in-round correction ===== iter=%s scene=%s; attempts=%s/3 corrections=%s/2, without increasing performance iterations; "
+                    "original request=%s; new request=%s; error record=%s; original decision=%s; prompt=%s; input list=%s; output=%s")
                 retry_args = (state.iteration, scene, attempt + 2, attempt + 1, previous_id, request_id, error_path,
                               previous_output, request_dir / "prompt.md", request_dir / "request.json", decision_path)
                 log.info(retry_message, *retry_args)
                 state_log.info(retry_message, *retry_args)
                 continue
-            log.info("[Stage9 决策校验通过] iter=%s request=%s 尝试次数=%s/3 修正次数=%s/2；v2任务=%s；允许修改=%s；只读=%s；决策=%s",
+            log.info("[Stage9 decision validation passed] iter=%s request=%s attempts=%s/3 corrections=%s/2; v2 tasks=%s; writable=%s; read-only=%s; decision=%s",
                      state.iteration, request_id, attempt + 1, attempt, [item["task_id"] for item in _h["suggest_next"]],
                      plan_ledger["modify_files"], plan_ledger["readonly_files"], decision_path)
-            state_log.info("[Stage9 决策校验通过] iter=%s request=%s 尝试次数=%s/3 修正次数=%s/2；决策=%s",
+            state_log.info("[Stage9 decision validation passed] iter=%s request=%s attempts=%s/3 corrections=%s/2; decision=%s",
                            state.iteration, request_id, attempt + 1, attempt, decision_path)
             break
     except BaseException as exc:
         # Restore the full pre-call state even if the agent accidentally overwrote it.
         save_history(work_dir, history_before)
-        log.error("[%s] Stage9 输出未通过接收检查，历史已恢复；phase=%s，本次输出=%s", stage, phase, output_path)
+        log.error("[%s] Stage9 output failed the acceptance check; history restored; phase=%s, this output=%s", stage, phase, output_path)
         if isinstance(exc, Exception):
-            raise RuntimeError(f"Stage9 决策接收失败：{exc}") from exc
+            raise RuntimeError(f"Stage9 decision acceptance failed: {exc}") from exc
         raise
 
     # The agent owns only decision.json. Restore accidental edits before any further IO.
@@ -2540,9 +2540,9 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         try:
             validate_profile_report_directory(work_dir, state.iteration)
         except (OSError, ValueError) as exc:
-            log.error("[性能分析报告] iter=%s 来源=Stage9；目录检查失败，不交付：%s；决策=%s",
+            log.error("[performance analysis report] iter=%s source=Stage9; directory check failed; not delivering: %s; decision=%s",
                       state.iteration, exc, decision_path)
-            raise RuntimeError(f"Stage9 分析报告目录不可用：{exc}") from exc
+            raise RuntimeError(f"Stage9 analysis report directory unusable: {exc}") from exc
     current_ledger = next(entry for entry in reversed(_h["ledger"]) if entry["iter"] == state.iteration)
     current_ledger["stage9_decision_path"] = str(decision_path)
     review_environment = build_knowledge_environment(work_dir, comparison_context=selection_context)
@@ -2576,8 +2576,8 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         evidence_files[f"current_{name}"] = path
 
     for flag, field, writer, filename, label in (
-        ("has_improvement", "proven_pattern", append_proven_pattern, "proven_patterns.md", "成功经验"),
-        ("has_regression", "regression_pattern", append_regression_pattern, "regression_patterns.md", "退步教训"),
+        ("has_improvement", "proven_pattern", append_proven_pattern, "proven_patterns.md", "success experience"),
+        ("has_regression", "regression_pattern", append_regression_pattern, "regression_patterns.md", "regression lesson"),
     ):
         if not perf_diff.get(flag):
             continue
@@ -2594,9 +2594,9 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         log_knowledge_write(log, state_log, label=label, path=Path(work_dir) / "knowledge" / filename,
                             iteration=state.iteration, environment=performance_environment,
                             decision_path=decision_path,
-                            detail=f"iter{perf_diff['prev_iter']}→iter{state.iteration}；"
-                                   f"avg_speedup={perf_diff['prev_avg_speedup']}→{perf_diff['curr_avg_speedup']}；"
-                                   f"变化={perf_diff['delta_pct']}%")
+                            detail=f"iter{perf_diff['prev_iter']}→iter{state.iteration}; "
+                                   f"avg_speedup={perf_diff['prev_avg_speedup']}→{perf_diff['curr_avg_speedup']}; "
+                                   f"change={perf_diff['delta_pct']}%")
 
     if question_path_found:
         pitfall = copy.deepcopy(decision["pitfall"])
@@ -2607,17 +2607,17 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         verdict = pitfall["verdict"]
         question_path = Path(question_path_found)
         question_text = question_path.read_text(encoding="utf-8")
-        if "## tech_lead 裁定" not in question_text:
+        if "## tech_lead adjudication" not in question_text:
             question_text += (
-                f"\n\n## tech_lead 裁定（iter{state.iteration}）\n"
-                f"- 结论: {'✅确认误判' if verdict == 'confirmed' else '❌驳回'}\n"
-                f"- 原因: {pitfall['root_cause']}\n"
-                f"- 正确{'做法' if verdict == 'confirmed' else '认知'}: {pitfall['correct_approach']}\n")
+                f"\n\n## tech_lead adjudication (iter{state.iteration})\n"
+                f"- Verdict: {'✅ misjudgment confirmed' if verdict == 'confirmed' else '❌ rejected'}\n"
+                f"- Reason: {pitfall['root_cause']}\n"
+                f"- Correct {'practice' if verdict == 'confirmed' else 'understanding'}: {pitfall['correct_approach']}\n")
             atomic_write_text(str(question_path), question_text)
-        append_work_record(work_dir, f"{stage} 裁定 question.md: {verdict}")
-        log_knowledge_write(log, state_log, label="错题本", path=Path(work_dir) / "knowledge/tech_lead_pitfalls.md",
+        append_work_record(work_dir, f"{stage} adjudicated question.md: {verdict}")
+        log_knowledge_write(log, state_log, label="pitfall log", path=Path(work_dir) / "knowledge/tech_lead_pitfalls.md",
                             iteration=state.iteration, environment=review_environment, decision_path=decision_path,
-                            detail=f"裁定={verdict}；主题={pitfall['topic']}；问题={question_path_found}")
+                            detail=f"verdict={verdict}; topic={pitfall['topic']}; question={question_path_found}")
 
     save_history(work_dir, _h)
     atomic_write_json(str(request_dir / "commit.json"), {
@@ -2628,19 +2628,19 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         try:
             report_path = write_stage9_report(work_dir, state.iteration, decision, decision_path)
         except (OSError, ValueError) as exc:
-            log.error("[性能分析报告] iter=%s 来源=Stage9；已接收决策，但报告保存失败：%s；决策=%s",
+            log.error("[performance analysis report] iter=%s source=Stage9; decision accepted but saving the report failed: %s; decision=%s",
                       state.iteration, exc, decision_path)
-            raise RuntimeError(f"Stage9 分析报告保存失败：{exc}") from exc
+            raise RuntimeError(f"Stage9 analysis report save failed: {exc}") from exc
         _log_profile_report(log, state_log, state.iteration, 9, report_path, decision_path)
     if performance_scene:
-        log.info("[历史分析] iter=%s 已保存 %s 个慢 case 的本轮结论，case_ids=%s；history=%s；decision=%s",
+        log.info("[history analysis] iter=%s saved this round's conclusions for %s slow cases, case_ids=%s; history=%s; decision=%s",
                  state.iteration, len(current_ledger.get("case_analysis", [])), performance_case_ids,
                  history_path, decision_path)
-    log_knowledge_write(log, state_log, label="历史账本", path=history_path, iteration=state.iteration,
+    log_knowledge_write(log, state_log, label="history ledger", path=history_path, iteration=state.iteration,
                         environment=current_ledger["environment"], decision_path=decision_path,
-                        detail=f"程序已合并本轮账本，保留 {len(_h['ledger'])} 轮 ledger")
+                        detail=f"The program merged this round's ledger; keeping {len(_h['ledger'])} rounds of ledger")
     if human_messages:
-        log.info("[人工裁定] iter=%s request=%s responses=%s P0_ids=%s；decision=%s；history=%s",
+        log.info("[human adjudication] iter=%s request=%s responses=%s P0_ids=%s; decision=%s; history=%s",
                  state.iteration, request_id,
                  [{"id": item["message_id"], "kind": item["kind"]} for item in decision["human_responses"]],
                  [item["human_message_id"] for item in decision["suggest_next"] if item.get("source") == "human"],
@@ -2648,14 +2648,14 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
 
     history_log = logging.getLogger("triton-ascend-history")
     if history_log.handlers:
-        history_log.info(f"ITER{state.iteration} [stage9 tech_lead 更新({fail_reason})]\n{_json.dumps(_h, ensure_ascii=False, indent=2)}")
-    log.info(f"[{stage}] history.json 已由程序合并 Stage9 决策")
+        history_log.info(f"ITER{state.iteration} [stage9 tech_lead update({fail_reason})]\n{_json.dumps(_h, ensure_ascii=False, indent=2)}")
+    log.info(f"[{stage}] history.json merged with the Stage9 decision by the program")
     return str(decision_path)
 
 
 def _log_profile_report(log, state_log, iteration, source_stage, path, decision_path=None):
-    message = "[性能分析报告] iter=%s 来源=Stage%s；本轮唯一报告=%s；决策来源=%s"
-    args = (iteration, source_stage, path, decision_path or "Stage7 分析正文")
+    message = "[performance analysis report] iter=%s source=Stage%s; this round\'s only report=%s; decision source=%s"
+    args = (iteration, source_stage, path, decision_path or "Stage7 analysis body")
     log.info(message, *args)
     if state_log is not None:
         state_log.info(message, *args)
@@ -2666,13 +2666,13 @@ def _restore_stage9_profile(work_dir, iteration, ledger):
     root = Path(work_dir).resolve()
     source = ledger.get("stage9_decision_path")
     if not source:
-        raise ValueError("当前账本缺少已接收的 Stage9 决策路径，不能补造分析报告")
+        raise ValueError("The current ledger lacks the accepted Stage9 decision path; the analysis report cannot be fabricated")
     decision_path = Path(source)
     if not decision_path.is_absolute():
         decision_path = root / decision_path
     if (not decision_path.resolve().is_relative_to(root / "knowledge" / "stage9" / f"iter{iteration}")
             or decision_path.name != "decision.json"):
-        raise ValueError("分析报告来源必须是本轮已接收的 Stage9 decision.json")
+        raise ValueError("The analysis report source must be this round\'s accepted Stage9 decision.json")
     decision = _json_module.loads(decision_path.read_text(encoding="utf-8-sig"))
     commit = _json_module.loads((decision_path.parent / "commit.json").read_text(encoding="utf-8-sig"))
     if (not isinstance(commit, dict) or not isinstance(decision, dict)
@@ -2680,12 +2680,12 @@ def _restore_stage9_profile(work_dir, iteration, ledger):
             or decision.get("iteration") != iteration or ledger.get("iter") != iteration
             or not decision.get("request_id") or commit.get("request_id") != decision["request_id"]
             or commit.get("decision_path") != str(decision_path)):
-        raise ValueError("分析报告来源的 Stage9 提交记录与当前轮次/请求不一致")
+        raise ValueError("The analysis report source\'s Stage9 commit record does not match the current iteration/request")
     authored = decision.get("ledger_entry")
     if not isinstance(authored, dict) or any(
             authored.get(field) != ledger.get(field)
             for field in ("evaluation_summary", "case_analysis")):
-        raise ValueError("分析报告来源与已接收账本不一致，不能混用版本")
+        raise ValueError("The analysis report source does not match the accepted ledger; versions cannot be mixed")
     # Render the accepted task view checked by current_scope, not an unrelated
     # live suggestion list or source files that Stage3 may already have edited.
     decision = dict(decision, suggest_next=ledger["action_plan"]["tasks"])
@@ -2694,10 +2694,10 @@ def _restore_stage9_profile(work_dir, iteration, ledger):
 
 def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: State, reason: str, state_log=None, node_logs=None, iter_dirs=None, extra_context: str = "", device_info_prompt: str = "", selection_context=None):
     """
-    调用阶段3（cannbot修改），根据 reason 注入不同文件路径到 prompt。
+    Invokes stage3 (cannbot modification), injecting different file paths into the prompt based on reason.
     reason: build_fail / precision_fail / perf_optimize / score_zero
     """
-    stage = f"ITER{state.iteration}-阶段3-修改({reason})"
+    stage = f"ITER{state.iteration}-Stage3-modify({reason})"
     role = os.path.join(roles_dir, "n1_stage3_fix_and_optimize.md")
     _review_pending_humans(log, roles_dir, work_dir, op_name, state, state_log,
                            node_logs, iter_dirs, device_info_prompt, selection_context)
@@ -2709,7 +2709,7 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
                        if item.get("iter") == state.iteration), None)
         suggestions = history.get("suggest_next")
         if not suggestions:
-            raise ValueError("Stage3 本轮缺少可执行建议")
+            raise ValueError("Stage3 lacks executable suggestions for this round")
         scene = state.stage9_context.get("scene") or classify_scene(reason, iteration=state.iteration)
         known_ids = _stage9_case_catalog(work_dir, state.iteration, scene)["case_ids"]
         ledger, suggestions = validate_current_plan(ledger, suggestions, known_case_ids=known_ids)
@@ -2722,7 +2722,7 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
     try:
         current_scope()
     except ValueError as exc:
-        log.warning("[Stage3 交付拦截] iter=%s 文件范围未通过检查，返回同轮 Stage9：%s；history=%s",
+        log.warning("[Stage3 delivery intercept] iter=%s file scope failed the check; returning to the same round's Stage9: %s; history=%s",
                     state.iteration, exc, Path(work_dir) / "knowledge/history.json")
         state.stage9_context["scope_review_error"] = str(exc)
         state.flush()
@@ -2755,7 +2755,7 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
     receipt_path = Path(iter_dirs["develop"]) / "human_feedback.json"
     state.stage9_context.update(phase="developing", development_reason=reason)
 
-    # 备份当前 impl 到 operator_iter/iter{N}/（代码追溯用，不对 agent 展示）
+    # Back up the current impl to operator_iter/iter{N}/ (for code tracing; not shown to the agent)
     import shutil
     backup_dir = os.path.join(work_dir, "operator_iter", f"iter{state.iteration}")
     impl_dir = os.path.join(work_dir, "impl")
@@ -2763,20 +2763,20 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
         if os.path.exists(backup_dir):
             shutil.rmtree(backup_dir)
         shutil.copytree(impl_dir, backup_dir)
-        log.info(f"[{stage}] impl 已备份到 {backup_dir}")
+        log.info(f"[{stage}] impl backed up to {backup_dir}")
 
     append_work_record(work_dir, stage)
-    transition(state, "stage3", state_log, reason=f"回退修改代码({reason})")
+    transition(state, "stage3", state_log, reason=f"reverting to modify code({reason})")
 
     base_prompt = (
-        f"工作目录：{work_dir}\n算子：{op_name}\n"
-        + file_hint(work_dir, Path(work_dir) / 'impl', "当前算子实现工程",
-                    "按 Tech Lead 的允许范围检查实际源文件，定位入口、tiling 和数据流")
-        + file_hint(work_dir, Path(work_dir) / 'task', "只读需求、用例及参考实现",
-                    "按 desc.md、proto.yaml、cases.yaml、golden.py 核对修复是否保持语义和完整覆盖")
-        + file_hint(work_dir, Path(work_dir) / 'ANALYSIS.md', "Stage1 需求分析",
-                    "优先核对接口、精度、shape 和硬件约束，再判断优化方向")
-        + f"{device_info_prompt}\n回退原因：{reason}\n"
+        f"Working directory: {work_dir}\nOperator: {op_name}\n"
+        + file_hint(work_dir, Path(work_dir) / 'impl', "Current operator implementation project",
+                    "Inspect the actual source files within the Tech Lead's allowed scope; locate the entry point, tiling and dataflow")
+        + file_hint(work_dir, Path(work_dir) / 'task', "Read-only requirements, cases and reference implementation",
+                    "Verify against desc.md, proto.yaml, cases.yaml and golden.py that fixes preserve semantics and complete coverage")
+        + file_hint(work_dir, Path(work_dir) / 'ANALYSIS.md', "Stage1 requirements analysis",
+                    "Verify interfaces, precision, shapes and hardware constraints first, then judge the optimization direction")
+        + f"{device_info_prompt}\nRevert reason: {reason}\n"
     )
     base_prompt += format_fusion_library_for_prompt(work_dir, "stage3")
     base_prompt += format_evidence_for_prompt(work_dir)
@@ -2786,26 +2786,26 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
     base_prompt += development_human_prompt(work_dir, human_directions, receipt_path)
     if current_plan_ledger.get("stage9_decision_path"):
         base_prompt += file_hint(
-            work_dir, current_plan_ledger["stage9_decision_path"], "Stage9 本轮已校验的 v2 任务单原文",
-            "按 task_id 查看目标 case、对应代码依据、changes 的逐文件方法及验收要求；下方可读任务单由同一份 JSON 生成")
-    log.info("[Stage3 任务交接] iter=%s tasks=%s；可修改=%s；只读=%s；来源=%s",
+            work_dir, current_plan_ledger["stage9_decision_path"], "Stage9's validated v2 task list for this round (original)",
+            "Look up by task_id the target case, corresponding code evidence, per-file methods in changes and acceptance requirements; the readable task list below is generated from the same JSON")
+    log.info("[Stage3 task handoff] iter=%s tasks=%s; writable=%s; read-only=%s; source=%s",
              state.iteration, [task["task_id"] for task in current_tasks],
              current_plan_ledger["modify_files"], current_plan_ledger["readonly_files"],
              current_plan_ledger.get("stage9_decision_path"))
 
-    # 注入错题本（可能不存在，不存在则为空）
+    # Inject the pitfall log (may not exist; empty if absent)
     pitfalls_text = format_pitfalls_for_prompt(work_dir)
     if pitfalls_text:
         base_prompt += f"\n{pitfalls_text}\n"
 
-    # question.md 反馈通道说明（仅在确认 tech_lead 指导有误时才写）
+    # question.md feedback channel note (write only when tech_lead\'s guidance is confirmed wrong)
     base_prompt += (
-        f"\n📮 如实施中发现 tech_lead 建议在硬件/框架层面确实不可行（有硬证据），"
-        f"可写反馈到 {iter_dirs['develop']}/question.md（严格触发条件见你的 role，"
-        f"先查错题本避免重复提；这不是拒绝执行的理由，仍需用替代方案完成本轮任务）。\n"
+        f"\n📮 If during implementation you find tech_lead's suggestion is genuinely infeasible at the hardware/framework level (with hard evidence), "
+        f"you may write feedback to {iter_dirs['develop']}/question.md (strict trigger conditions are in your role; "
+        f"check the pitfall log first to avoid duplicates; this is not grounds for refusing to execute — you must still complete this round's task with an alternative scheme).\n"
     )
 
-    # 从 ledger 最后一条提取 tech_lead 的文件约束指令
+    # Extract tech_lead's file constraint directive from the last ledger entry
     fix_plan_text = get_latest_fix_plan(work_dir, current_iteration=state.iteration)
     if fix_plan_text:
         base_prompt += f"\n{fix_plan_text}\n\n"
@@ -2813,85 +2813,85 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
     if reason == "build_fail":
         history_context = format_for_prompt(work_dir, current_iteration=state.iteration)
         prompt = base_prompt + (
-            file_hint(work_dir, Path(iter_dirs['build']) / 'build.log', "本轮编译日志",
-                      "先查首个真实编译/安装错误及文件行号，避免只修后续连带错误") +
-            f"请根据编译错误修复代码。\n"
-            f"自测报告输出到 {iter_dirs['develop']}/self_test_report.md\n"
-            f"\n=== 历史经验 ===\n{history_context}\n"
+            file_hint(work_dir, Path(iter_dirs['build']) / 'build.log', "This round's build log",
+                      "Check the first real build/install error and file line number first; avoid fixing only downstream follow-on errors") +
+            f"Please fix the code according to the build errors.\n"
+            f"Write the self-test report to {iter_dirs['develop']}/self_test_report.md\n"
+            f"\n=== Historical experience ===\n{history_context}\n"
         )
         inputs = [f"{work_dir}/impl/", f"{iter_dirs['build']}/build.log"]
     elif reason == "precision_fail":
         history_context = format_for_prompt(work_dir, current_iteration=state.iteration)
         prompt = base_prompt + (
-            file_hint(work_dir, Path(iter_dirs['eval']) / 'precision_result.json', "本轮正式精度结果",
-                      "先看失败 case、错误摘要和通过数量")
-            + file_hint(work_dir, Path(iter_dirs['eval']) / 'precision_reports', "本轮精度原始详情",
-                        "按失败 case 查误差和原始报错，与 golden.py 对照定位语义问题") +
-            f"请根据精度失败信息修复代码。\n"
-            f"自测报告输出到 {iter_dirs['develop']}/self_test_report.md\n"
-            f"\n=== 历史经验 ===\n{history_context}\n"
+            file_hint(work_dir, Path(iter_dirs['eval']) / 'precision_result.json', "This round's formal precision result",
+                      "Look at failed cases, error summaries and pass counts first")
+            + file_hint(work_dir, Path(iter_dirs['eval']) / 'precision_reports', "This round's raw precision details",
+                        "For failed cases, check errors and raw error messages and compare with golden.py to locate semantic problems") +
+            f"Please fix the code according to the precision failure information.\n"
+            f"Write the self-test report to {iter_dirs['develop']}/self_test_report.md\n"
+            f"\n=== Historical experience ===\n{history_context}\n"
         )
         inputs = [f"{work_dir}/impl/", f"{iter_dirs['eval']}/precision_result.json"]
     elif reason == "score_zero":
-        # 反作弊/零分：注入 history 经验 + score_error 信息，让 cannbot 知道问题根因
+        # anti-cheat/zero score: inject history experience + score_error info so cannbot knows the root cause
         history_context = format_for_prompt(work_dir, current_iteration=state.iteration)
         prompt = base_prompt + (
-            f"⚠️ cann-bench 性能结果异常或零分，请先核对真实原因；缺报告不等于已证实违规。\n"
-            + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "零分/反作弊性能结果",
-                        "先看 score_error_code 和 kernel 事件证据，按反作弊规则定位原因") +
+            f"⚠️ cann-bench performance results are abnormal or zero; verify the real cause first; a missing report does not prove a violation.\n"
+            + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "Zero-score/anti-cheat performance result",
+                        "Look at score_error_code and kernel event evidence first and locate the cause per the anti-cheating rules") +
             f"{extra_context}\n"
-            f"若证据显示没有有效的 NPU kernel 事件，可排查以下原因；采集/报告问题先修评测链路：\n"
-            f"1. 算子实际走了 CPU fallback 而非 NPU 执行\n"
-            f"2. impl/build/ 目录残留旧的构建产物，或环境中安装的 cann_bench 包不是本轮版本\n"
-            f"3. Triton JIT 没有正确触发（检查 @triton.jit、kernel[grid](...) 调用和 import 路径）\n"
-            f"请彻底排查并修复，确保算子在 NPU 上真正执行。\n"
-            f"若确认有旧构建产物，先清理本工程 impl/build/，然后在 impl/ 中执行 "
-            f"python3 -m pip install . --force-reinstall --no-deps；"
-            f"回到 work 目录验证 cann_bench 的导入位置，确保加载本轮安装的包。\n"
-            f"设计思路文档输出到 {iter_dirs['develop']}/design_rationale.md\n"
-            f"自测报告输出到 {iter_dirs['develop']}/self_test_report.md\n"
-            f"\n=== 历史经验（来自之前迭代） ===\n{history_context}\n"
+            f"If the evidence shows no valid NPU kernel events, investigate the following causes; fix the evaluation pipeline first for collection/reporting problems:\n"
+            f"1. The operator actually took a CPU fallback instead of executing on the NPU\n"
+            f"2. impl/build/ still contains old build artifacts, or the cann_bench package installed in the environment is not this round's version\n"
+            f"3. Triton JIT was not triggered correctly (check the @triton.jit, kernel[grid](...) calls and import paths)\n"
+            f"Investigate thoroughly and fix so the operator truly executes on the NPU.\n"
+            f"If old build artifacts are confirmed, clean this project's impl/build/ first, then run in impl/: "
+            f"python3 -m pip install . --force-reinstall --no-deps; "
+            f"return to the work directory to verify cann_bench's import location, ensuring this round's installed package loads.\n"
+            f"Write the design rationale to {iter_dirs['develop']}/design_rationale.md\n"
+            f"Write the self-test report to {iter_dirs['develop']}/self_test_report.md\n"
+            f"\n=== Historical experience (from previous iterations) ===\n{history_context}\n"
         )
         inputs = [f"{work_dir}/impl/", f"{iter_dirs['eval']}/perf_result.json"]
     elif reason == "perf_pass_optimize":
-        # 已达标，但程序的 x 次有效性能窗口尚未满足退出条件。
+        # Target met, but the program\'s x valid-performance window has not yet satisfied the exit condition.
         history_context = format_for_prompt(work_dir, current_iteration=state.iteration)
         prompt = base_prompt + (
-            f"性能已达标，继续依据瓶颈和 Tech Lead 的 P0/P1/P2 意见优化。\n"
-            + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "本轮正式性能汇总",
-                        "逐 case 核对达标和剩余瓶颈，保持全部 case 不退步")
-            + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_reports', "本轮原始性能报告",
-                        "按 case 回查真实计时和 kernel 证据，以新评测确认优化收益")
-            + file_hint(work_dir, profile_report_path(work_dir, state.iteration), "Stage9 本轮瓶颈分析报告",
-                        "先核对报告来源和轮次，再看逐 case 的现象、原因、证据及下一步；执行范围仍以已接收任务单为准") +
-            f"设计思路文档输出到 {iter_dirs['develop']}/design_rationale.md\n"
-            f"自测报告输出到 {iter_dirs['develop']}/self_test_report.md\n"
-            f"\n=== 历史经验（来自 tech_lead） ===\n{history_context}\n\n"
-            f"在保证正确性和所有 case 达标的基础上提高整体性能；可保留当前融合方案。\n"
-            f"请说明本轮数据流及选择理由，以新评测检验收益，不以 kernel 数量决定优劣。"
+            f"Performance target met; continue optimizing based on the bottlenecks and the Tech Lead's P0/P1/P2 feedback.\n"
+            + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "This round's formal performance summary",
+                        "Verify target attainment and remaining bottlenecks per case; keep all cases from regressing")
+            + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_reports', "This round's raw performance reports",
+                        "Check real timing and kernel evidence per case; confirm optimization gains with a new evaluation")
+            + file_hint(work_dir, profile_report_path(work_dir, state.iteration), "Stage9 bottleneck analysis report for this round",
+                        "Verify the report's source and round first, then read each case's symptoms, causes, evidence and next steps; the execution scope still follows the accepted task list") +
+            f"Write the design rationale to {iter_dirs['develop']}/design_rationale.md\n"
+            f"Write the self-test report to {iter_dirs['develop']}/self_test_report.md\n"
+            f"\n=== Historical experience (from tech_lead) ===\n{history_context}\n\n"
+            f"Improve overall performance while keeping correctness and all cases passing; the current fusion scheme may be kept.\n"
+            f"Explain this round's dataflow and selection rationale; validate gains with a new evaluation, and do not judge by kernel count alone."
         )
         inputs = [f"{work_dir}/impl/", f"{iter_dirs['eval']}/perf_result.json",
                   str(profile_report_path(work_dir, state.iteration))]
     else:  # perf_optimize
-        # 注入跨轮记忆（insights/ledger/趋势）
+        # Inject cross-round memory (insights/ledger/trends)
         history_context = format_for_prompt(work_dir, current_iteration=state.iteration)
         prompt = base_prompt + (
-            file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "本轮正式性能汇总",
-                      "先看 avg_speedup、逐 case speedup 与 worst_6_cases，明确优化目标")
-            + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_reports', "本轮原始性能报告",
-                        "按慢 case 核对原始计时和 kernel/profiler 证据")
-            + file_hint(work_dir, Path(iter_dirs['profile']) / 'bottleneck_analysis.md', "Stage7 瓶颈分析",
-                        "先看逐 case 根因与共性瓶颈，区分实测结论和假设")
-            + file_hint(work_dir, Path(iter_dirs['search']) / 'SEARCH_REPORT.md', "Stage8 搜索方案与来源",
-                        "核对官方来源、硬件前提、实现路径和风险")
-            + file_hint(work_dir, Path(iter_dirs['search']) / 'FIX_DIRECTIVE.md', "Stage8 具体修改指令",
-                        "结合 Tech Lead 最新 P0/P1/P2 及文件范围实施，冲突时以 Tech Lead 裁定为准") +
-            f"设计思路文档输出到 {iter_dirs['develop']}/design_rationale.md\n"
-            f"自测报告输出到 {iter_dirs['develop']}/self_test_report.md\n"
-            f"\n=== 历史经验（来自 tech_lead，必须遵守） ===\n{history_context}\n\n"
-            f"请按修改指令优化代码，重点关注 worst_6_cases 的瓶颈。\n"
-            f"账本 verdict 只评价已经测过的实现；direction 是评测后提出的下一步计划。"
-            f"不得因均值持平或退步就禁止新计划；结合逐 case 趋势、条件和证据执行最新建议。"
+            file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_result.json', "This round's formal performance summary",
+                      "Look at avg_speedup, per-case speedup and worst_6_cases first to define the optimization target")
+            + file_hint(work_dir, Path(iter_dirs['eval']) / 'perf_reports', "This round's raw performance reports",
+                        "Verify raw timing and kernel/profiler evidence per slow case")
+            + file_hint(work_dir, Path(iter_dirs['profile']) / 'bottleneck_analysis.md', "Stage7 bottleneck analysis",
+                        "Read per-case root causes and common bottlenecks first; separate measured conclusions from hypotheses")
+            + file_hint(work_dir, Path(iter_dirs['search']) / 'SEARCH_REPORT.md', "Stage8 search schemes and sources",
+                        "Verify official sources, hardware prerequisites, implementation paths and risks")
+            + file_hint(work_dir, Path(iter_dirs['search']) / 'FIX_DIRECTIVE.md', "Stage8 concrete modification directives",
+                        "Implement together with the Tech Lead's latest P0/P1/P2 and the file scope; on conflict, the Tech Lead's ruling prevails") +
+            f"Write the design rationale to {iter_dirs['develop']}/design_rationale.md\n"
+            f"Write the self-test report to {iter_dirs['develop']}/self_test_report.md\n"
+            f"\n=== Historical experience (from tech_lead, must follow) ===\n{history_context}\n\n"
+            f"Optimize the code according to the modification directives, focusing on worst_6_cases bottlenecks.\n"
+            f"The ledger verdict only evaluates implementations already measured; direction is the next-step plan proposed after evaluation."
+            f"Do not ban new plans merely because the mean is flat or regressed; execute the latest suggestions using per-case trends, conditions and evidence."
         )
         inputs = [f"{work_dir}/impl/", f"{iter_dirs['search']}/FIX_DIRECTIVE.md", f"{iter_dirs['profile']}/bottleneck_analysis.md"]
 
@@ -2908,26 +2908,26 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
     evidence = finalize_development(work_dir, iter_dirs["develop"], 3, agent_ok=ok,
                                     previous_revisions=previous_revisions)
     if not evidence.get("eligible"):
-        log.warning(f"[{stage}] 方案/自测材料尚未满足最佳记录条件：{evidence.get('reason', '')}")
+        log.warning(f"[{stage}] Scheme/self-test material does not yet satisfy the best-record conditions: {evidence.get('reason', '')}")
     if not ok:
-        log.error(f"[{stage}] cannbot 失败（returncode!=0）")
+        log.error(f"[{stage}] cannbot failed (returncode!=0)")
         if human_directions:
-            raise RuntimeError("Stage3 失败，人工 P0 尚未执行；保留原轮次供恢复")
+            raise RuntimeError("Stage3 failed; human P0 not yet executed; original round kept for resume")
     if human_directions:
         try:
             receipts = validate_execution_receipt(receipt_path, human_directions)
         except (OSError, ValueError) as exc:
-            raise RuntimeError("Stage3 缺少本次人工意见落实回执；保留原轮次供恢复") from exc
+            raise RuntimeError("Stage3 lacks the implementation receipt for this round\'s human feedback; original round kept for resume") from exc
         for receipt in receipts:
-            rationale_path = Path(iter_dirs["develop"]) / "融合方案选择决策依据.md"
+            rationale_path = Path(iter_dirs["develop"]) / "fusion_scheme_rationale.md"
             if receipt["message_id"] not in read_file_safe(str(rationale_path)):
-                raise RuntimeError("Stage3 方案选择依据未说明对应人工意见编号；保留原轮次供恢复")
+                raise RuntimeError("Stage3\'s scheme-selection rationale does not reference the corresponding human feedback ID; original round kept for resume")
             if receipt["status"] == "implemented" and evidence.get("eligible"):
                 human.mark_executed([receipt["message_id"]], state.iteration, str(receipt_path))
             else:
                 human.mark_unexecuted([receipt["message_id"]], receipt["details"] if receipt["status"] != "implemented"
-                                      else "实现自报已修改，但本轮代码绑定/自测证据不完整，尚未确认执行")
-        log.info("[人工 P0] 本轮执行回执=%s；实际性能收益仍以之后正式评测为准", receipt_path)
+                                      else "The implementation self-reports modification, but this round\'s code binding/self-test evidence is incomplete; execution not yet confirmed")
+        log.info("[human P0] This round\'s execution receipt=%s; actual performance gains are still subject to the subsequent formal evaluation", receipt_path)
     state.stage9_context["phase"] = "delivered"
     state.flush()
 

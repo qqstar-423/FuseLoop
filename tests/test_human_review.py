@@ -1,4 +1,4 @@
-"""Offline human inbox, exact deadline/resume, evidence and trigger tests."""
+﻿"""Offline human inbox, exact deadline/resume, evidence and trigger tests."""
 from contextlib import redirect_stderr, redirect_stdout
 import io
 import json
@@ -41,7 +41,7 @@ class HumanReviewTests(unittest.TestCase):
         request = self.runtime.create_consultation(6, "stagnation", "perf_optimize",
                                                    evidence or [], {"avg_speedup": 2.3})
         Path(request["question_path"]).write_text(
-            "# 问题\n慢 case3 尚未达标。\nA 调整分块；B 半融合。\n推荐 A：改动较小。", encoding="utf-8")
+            "# Question\nslow case3 is not at target yet.\nA adjust tiling; B partial fusion.\nRecommended A: smaller change.", encoding="utf-8")
         if start:
             request = self.runtime.start_wait(request["request_id"])
         return request
@@ -49,20 +49,20 @@ class HumanReviewTests(unittest.TestCase):
     def test_unique_messages_preserve_raw_text_without_rewriting_state(self):
         state_path = self.work / "human_review" / "state.json"
         before = state_path.read_bytes()
-        first = self.send("  保留方案\n优化 case3。  ")
-        second = self.send("内存布局可以先解释吗？", kind="question")
+        first = self.send("  keep the scheme\noptimize case3.  ")
+        second = self.send("can the memory layout be explained first?", kind="question")
         self.assertNotEqual(first["id"], second["id"])
         self.assertEqual(state_path.read_bytes(), before)
         messages = {item["id"]: item for item in self.runtime.pending_messages()}
-        self.assertEqual(messages[first["id"]]["text"], "  保留方案\n优化 case3。  ")
+        self.assertEqual(messages[first["id"]]["text"], "  keep the scheme\noptimize case3.  ")
         self.assertEqual(messages[second["id"]]["kind"], "question")
 
     def test_processing_and_execution_are_distinct_and_idempotent(self):
-        message = self.send("调整分块")
+        message = self.send("adjust the tiling")
         self.runtime.mark_processed([message["id"]], "decision.json")
         self.assertEqual(self.runtime.pending_messages(), [])
         self.assertEqual(self.runtime.all_messages()[0]["status"], "processed")
-        self.runtime.mark_executed([message["id"]], 7, "融合方案选择决策依据.md")
+        self.runtime.mark_executed([message["id"]], 7, "fusion_scheme_rationale.md")
         self.runtime.mark_processed([message["id"]], "another-decision.json")
         record = self.runtime.all_messages()[0]
         self.assertEqual(record["status"], "executed")
@@ -70,10 +70,10 @@ class HumanReviewTests(unittest.TestCase):
         self.assertEqual(record["decision_path"], "decision.json")
 
     def test_unexecuted_opinion_is_preserved_with_reason(self):
-        message = self.send("再做一次实验")
-        self.runtime.mark_unexecuted([message["id"]], "已达迭代上限")
+        message = self.send("run one more experiment")
+        self.runtime.mark_unexecuted([message["id"]], "iteration limit reached")
         self.assertEqual(self.runtime.pending_messages(), [])
-        self.assertEqual(self.runtime.all_messages()[0]["reason"], "已达迭代上限")
+        self.assertEqual(self.runtime.all_messages()[0]["reason"], "iteration limit reached")
         with self.assertRaises(ValueError):
             self.runtime.mark_processed(["missing"], "decision.json")
 
@@ -119,8 +119,8 @@ class HumanReviewTests(unittest.TestCase):
         source.mkdir()
         (source / "kernel.py").write_text("original", encoding="utf-8")
         request = self.request(start=False, evidence=[
-            {"path": "impl", "purpose": "算子实现", "read_hint": "核对慢 shape 分支"},
-            {"path": "missing.json", "purpose": "尚未产生", "read_hint": "缺失时不要推断成绩"}])
+            {"path": "impl", "purpose": "operator implementation", "read_hint": "check the slow-shape branch"},
+            {"path": "missing.json", "purpose": "not produced yet", "read_hint": "do not infer scores when missing"}])
         manifest = json.loads(Path(request["evidence_manifest_path"]).read_text(encoding="utf-8"))
         snapshot = Path(manifest["files"][0]["snapshot_path"])
         (source / "kernel.py").write_text("new version", encoding="utf-8")
@@ -140,14 +140,14 @@ class HumanReviewTests(unittest.TestCase):
     def test_proactive_bundle_preserves_context_and_code_without_waiting(self):
         code = self.work / "kernel.py"
         code.write_text("version 1", encoding="utf-8")
-        message = self.send("只改 case3")
+        message = self.send("only change case3")
         bundle_path = self.runtime.create_proactive_bundle(
-            6, "compile_failed", "compiler error", [{"path": str(code), "purpose": "本轮实现"}],
+            6, "compile_failed", "compiler error", [{"path": str(code), "purpose": "this round's implementation"}],
             {"failure_log": "compile.txt"}, [message])
         code.write_text("version 2", encoding="utf-8")
         bundle = json.loads(Path(bundle_path).read_text(encoding="utf-8"))
         self.assertEqual(bundle["request"]["scene"], "compile_failed")
-        self.assertEqual(bundle["messages"][0]["text"], "只改 case3")
+        self.assertEqual(bundle["messages"][0]["text"], "only change case3")
         self.assertEqual(Path(bundle["evidence"][0]["snapshot_path"]).read_text(), "version 1")
         self.assertIsNone(self.runtime.active_consultation())
 
@@ -166,7 +166,7 @@ class HumanReviewTests(unittest.TestCase):
     def test_direct_reply_ends_wait_and_is_pending_for_stage9(self):
         request = self.request()
         self.clock.sleep(13)
-        message = self.send("选 A，保留当前融合方案")
+        message = self.send("choose A; keep the current fusion scheme")
         self.assertEqual(self.runtime.pending_messages(), [])
         result = self.runtime.poll_consultation(request["request_id"])
         self.assertEqual(result["status"], "replied")
@@ -201,7 +201,7 @@ class HumanReviewTests(unittest.TestCase):
         self.assertEqual(self.clock.now(), 1200)
         bundle = json.loads(Path(self.runtime.build_feedback_bundle(request["request_id"])).read_text(encoding="utf-8"))
         self.assertEqual({item["id"] for item in bundle["messages"]}, {wait["id"], reply["id"]})
-        self.assertIn("推荐 A", bundle["question_text"])
+        self.assertIn("Recommended A", bundle["question_text"])
         self.assertEqual(bundle["context"]["avg_speedup"], 2.3)
 
     def test_delayed_poll_honors_on_time_wait_and_reply(self):
@@ -219,7 +219,7 @@ class HumanReviewTests(unittest.TestCase):
         request = self.request()
         self.clock.sleep(121)
         wait = self.send("请等待")
-        reply = self.send("改选 B")
+        reply = self.send("switch to B")
         result = self.runtime.poll_consultation(request["request_id"])
         self.assertEqual(result["status"], "timed_out")
         self.assertEqual(result["deadline"], 1120)
@@ -270,10 +270,10 @@ class HumanReviewTests(unittest.TestCase):
     def test_disabled_proactive_allows_active_consultation_reply_but_closed_rejects(self):
         self.runtime.configure(active_enabled=False)
         with self.assertRaises(ValueError):
-            self.send("主动意见")
+            self.send("proactive feedback")
         self.request()
         self.assertEqual(self.send("A")["kind"], "direction")
-        self.runtime.close_workflow("完成")
+        self.runtime.close_workflow("done")
         with self.assertRaises(ValueError):
             self.send("A")
 
@@ -291,13 +291,13 @@ class HumanReviewTests(unittest.TestCase):
             if path.parent.name == "inbox":
                 self.runtime.close_workflow("completed during submit")
         with patch("lib.human_review._write", side_effect=close_after_publish):
-            with self.assertRaisesRegex(ValueError, "原话已留档但不会执行"):
-                self.send("最后一条意见")
+            with self.assertRaisesRegex(ValueError, "archived but will not be executed"):
+                self.send("the last piece of feedback")
         self.assertEqual(len(self.runtime.all_messages()), 1)
 
     def test_cli_text_file_question_status_and_closed_error(self):
         message_file = self.work / "reply.txt"
-        message_file.write_text("先说明为什么 case3 慢？", encoding="utf-8")
+        message_file.write_text("explain first why case3 is slow?", encoding="utf-8")
         with redirect_stdout(io.StringIO()) as stdout:
             result = main(["--work-dir", str(self.work), "--file", str(message_file), "--kind", "question"])
         self.assertEqual(result, 0)
@@ -307,14 +307,14 @@ class HumanReviewTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(len(json.loads(stdout.getvalue())["pending"]), 1)
         with redirect_stdout(io.StringIO()) as stdout:
-            result = main(["--work-dir", str(self.work), "--message", "保留方案"])
+            result = main(["--work-dir", str(self.work), "--message", "keep the scheme"])
         self.assertEqual(result, 0)
-        self.assertEqual(json.loads(stdout.getvalue())["text"], "保留方案")
+        self.assertEqual(json.loads(stdout.getvalue())["text"], "keep the scheme")
         self.runtime.close_workflow("done")
         with redirect_stderr(io.StringIO()) as stderr:
             result = main(["--work-dir", str(self.work), "--text", "A"])
         self.assertEqual(result, 2)
-        self.assertIn("已结束", stderr.getvalue())
+        self.assertIn("has finished", stderr.getvalue())
 
 
 if __name__ == "__main__":

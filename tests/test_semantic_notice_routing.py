@@ -32,12 +32,12 @@ class SemanticNoticeRoutingTests(unittest.TestCase):
             self.assertTrue(injected["reused"])
             self.assertEqual({key: value for key, value in injected.items() if key != "reused"}, event)
             prompt = Path(request["prompt_path"]).read_text(encoding="utf-8")
-            self.assertIn(f"第 {event['entry_count']} 次进入 {event['scene']} 停滞场景", prompt)
+            self.assertIn(f"entry {event['entry_count']} into the {event['scene']} stagnation scene", prompt)
             self.assertIn("selection/semantic_events.json", prompt)
             self.assertIn(event["state_path"], prompt)
 
     def assert_banner_count(self, scene_number, entry_count, expected=1):
-        banner = f"===== 场景{scene_number}停滞触发：第{entry_count}次进入本场景 ====="
+        banner = f"===== Scenario {scene_number} stagnation trigger: entry {entry_count} into this scene ====="
         for name in ("workflow.log", "state_transitions.log"):
             text = (self.work / "log" / name).read_text(encoding="utf-8")
             self.assertEqual(text.count(banner), expected, name)
@@ -59,10 +59,10 @@ class SemanticNoticeRoutingTests(unittest.TestCase):
         for name in ("workflow.log", "state_transitions.log"):
             text = (self.work / "log" / name).read_text(encoding="utf-8")
             self.assertIn("workflow.semantic_exit.passed_window=1", text)
-            self.assertIn("场景1：每个 case 的 speedup 都 >= 1", text)
-            self.assertIn("连续 x=1 次有效性能迭代，最佳 avg_speedup 累计提升不足 5%", text)
-            self.assertIn("1 个基线样本 + 1 次有效性能迭代（共 2 个样本）；无效轮不计数", text)
-            self.assertIn("与人工咨询计数独立，断点恢复不重复计数", text)
+            self.assertIn("scenario 1: every case's speedup is >= 1", text)
+            self.assertIn("x=1 consecutive valid performance iterations", text)
+            self.assertIn("1 baseline sample plus 1 valid performance iterations within the same scene (2 samples in total); invalid rounds do not count", text)
+            self.assertIn("independent of the human consultation counter, and checkpoint resume does not double count", text)
             self.assertIn("iter1→iter2", text)
             self.assertIn("0.00% < 5.00%", text)
         self.assert_event_delivered(event)
@@ -84,10 +84,10 @@ class SemanticNoticeRoutingTests(unittest.TestCase):
         for name in ("workflow.log", "state_transitions.log"):
             text = (self.work / "log" / name).read_text(encoding="utf-8")
             self.assertIn("workflow.semantic_exit.underperforming_window=1", text)
-            self.assertIn("场景2：并非每个 case 的 speedup 都 >= 1（至少一个 case < 1）", text)
-            self.assertIn("连续 y=1 次有效性能迭代，最佳 avg_speedup 累计提升不足 5%", text)
-            self.assertIn("1 个基线样本 + 1 次有效性能迭代（共 2 个样本）；无效轮不计数", text)
-            self.assertIn("与人工咨询计数独立，断点恢复不重复计数", text)
+            self.assertIn("scenario 2: not every case's speedup is >= 1 (at least one case < 1)", text)
+            self.assertIn("y=1 consecutive valid performance iterations", text)
+            self.assertIn("1 baseline sample plus 1 valid performance iterations within the same scene (2 samples in total); invalid rounds do not count", text)
+            self.assertIn("independent of the human consultation counter, and checkpoint resume does not double count", text)
         human = json.loads((self.work / "human_review/state.json").read_text(encoding="utf-8"))
         self.assertEqual(human["stagnation"]["trigger_iterations"], [2, 3, 4])
         self.assertEqual(self.routing.fixture.read_state()["stopped_by"], "max_iterations")
@@ -121,7 +121,7 @@ class SemanticNoticeRoutingTests(unittest.TestCase):
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0]["scene"], "compile")
         self.assertIsNone(requests[0]["semantic_event"])
-        self.assertNotIn("次进入", Path(requests[0]["prompt_path"]).read_text(encoding="utf-8"))
+        self.assertNotIn(" stagnation scene", Path(requests[0]["prompt_path"]).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

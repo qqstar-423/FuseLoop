@@ -61,9 +61,9 @@ class Stage9FileValidationTests(unittest.TestCase):
             [("eval/iter3/prof_data", "inspect"), ("impl/missing.py", "modify")],
             [("impl/existing.py", "create")]))
         self.assertEqual(len(errors), 3)
-        self.assertTrue(any("目录" in item and "prof_data" in item for item in errors))
-        self.assertTrue(any("不存在" in item and "missing.py" in item for item in errors))
-        self.assertTrue(any("已存在" in item and "existing.py" in item for item in errors))
+        self.assertTrue(any("directories are not a substitute" in item and "prof_data" in item for item in errors))
+        self.assertTrue(any("does not exist" in item and "missing.py" in item for item in errors))
+        self.assertTrue(any("already exists" in item and "existing.py" in item for item in errors))
 
     def test_bindings_and_route_evidence_missing_are_not_hidden(self):
         plan = raw_plan([("impl/missing.py", "inspect")])
@@ -104,7 +104,7 @@ class Stage9FileValidationTests(unittest.TestCase):
         errors = self.rejected(plan, raw_plan=True)
         self.assertEqual(len(errors), 1)
         self.assertIn("impl/missing.py", errors[0])
-        self.assertNotIn("权限范围冲突", errors[0])
+        self.assertNotIn("permission scope conflicts", errors[0])
 
     def test_unsafe_paths_never_reach_filesystem_but_siblings_do(self):
         plan = raw_plan([
@@ -140,7 +140,7 @@ class Stage9FileValidationTests(unittest.TestCase):
             errors = self.rejected(raw_plan([
                 ("impl/bad_link.py", "inspect"), ("impl/missing.py", "inspect")]))
         self.assertEqual(len(errors), 2)
-        self.assertTrue(any("无法解析" in item for item in errors))
+        self.assertTrue(any("cannot resolve" in item for item in errors))
         self.assertTrue(any("missing.py" in item for item in errors))
 
     def test_create_binding_and_resume_existing_create_remain_valid(self):

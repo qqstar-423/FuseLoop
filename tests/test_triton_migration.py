@@ -24,11 +24,11 @@ class TritonMigrationTests(unittest.TestCase):
                             "some_generated_name,AI_CORE\n", encoding="utf-8-sig")
             summary = analyze_kernel_csv_for_anticheat({
                 "worst_6_cases": [{"case_id": "case1", "kernel_csv": str(path)}]})
-            self.assertIn("共 3 条 kernel 事件", summary)
+            self.assertIn("3 kernel events in total", summary)
             self.assertIn("aclnn_like_user_name", summary)
-            self.assertIn("不能据此认定来源", summary)
-            self.assertNotIn("全是 aclnn", summary)
-            self.assertNotIn("其中自定义", summary)
+            self.assertIn("does not establish origin", summary)
+            self.assertNotIn("all aclnn", summary)
+            self.assertNotIn("of which custom", summary)
 
     def test_active_instructions_do_not_require_the_previous_dsl(self):
         paths = [ROOT / "README.md"]

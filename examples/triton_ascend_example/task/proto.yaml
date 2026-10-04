@@ -2,9 +2,9 @@ operator:
   name: FusedAddRelu
   category: Elementwise
   difficulty: L1
-  description: 相同 shape、dtype、NPU device 的有限数值输入，先在 float32 相加并 ReLU，再转回输入 dtype；不支持广播。
+  description: Finite-valued inputs with the same shape, dtype and NPU device; add in float32 and apply ReLU, then cast back to the input dtype; broadcasting is not supported.
   formula: output = cast(max(float32(x) + float32(y), 0), input_dtype)
-  shape_support: 输入形状相同，输出形状不变
+  shape_support: inputs have identical shapes; the output shape is unchanged
   inputs:
     - name: x
       dtype: [float16, bfloat16, float32]

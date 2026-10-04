@@ -1,21 +1,21 @@
-## 当前阶段：只生成咨询问题
+## Current Stage: Generate Consultation Questions Only
 
-程序已确认第 3 次停滞触发，必须向人寻求方向判断。此调用不提交最终 decision，不填写最终 ledger 或 P0，不写知识经验，不下发 Stage3，也不自行等待。
+The program has confirmed the 3rd stagnation trigger, requiring a human for directional judgment. This call does not submit a final decision, does not fill in the final ledger or P0, does not write knowledge experience, does not dispatch Stage3, and does not wait on its own.
 
-唯一输出为 prompt 指定的 `human_review/<iter>/<请求编号>/question.json`。程序校验后渲染同目录《问题文档.md》，通知并负责 2 分钟等待；延长、截止和回复由程序处理。问题写清楚、简短易读，允许人提出其他方向。
+The sole output is the prompt-specified `human_review/<iter>/<request number>/question.json`. After the program validates it, it renders the "Question Document.md" in the same directory, notifies, and handles the 2-minute wait; extension, deadline, and replies are handled by the program. Write the questions clearly, short and readable; the human may propose other directions.
 
-JSON 字段：
+JSON fields:
 
-除 `options` 为对象列表外，其余字段均为非空字符串（包括 `attempts`、`evidence`）。
+Except for `options`, which is a list of objects, all fields are non-empty strings (including `attempts`, `evidence`).
 
-- `request_id`：原样复制本次咨询请求编号。
-- `question`：这次要人判断的明确问题。
-- `difficulty`：当前难点、哪些 case 未达标，为什么目前难以取舍。
-- `current_scheme`：当前实际融合方案及目标。
-- `attempts`：已经尝试的方向与结果，不能提出已被相同条件证伪的选项。
-- `evidence`：3 次触发轮次、最佳 avg_speedup/HAP、慢 case 改善趋势，以及实现/性能报告/方案依据的实际版本路径和读法；直接引用程序材料，不编造数字。
-- `options`：2～3 个对象，每项有唯一 `id`（如 A/B/C）、`title`、`benefit`、`cost`、`risk`，提出实际可行的不同方向。
-- `recommended_option`：上述一个真实选项的 id。
-- `recommendation_reason`：根据当前证据为何优先推荐此项。
+- `request_id`: copy this consultation's request number verbatim.
+- `question`: the clear question you want the human to judge.
+- `difficulty`: the current difficulty, which cases fail to meet the target, and why the trade-off is currently hard.
+- `current_scheme`: the actual current fusion scheme and its targets.
+- `attempts`: directions already tried and their results; do not propose options already falsified under the same conditions.
+- `evidence`: the 3 triggering rounds, the best avg_speedup/HAP, the slow-case improvement trend, and the actual version paths and reading instructions for the implementation/performance reports/scheme rationale; cite program materials directly; do not fabricate numbers.
+- `options`: 2–3 objects, each with a unique `id` (e.g. A/B/C), `title`, `benefit`, `cost`, `risk`, proposing genuinely feasible different directions.
+- `recommended_option`: the id of one real option above.
+- `recommendation_reason`: why this option is recommended first, based on current evidence.
 
-候选可包括局部优化、特定 shape 更换融合、先补实验，但须适合当前硬件与证据，不能照抄模板。人工先前意见纳入问题背景，等待完成后的最终调用才处理完整反馈和原场景决策。
+Candidates may include local optimization, switching fusion for specific shapes, or running additional experiments first, but they must suit the current hardware and evidence; do not copy templates. Prior human opinions are included as question background; the final call after the wait completes handles the full feedback and the original scenario's decision.

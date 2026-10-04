@@ -1,120 +1,120 @@
-# Triton Ascend Workflow
+﻿# Triton Ascend Workflow
 
-> 多智能体协作的 Triton Ascend 算子自动开发与迭代优化框架
+> A multi-agent collaborative framework for automated Triton Ascend operator development and iterative optimization
 
-迁移说明见 [Triton Ascend 迁移计划](docs/triton_ascend_migration_plan.md)，环境配置见 [环境迁移指南](docs/environment_migration_guide.md)。当前生成目标固定为 Triton Ascend；磁盘上的 `pypto-pro-workflow` 只是保留的目录名，不决定生成框架，也不要求安装 PyPTO。
+For migration notes, see the [Triton Ascend Migration Plan](docs/triton_ascend_migration_plan.md); for environment setup, see the [Environment Migration Guide](docs/environment_migration_guide.md). The current generation target is fixed to Triton Ascend; `pypto-pro-workflow` on disk is just a retained directory name — it does not determine the generated framework, nor does it require installing PyPTO.
 
-## 📖 项目简介
+## 📖 Project Overview
 
-Triton Ascend Workflow 是一个面向昇腾 NPU 的**多智能体算子自动开发框架**，基于 Triton Ascend 编程范式，通过 3 个 CLI Agent（CANNBot 写代码、Kerminal 编译评测、Hermes 搜索优化）、Jev 融合方案选择节点和 1 个确定性控制平面（orchestrator）协同工作，实现算子从需求分析→融合方案选择→代码编写→编译部署→精度验证→性能优化→报告生成的**全流程自动化迭代**。
+Triton Ascend Workflow is a **multi-agent automated operator development framework** for Ascend NPU. Based on the Triton Ascend programming paradigm, it works through the collaboration of 3 CLI Agents (CANNBot writes code, Kerminal compiles and evaluates, Hermes searches and optimizes), the Jev fusion scheme selection node, and 1 deterministic control plane (orchestrator), achieving **full-pipeline automated iteration** for operators: requirements analysis → fusion scheme selection → code writing → build and deployment → precision verification → performance optimization → report generation.
 
-| 维度 | 说明 |
+| Dimension | Description |
 |------|------|
-| 目标框架 | Triton Ascend（triton-ascend，昇腾 NPU） |
-| 评测工具 | cann-bench（精度+性能评测） |
-| Agent | CANNBot（GLM-5.3-Flash）、Kerminal（kernelcat1.0）、Hermes（GLM-5.3-Flash）、Jev（融合方案概率评估） |
-| 迭代阶段 | 原 10 个 stage + Stage1.5，最多 20 轮自动迭代 |
-| 核心特性 | 跨轮记忆（history）、Tech Lead 方向指导、反作弊知识库、代码版本追溯 |
+| Target framework | Triton Ascend (triton-ascend, Ascend NPU) |
+| Evaluation tool | cann-bench (precision + performance evaluation) |
+| Agents | CANNBot (GLM-5.3-Flash), Kerminal (kernelcat1.0), Hermes (GLM-5.3-Flash), Jev (fusion scheme probability evaluation) |
+| Iteration stages | Original 10 stages + Stage1.5, up to 20 automatic iterations |
+| Core features | Cross-iteration memory (history), Tech Lead directional guidance, anti-cheating knowledge base, code version traceability |
 
-## ✨ 核心特性
+## ✨ Core Features
 
-- **融合方案选择**：需求分析后新增 Stage1.5，Jev 根据需求和硬件为融合方法评估概率，程序选取前 n 个组成 JSON 融合方案库，传给 Stage2/3/7/8/9
-- **阶段流水线**：需求分析→融合方案选择→首版实现→编译部署→精度评测→性能评测→Profiling→搜索优化→Tech Lead 总结→代码修改→最终报告
-- **跨轮记忆（history 机制）**：Tech Lead 每轮提炼 insights/ledger，追踪最慢 case，指导下一轮方向，避免重复失败
-- **融合方向追踪**：`fusion_kernel_strategy` 累加字段记录每轮融合方案的尝试（真融合/假融合/片上直传 vs HBM 中间读写），stage9 填写，stage3 读取
-- **语义退出与最佳实现**：有效评测后保存代码、融合方案和报告快照；全部 case 达标且 x 次有效改进累计不足 5% 时交付最佳达标实现
-- **已有实现应急重跑**：`--init-impl` 复制指定代码及其对应开发材料，跳过 Stage1/1.5/2，直接从 Stage4 编译评测；不影响正常新写流程
-- **反作弊知识库**：实际错误处理表与开发自检清单，结合源码、kernel CSV 和正式报告分析
-- **芯片自动检测**：从 CANN 编译器 tbe API 直接读取 UB/L1/L0A/L0B/L0C/核数真实值，注入所有 stage，禁止写死 tiling 参数
-- **代码版本追溯**：每轮迭代前自动备份 impl 到 `operator_iter/`
-- **性能评测代码直执**：stage6 由 orchestrator 直接 subprocess 调用 cann-bench，不经 agent，自动重试+旧报告过滤
+- **Fusion scheme selection**: Stage1.5 is added after requirements analysis; Jev evaluates probabilities for fusion methods based on the requirements and hardware, and the program takes the top n to form a JSON fusion scheme library, passed to Stage2/3/7/8/9
+- **Stage pipeline**: requirements analysis → fusion scheme selection → first implementation → build and deployment → precision evaluation → performance evaluation → Profiling → search optimization → Tech Lead summary → code modification → final report
+- **Cross-iteration memory (history mechanism)**: the Tech Lead distills insights/ledger each iteration, tracks the slowest cases, guides the next iteration's direction, and avoids repeated failures
+- **Fusion direction tracking**: the `fusion_kernel_strategy` append-only field records each iteration's fusion scheme attempts (true fusion / fake fusion / on-chip direct transfer vs HBM intermediate read/write), filled in stage9 and read by stage3
+- **Semantic exit and best implementation**: after valid evaluation, snapshots of the code, fusion scheme, and reports are saved; when all cases pass and x consecutive valid improvements accumulate less than 5%, the best passing implementation is delivered
+- **Emergency re-run with existing implementation**: `--init-impl` copies the specified code and its corresponding development materials, skipping Stage1/1.5/2 and starting directly from Stage4 build and evaluation; it does not affect the normal from-scratch flow
+- **Anti-cheating knowledge base**: a real-world error handling table and development self-check checklist, combined with source code, kernel CSV, and formal report analysis
+- **Automatic chip detection**: reads real UB/L1/L0A/L0B/L0C/core count values directly from the CANN compiler tbe API and injects them into all stages; hardcoding tiling parameters is forbidden
+- **Code version traceability**: impl is automatically backed up to `operator_iter/` before each iteration
+- **Direct execution of performance evaluation code**: in stage6, the orchestrator directly invokes cann-bench via subprocess, without going through an agent, with automatic retry + old report filtering
 
-stage6 显式选择 cann-bench 的 `kernel_details` 性能策略，直接复用工具产出的 baseline、HAP 和评分，不另行测量 baseline。该策略汇总 kernel 执行耗时，不包含 kernel 之间的同步与调度间隔，因此不代表完整调用耗时；旧 `trace_view` 成绩不能与此策略的成绩直接比较。
+stage6 explicitly selects cann-bench's `kernel_details` performance strategy, directly reusing the baseline, HAP, and scores produced by the tool without measuring the baseline separately. This strategy aggregates kernel execution time and does not include synchronization and scheduling intervals between kernels, so it does not represent full call time; old `trace_view` scores cannot be directly compared with this strategy's scores.
 
-## Stage1.5：Jev 融合方案选择
+## Stage1.5: Jev Fusion Scheme Selection
 
-**阶段顺序：[Stage1 需求分析](roles/n1_stage1_requirements_analysis.md) → [Stage1.5 Jev 融合方案选择](roles/n1_stage1.5_jev_fusion_selection.md) → [Stage2 首版实现](roles/n1_stage2_first_impl.md)。** Stage1.5 的 role 文件说明输入、职责和输出；实际英文请求由程序组织并调用 Jev。
+**Stage order: [Stage1 Requirements Analysis](roles/n1_stage1_requirements_analysis.md) → [Stage1.5 Jev Fusion Scheme Selection](roles/n1_stage1.5_jev_fusion_selection.md) → [Stage2 First Implementation](roles/n1_stage2_first_impl.md).** The Stage1.5 role file describes inputs, responsibilities, and outputs; the actual English request is assembled by the program, which calls Jev.
 
-[Jev 控制台](https://console.typesafe.ai/home)
+[Jev Console](https://console.typesafe.ai/home)
 
-Jev 已接入 Stage1 和 Stage2 之间。输入包括 `knowledge/fusion_method.md` 原文、该文档拆解成的 `knowledge/fusion_options.json`（F1–F10，含 24 个变体）、Stage1 新增的 `<work>/fusion_requirements.en.json` 和当前硬件信息。该需求 JSON 用紧凑英文保留算子语义、接口、case 特征、精度与融合约束；程序先估算本次可用字节数并传给 Stage1（绝对上限 6000 字节），完整需求分析仍保留在 ANALYSIS.md。Jev 对十类方法分别给出独立适用性概率，不要求概率之和为 1；程序按概率排序，取前 n 个保存为本次运行的 **JSON 融合算子库**。
+Jev has been connected between Stage1 and Stage2. Inputs include the original text of `knowledge/fusion_method.md`, the `knowledge/fusion_options.json` decomposed from that document (F1–F10, with 24 variants), the `<work>/fusion_requirements.en.json` newly added in Stage1, and current hardware information. The requirements JSON uses compact English to preserve operator semantics, interface, case characteristics, precision, and fusion constraints; the program first estimates the available byte budget for this run and passes it to Stage1 (absolute cap of 6000 bytes), while the full requirements analysis remains in ANALYSIS.md. Jev independently gives an applicability probability for each of the ten method categories, and the probabilities are not required to sum to 1; the program sorts by probability, takes the top n, and saves them as the **JSON fusion operator library** for this run.
 
-每次运行的 `<work>/example` 指向 `paths.cannbench_repo` 下的 `examples/triton_ascend_cann_example/`；缺失时停止并提示安装完整示例。本仓库的 `examples/triton_ascend_example/` 是额外的最小融合演示和 NPU 自测入口，不是这个默认软链接的来源。任务的 `proto.yaml`、case、golden 和评测入口保留；需要改的是候选实现及运行环境。Stage4 构建 wheel，Stage3 自测和 Stage5 真实调用还要覆盖首次 JIT。
+For each run, `<work>/example` points to `examples/triton_ascend_cann_example/` under `paths.cannbench_repo`; if missing, execution stops with a prompt to install the full example. This repository's `examples/triton_ascend_example/` is an additional minimal fusion demo and NPU self-test entry, not the source of that default symlink. The task's `proto.yaml`, cases, golden files, and evaluation entry are retained; what needs to change is the candidate implementation and runtime environment. Stage4 builds the wheel, and Stage3 self-testing and Stage5 real invocation must also cover first-time JIT.
 
-Stage1.5 的调用顺序是：**读取材料 → 复用 Kerminal 翻译 → 程序组织英文 JSON 并校验 → Jev 评分 → 选择前 n 个方案**。融合方法原文、方案库深层描述、需求和硬件中的非英文内容都进入翻译检查；已有英文内容保留。JSON 结构、数值和方案 ID 由程序保留，译文中的数字和技术标识也要校验。实际发送的请求必须通过英文检查和翻译后的大小检查；翻译失败、残留中文或超限时停止，不发送混合语言请求，也不使用旧概率冒充新结果。底层 Jev 客户端同样检查所有调用入口的英文输入。
+The Stage1.5 call sequence is: **read materials → reuse Kerminal for translation → assemble English JSON by program and validate → Jev scoring → select top n schemes**. The original fusion method text, the scheme library's deep descriptions, and any non-English content in the requirements and hardware information all enter the translation check; already-English content is kept as-is. JSON structure, numbers, and scheme IDs are preserved by the program, and numbers and technical identifiers in the translation are also validated. The actually sent request must pass the English check and the post-translation size check; on translation failure, residual Chinese, or exceeding the size limit, execution stops — no mixed-language requests are sent, and old probabilities are never passed off as new results. The underlying Jev client likewise checks English input on all call entry points.
 
-在 `config.yaml` 的 `fusion_selection.top_n` 修改 n，默认 `3`；翻译复用 `agents.kerminal.cli`，超时由 `fusion_selection.translation_timeout_seconds` 配置（默认 240 秒）；Jev 连接参数仍使用 `jev` 段。独立调用与离线测试入口继续保留。
+Modify n via `fusion_selection.top_n` in `config.yaml`, default `3`; translation reuses `agents.kerminal.cli`, with the timeout configured by `fusion_selection.translation_timeout_seconds` (default 240 seconds); Jev connection parameters still use the `jev` section. Standalone invocation and offline test entry points are retained.
 
-| 接收节点 | 方案库的用途 |
+| Receiving node | Use of the scheme library |
 |---|---|
-| Stage2 首版实现 | 按最高概率方案设计首版；如硬件/框架客观不支持，给出证据并选择后续可实现候选 |
-| Stage3 修改优化 | 理解现有方案与备选方向，结合评测证据执行既有修改指令 |
-| Stage7 性能分析 | 对照候选数据流和资源条件分析瓶颈 |
-| Stage8 搜索优化 | 围绕瓶颈搜索候选方案的实现方法，核实当前硬件适用性 |
-| Stage9 Tech Lead | 结合候选方案、历史尝试和实测证据审查融合方向 |
+| Stage2 First Implementation | Design the first version based on the highest-probability scheme; if the hardware/framework objectively does not support it, provide evidence and select an implementable follow-up candidate |
+| Stage3 Modification and Optimization | Understand the existing scheme and alternative directions, and execute existing modification instructions combined with evaluation evidence |
+| Stage7 Performance Analysis | Analyze bottlenecks against candidate data flows and resource conditions |
+| Stage8 Search Optimization | Search for implementation methods of candidate schemes around bottlenecks, verifying applicability on the current hardware |
+| Stage9 Tech Lead | Review the fusion direction combining candidate schemes, historical attempts, and measured evidence |
 
-新任务的五个节点均读取 `<work>/fusion/fusion_library.json`。概率是初始选择参考，实测证据优先；跨核存储、同步等能力必须核实，共享 L2 Cache 不能直接视为 DSM。初始 Jev 库由程序维护；Stage2/3 在 `develop/iterN/fusion_library.json` 记录本轮实际选择、改动及未评分的新方案，不改写初始概率。Stage3 另写《融合方案选择决策依据.md》，与自测报告分开，传给 Stage7/8/9。
+All five nodes of a new task read `<work>/fusion/fusion_library.json`. Probabilities are an initial selection reference; measured evidence takes priority. Capabilities such as cross-core storage and synchronization must be verified; a shared L2 Cache cannot be directly treated as DSM. The initial Jev library is maintained by the program; Stage2/3 record the iteration's actual choices, changes, and new unscored schemes in `develop/iterN/fusion_library.json`, without rewriting the initial probabilities. Stage3 also writes `fusion_scheme_rationale.md`, separate from the self-test report, and passes it to Stage7/8/9.
 
-运行产物位于 `<work>/fusion/`：`fusion_library.json` 保存前 n 个完整候选及概率，`ranking.json` 保存所有方法的概率，`jev_request.json` 和 `jev_response.json` 保存请求与响应，便于追溯。
+Run artifacts are located in `<work>/fusion/`: `fusion_library.json` saves the top n complete candidates and their probabilities, `ranking.json` saves probabilities for all methods, and `jev_request.json` and `jev_response.json` save the request and response for traceability.
 
-`<work>/fusion/translation/` 保存 `translation_input.json`（翻译前材料）、`english_inputs.json`（英文材料）、`translation_manifest.json`（输入与译文指纹）及 Kerminal 翻译记录。输入未变且译文校验通过时复用翻译缓存；原始方案库和后续五个节点使用的可读方案说明仍保留原文。
+`<work>/fusion/translation/` saves `translation_input.json` (materials before translation), `english_inputs.json` (English materials), `translation_manifest.json` (fingerprints of inputs and translations), and Kerminal translation records. When inputs are unchanged and translations pass validation, the translation cache is reused; the original scheme library and the readable scheme descriptions used by the subsequent five nodes retain the original text.
 
-断点恢复会复用输入一致的概率结果；输入变化时重新评估，只修改 n 时直接重选。完整 ANALYSIS.md 的哈希也参与缓存检查。旧工作目录若已进入迭代，且既没有新增需求 JSON、也没有 `fusion/` 目录，保留原有迭代并记录警告，不追溯补跑 Stage1.5；若已存在 `fusion/` 却缺少需求，则停止并报错，避免误用不完整的旧结果。
+Checkpoint recovery reuses probability results with identical inputs; when inputs change, re-evaluation occurs, and if only n is modified, re-selection happens directly. The hash of the complete ANALYSIS.md also participates in the cache check. If an old working directory has already entered iteration, and there is neither a new requirements JSON nor a `fusion/` directory, the existing iteration is retained with a warning logged, without retroactively running Stage1.5; if `fusion/` exists but requirements are missing, execution stops with an error to avoid misusing incomplete old results.
 
-| 文件 | 功能 |
+| File | Function |
 |---|---|
-| `lib/fusion_selection.py` | Stage1.5 请求构建、概率校验排序、前 n 候选持久化、缓存复用与下游 prompt 注入 |
-| `lib/jev_translation.py` | 复用 Kerminal 翻译输入文本，校验英文、结构与数字，缓存英文材料 |
-| `lib/jev_client.py` | 读取文件正文、组装JSON、检查请求大小、调用Jev并返回选项概率等原生结果 |
-| `lib/kerminal_rpc.py` | 通过本地Kerminal CLI翻译文本字段 |
-| `tools/jev_smoke_test.py` | 独立调用入口，支持自定义源码、英文证据和问题JSON |
-| `tools/kerminal_translate_smoke.py` | 翻译与数值保真检查示例 |
+| `lib/fusion_selection.py` | Stage1.5 request construction, probability validation and sorting, top-n candidate persistence, cache reuse, and downstream prompt injection |
+| `lib/jev_translation.py` | Reuses Kerminal to translate input text, validates English, structure, and numbers, and caches English materials |
+| `lib/jev_client.py` | Reads file contents, assembles JSON, checks request size, calls Jev, and returns native results such as option probabilities |
+| `lib/kerminal_rpc.py` | Translates text fields via the local Kerminal CLI |
+| `tools/jev_smoke_test.py` | Standalone invocation entry supporting custom source code, English evidence, and question JSON |
+| `tools/kerminal_translate_smoke.py` | Example of translation and numeric fidelity checks |
 
-连接参数和本机密钥统一放在 `config.yaml` 的 `jev` 段，密钥读取顺序为环境变量 → `jev.api_key`。不再需要 `config.local.yaml`；只有旧配置显式保留 `credentials_file` 时才兼容读取该旧文件。离线验证运行 `.venv-jev\Scripts\python.exe tools/run_jev_offline_tests.py`，结果写入 `output/jev_tests/results.json`，不会读取真实密钥配置。
+Connection parameters and local secrets are placed uniformly in the `jev` section of `config.yaml`; the secret reading order is environment variable → `jev.api_key`. `config.local.yaml` is no longer needed; the old file is only read for compatibility if an old configuration explicitly retains `credentials_file`. For offline verification, run `.venv-jev\Scripts\python.exe tools/run_jev_offline_tests.py`; results are written to `output/jev_tests/results.json` and real secret configurations are not read.
 
-## 🧭 适用场景
+## 🧭 Applicable Scenarios
 
-- 昇腾 NPU 上的 Triton Ascend 融合算子开发与性能优化
-- cann-bench 评测驱动的算子迭代优化
-- 多 Agent 协作的算子开发流程自动化研究
+- Development and performance optimization of Triton Ascend fused operators on Ascend NPU
+- cann-bench evaluation-driven iterative operator optimization
+- Research on automating multi-agent collaborative operator development workflows
 
-## 🔧 芯片自动检测
+## 🔧 Automatic Chip Detection
 
-orchestrator 启动时自动检测当前 NPU 芯片的真实硬件参数，写入 `<work>/device_info.json`，并注入到所有 stage 的 prompt 中，确保 agent 按实际硬件规格设计 tiling 参数。**不使用任何硬编码映射表**——所有参数从设备实际读取，读不到则退出。
+At startup, the orchestrator automatically detects the real hardware parameters of the current NPU chip, writes them to `<work>/device_info.json`, and injects them into the prompts of all stages, ensuring agents design tiling parameters according to actual hardware specs. **No hardcoded mapping tables are used** — all parameters are read from the device, and if unavailable, execution exits.
 
-检测流程：
+Detection process:
 
-1. 通过 `torch_npu.npu.get_device_properties(device_id)` 获取配置中逻辑设备的 SoC 型号（如 `Ascend950PR_9579`）、Cube/Vector 核数、L2 Cache 大小
-2. 通过 CANN 编译器内部接口 `tbe.common.platform.get_soc_spec` 读取片上内存真实值（UB/L1/L0A/L0B/L0C/CORE_NUM），这是编译器编译 kernel 时依赖的同一份数据
-3. 保留设备报告的芯片名称，并补充架构代号（如 `dav-3510`，纯名称映射不涉及硬件参数）
-4. 导入 Triton，验证实际运行后端为 `npu`，记录 torch、torch_npu、triton 与 triton-ascend 版本；仅能导入同名上游包不足以通过
-5. 校验关键参数（soc_version/UB/L1/CORE_NUM/L0A）全部获取到，任一缺失则打印排查步骤并 `sys.exit(1)` 退出
+1. Via `torch_npu.npu.get_device_properties(device_id)`, obtain the SoC model (e.g. `Ascend950PR_9579`), Cube/Vector core counts, and L2 Cache size of the logical device configured
+2. Via the CANN compiler internal interface `tbe.common.platform.get_soc_spec`, read the real on-chip memory values (UB/L1/L0A/L0B/L0C/CORE_NUM) — the same data the compiler depends on when compiling kernels
+3. Retain the chip name reported by the device and supplement the architecture codename (e.g. `dav-3510`; pure name mapping, does not involve hardware parameters)
+4. Import Triton, verify the actual runtime backend is `npu`, and record the versions of torch, torch_npu, triton, and triton-ascend; merely importing a same-named upstream package is not sufficient to pass
+5. Validate that key parameters (soc_version/UB/L1/CORE_NUM/L0A) are all obtained; if any is missing, print troubleshooting steps and exit with `sys.exit(1)`
 
-手动验证命令：
+Manual verification commands:
 ```bash
-# 查看 SoC 型号
+# View the SoC model
 python3 -c "import torch,torch_npu; print(torch_npu.npu.get_device_properties(0).name)"
 
-# 查看片上内存参数（需要 CANN Toolkit）
+# View on-chip memory parameters (requires CANN Toolkit)
 python3 -c "
 from tbe.common.platform import get_soc_spec, set_current_compile_soc_info
-set_current_compile_soc_info('Ascend950PR_9579')  # 替换为你的 SoC 型号
+set_current_compile_soc_info('Ascend950PR_9579')  # replace with your SoC model
 for k in ['UB_SIZE','L1_SIZE','L0A_SIZE','L0B_SIZE','L0C_SIZE','CORE_NUM']:
     v = get_soc_spec(k)
     print(f'{k} = {v} ({v//1024} KB)' if isinstance(v,int) and v>1024 else f'{k} = {v}')
 "
 ```
 
-如果自动检测失败（如 CANN 未安装完整），可在 `config.yaml` 的 `hardware` 段手动填写全部参数。
+If automatic detection fails (e.g. CANN is not fully installed), you can manually fill in all parameters in the `hardware` section of `config.yaml`.
 
-## 运行指南
+## Running Guide
 
-### 第一步：配置 config.yaml
+### Step 1: Configure config.yaml
 
-**仓库直接提供唯一的 `config.yaml`，并由 Git 跟踪，日常只修改这一份运行配置。** 新机器拉取仓库后，调整其中的实际路径和 `jev.api_key` 即可；仍可设置 `TYPESAFE_API_KEY` 环境变量，优先于文件中的密钥。
+**The repository directly provides the single `config.yaml`, tracked by Git; day-to-day you only modify this one run configuration.** After pulling the repository on a new machine, just adjust the actual paths in it and `jev.api_key`; you can still set the `TYPESAFE_API_KEY` environment variable, which takes priority over the key in the file.
 
 ```bash
-# 一键获取当前机器的所有路径
+# One-shot retrieval of all paths on the current machine
 echo "cannbot:      $(which cannbot)"
 echo "kerminal:     $(which kerminal)"
 echo "hermes:       $(which hermes)"
@@ -123,7 +123,7 @@ echo "node bin:     $(dirname $(which node))"
 echo "arch:         $(uname -m | sed 's/x86_64/x86_64-linux/;s/aarch64/aarch64-linux/')"
 ```
 
-config.yaml 中需要改的字段（共 7 处）：
+Fields to change in config.yaml (7 places in total):
 
 ```yaml
 agents:
@@ -135,37 +135,37 @@ agents:
     cli: "<which hermes>"
 
 paths:
-  cannbench_repo: "<cann-bench 仓库的绝对路径>"
+  cannbench_repo: "<absolute path of the cann-bench repository>"
 
 cann:
   toolkit_path: "<ls ~/Ascend/cann-*>"
-  arch: "<aarch64-linux 或 x86_64-linux>"
+  arch: "<aarch64-linux or x86_64-linux>"
   node_bin: "<dirname $(which node)>"
 ```
 
-`cann.driver_path` 通常不用改（默认 `/usr/local/Ascend/driver`）。`hardware` 段不用改（orchestrator 自动检测）。
+`cann.driver_path` usually needs no change (default `/usr/local/Ascend/driver`). The `hardware` section needs no change (auto-detected by the orchestrator).
 
-另外确认 `jev` 段的服务连接与密钥配置；用 `fusion_selection.top_n` 控制 Stage1.5 保留的融合方案数，默认 3。
+Also confirm the service connection and key configuration in the `jev` section; use `fusion_selection.top_n` to control the number of fusion schemes retained by Stage1.5, default 3.
 
-### 第二步：验证环境
+### Step 2: Verify the Environment
 
 ```bash
-# NPU 可用
+# NPU available
 npu-smi info
 python3 -c "import torch, torch_npu; print(torch.npu.is_available())"
 
-# CANN Toolkit 完整
+# CANN Toolkit complete
 python3 -c "from tbe.common.platform import get_soc_spec; print('tbe OK')"
 
-# 三个 Agent 可用
+# All three Agents available
 cannbot --version
 kerminal --version
 hermes --version
 ```
 
-### 第三步：运行
+### Step 3: Run
 
-**从零开始写算子**
+**Write an operator from scratch**
 
 ```bash
 cd pypto-pro-workflow
@@ -173,21 +173,21 @@ python3 orchestrator.py \
   --task-dir /path/to/cann-bench/bench_lab/<bench>/<level>/<operator>
 ```
 
-**带融合方向提示（推荐）**
+**With a fusion direction hint (recommended)**
 
-`--optimize-hint` 告诉 agent 用什么融合策略，会注入到 stage1 分析和 stage2 实现中：
+`--optimize-hint` tells the agent which fusion strategy to use; it is injected into stage1 analysis and stage2 implementation:
 
 ```bash
 python3 orchestrator.py \
   --task-dir /path/to/cann-bench/bench_lab/multimodal-fusion-bench/level3/fused_rmsnorm_pos_qkv_qknorm \
-  --optimize-hint "用 Triton Ascend 实现 RMSNorm、位置编码、QKV 投影和 Q/K 归一化；先核对每个 case 的形状与精度要求，再选择可实现的融合方式。减少中间数据搬运，以实测选择单 kernel 或多 kernel 方案。"
+  --optimize-hint "Implement RMSNorm, positional encoding, QKV projection, and Q/K normalization with Triton Ascend; first verify each case's shape and precision requirements, then choose an implementable fusion approach. Reduce intermediate data movement, and choose a single-kernel or multi-kernel scheme based on measured results."
 ```
 
-hint 怎么写：说清楚计算步骤、精度约束和优化目标。是否单 kernel、如何切块和调度，由 agent 根据当前 Triton Ascend 能力、芯片资源和评测证据决定。
+How to write the hint: state the computation steps, precision constraints, and optimization goals clearly. Whether to use a single kernel, and how to tile and schedule, is decided by the agent based on current Triton Ascend capabilities, chip resources, and evaluation evidence.
 
-方向说明较长时保存为 UTF-8 文件，用 `--optimize-hint-file 方向说明.md` 替换 `--optimize-hint "正文"`；两者互斥，注入位置和作用相同。
+When the direction description is long, save it as a UTF-8 file and use `--optimize-hint-file <direction>.md` instead of `--optimize-hint "<text>"`; the two are mutually exclusive, with the same injection point and effect.
 
-**修改 workflow 后，用已有算子应急重跑**
+**After modifying the workflow, emergency re-run with an existing operator**
 
 ```bash
 python3 orchestrator.py \
@@ -195,19 +195,19 @@ python3 orchestrator.py \
   --init-impl /path/to/old_work/impl
 ```
 
-`--init-impl` 以你指定的代码为准，不要求存在 `selection/best.json`，也不会自动改选历史最佳。适用于改动 workflow 工程后，复用已生成算子重新运行。首次直接走 **Stage4 → Stage5 → Stage6 → 原有后续流程**，不调用 Stage1、Jev 或 Stage2，也不在首次评测前让 cannbot 修改代码。
+`--init-impl` takes the code you specify as authoritative; it does not require `selection/best.json` to exist and will not automatically re-select the historical best. It is intended for re-running with an already-generated operator after modifying the workflow engineering. On the first pass it goes directly through **Stage4 → Stage5 → Stage6 → the existing subsequent flow**, without calling Stage1, Jev, or Stage2, and without letting cannbot modify the code before the first evaluation.
 
-- 复制 `ANALYSIS.md`、`fusion_requirements.en.json`、`device_info.json`、整个 `fusion/`，以及指定 `impl/` 对应那一轮的开发材料（方案、融合选择、自测报告、结构化结果和日志），放到新 `develop/iter0/`。如果代码已经经过 Stage3 优化，就取与代码及证据哈希匹配的开发轮次，不能拿首版报告代替。
-- 不复制旧 `eval/`、`build/`、`profile/`、`search/`、history、成功/失败经验、最佳记录、退出计数或人工意见。新任务的性能和历史从本次正式评测重新记录。
-- 启动时仍检查实际硬件与运行环境，但只在本地核对导入评分，**不重新调用 Jev**。缺必要材料、任务或硬件不匹配时明确停止，不静默重新开发。候选概率和 Top N 沿用导入库。
-- 已匹配的开发自测证据可以继承；代码或文档对不上时只作参考，不冒充自测已通过，也不放宽最佳实现的原有入库条件。
-- `init_impl_manifest.json` 保存来源、复制文件及哈希；日志列出复制的目录和跳过的阶段。源目录不改动，同秒启动也会创建不同的新目录。
+- Copies `ANALYSIS.md`, `fusion_requirements.en.json`, `device_info.json`, the entire `fusion/`, plus the development materials (scheme, fusion selection, self-test report, structured results, and logs) corresponding to the specified `impl/` for that iteration, into the new `develop/iter0/`. If the code has already been optimized by Stage3, take the development iteration whose code and evidence hashes match; the first-version report cannot substitute for it.
+- Does not copy old `eval/`, `build/`, `profile/`, `search/`, history, success/failure experiences, best records, exit counters, or human comments. The new task's performance and history are recorded fresh from this formal evaluation.
+- At startup it still checks the actual hardware and runtime environment, but only locally verifies the imported scores, **without calling Jev again**. If required materials are missing or the task or hardware does not match, it stops explicitly and does not silently re-develop. Candidate probabilities and Top N follow the imported library.
+- Matched development self-test evidence may be inherited; when code or documentation does not match, it is treated as reference only, not passed off as a passed self-test, and the original admission criteria for the best implementation are not relaxed.
+- `init_impl_manifest.json` saves the source, copied files, and hashes; the log lists copied directories and skipped stages. The source directory is not modified, and even same-second starts create distinct new directories.
 
-不能与 `--work-dir` 同时使用；中断后用 `--work-dir 新work目录` 恢复，仍保留应急模式。可选 `--optimize-hint` 只记录为后续优化参考，首次仍先评测指定实现。
+Cannot be used together with `--work-dir`; after an interruption, resume with `--work-dir <new work dir>`, which keeps emergency mode. An optional `--optimize-hint` is only recorded as a reference for subsequent optimization; the first pass still evaluates the specified implementation first.
 
-**断点续跑**
+**Resuming from a Checkpoint**
 
-如果 workflow 中途中断（Ctrl+C / 超时 / 容器重启），用 `--work-dir` 指定已有的 work 目录继续：
+If the workflow is interrupted midway (Ctrl+C / timeout / container restart), use `--work-dir` to point to the existing work directory and continue:
 
 ```bash
 python3 orchestrator.py \
@@ -215,205 +215,205 @@ python3 orchestrator.py \
   --work-dir work/fused_rmsnorm_pos_qkv_qknorm_20260916_131832
 ```
 
-orchestrator 会从 `.state.json` 记录的断点继续。impl / eval / history 等已有数据保留。新任务记录 `workflow_target.json` 标识 Triton Ascend；已有旧框架实现或状态的 work 不直接续跑。请创建新任务重新实现、评测，不能只修改身份文件来导入旧成绩。
+The orchestrator continues from the checkpoint recorded in `.state.json`. Existing data such as impl / eval / history is preserved. New tasks record `workflow_target.json` identifying Triton Ascend; work directories with old-framework implementations or states are not directly resumed. Please create a new task to re-implement and re-evaluate; you cannot import old results by only modifying the identity file.
 
-**控制迭代轮数**
+**Controlling the Number of Iterations**
 
-默认最多 20 轮（`config.yaml` 的 `workflow.max_iterations`）。可以用 `--max-iter` 覆盖：
+Default is at most 20 iterations (`workflow.max_iterations` in `config.yaml`). You can override with `--max-iter`:
 
 ```bash
-# 先跑 1 轮验证环境没问题
+# First run 1 iteration to verify the environment is fine
 python3 orchestrator.py --task-dir /path/to/task --max-iter 1
 
-# 正式跑 20 轮
+# Full run of 20 iterations
 python3 orchestrator.py --task-dir /path/to/task
 ```
 
-### --optimize-hint 在不同场景下的注入方式
+### How --optimize-hint Is Injected in Different Scenarios
 
-| 场景 | 命令 | 处理方式 |
+| Scenario | Command | Handling |
 |------|------|---------|
-| 新写算子 | `--optimize-hint "融合方向..."` | Stage1 分析可行性，Stage2 按该方向开发 |
-| 已有实现应急重跑 | `--init-impl ... --optimize-hint "后续方向..."` | 跳过 Stage1/1.5/2；保存提示供后续分析与优化，先评测指定代码 |
-| 不传提示 | — | 无额外方向 |
+| Writing an operator from scratch | `--optimize-hint "fusion direction..."` | Stage1 analyzes feasibility, Stage2 develops along that direction |
+| Emergency re-run with existing implementation | `--init-impl ... --optimize-hint "subsequent direction..."` | Skips Stage1/1.5/2; saves the hint for later analysis and optimization, evaluates the specified code first |
+| No hint passed | — | No additional direction |
 
-### 退出条件
+### Exit Conditions
 
-性能达标（所有 case speedup ≥ 1.0）后**不直接退出**：
+After performance targets are met (all cases speedup ≥ 1.0), the program **does not exit immediately**:
 
-1. 有效成绩成为基线，再经历 x 次有效改进；窗口两端的历史最佳 avg_speedup 累计提升小于 5% 时，程序退出并将最佳达标快照交给 Stage10。
-2. 仍有 case 未达标时保持 Stage6 → 7 → 8 → 9 → 3；连续 y 次有效改进累计不足 5% 提示 Stage9 重点审查候选方案。开启人工咨询时，第 3 个新有效轮次触发该条件后先咨询人，再形成最终修改意见。未达标 case 持续改善时可保留方案。
-3. x/y 分别由 `workflow.semantic_exit.passed_window` / `underperforming_window` 配置，默认均为 3；需基线加 3 份有效成绩。达标状态切换重置窗口；失败轮不计数，退步后的恢复不当作新提升，恰好 5% 不属于停滞。
-4. P0/P1/P2、编译/精度/反作弊失败路由、最大迭代上限保持。Stage9 的 `exit_decision` 不再控制退出，也不再因多 kernel 或 HBM 中间读写强制换方案。
+1. The valid score becomes the baseline, then goes through x more valid improvements; when the historical best avg_speedup across the two ends of the window has cumulatively improved by less than 5%, the program exits and hands the best passing snapshot to Stage10.
+2. While any case has not passed, it keeps the Stage6 → 7 → 8 → 9 → 3 loop; when y consecutive valid improvements cumulatively total less than 5%, Stage9 is prompted to focus on reviewing candidate schemes. When human consultation is enabled, after the 3rd new valid iteration triggers this condition, the human is consulted first before forming the final modification opinion. If underperforming cases keep improving, the scheme may be retained.
+3. x/y are configured by `workflow.semantic_exit.passed_window` / `underperforming_window`, both defaulting to 3; a baseline plus 3 valid scores are required. Switching pass status resets the window; failed iterations do not count, recovery after a regression is not treated as a new improvement, and exactly 5% does not count as stagnation.
+4. P0/P1/P2 routing, build/precision/anti-cheating failure routing, and the maximum iteration cap are retained. Stage9's `exit_decision` no longer controls exit, nor does it force a scheme change because of multi-kernel or HBM intermediate read/write.
 
-Stage9 仍按原逻辑记录提升 ≥5% 的成功经验和退步 ≥5% 的失败教训，包括满足语义退出的那一轮。
+Stage9 still records, per its original logic, success experiences with improvement ≥5% and failure lessons with regression ≥5%, including the iteration that satisfies the semantic exit.
 
-配置中的 **x = `passed_window`（场景1，全部达标）**，**y = `underperforming_window`（场景2，至少一个 case 未达标）**。它们控制有效迭代窗口；日志中的“第几次进入场景”是触发次数，人工咨询的“第 3 次”又是独立计数，三者不要混淆。
+In the configuration, **x = `passed_window` (scenario 1, all cases passing)**, **y = `underperforming_window` (scenario 2, at least one case not passing)**. They control the valid iteration window; the "nth time entering the scenario" in logs is a trigger count, and the "3rd time" for human consultation is a separate counter — do not confuse the three.
 
-三个判断的区别、代码现状和后续建议见[性能判断规则](docs/workflow_performance_decision_rules.md)。
+For the differences among the three judgments, the current code state, and follow-up suggestions, see [Performance Decision Rules](docs/workflow_performance_decision_rules.md).
 
-单轮退步仍比较本轮与最近一轮 `avg_speedup > 0` 的结果，百分比保留一位小数后 `≤ -5%` 触发。**本轮全部 case ≥1** 时，Stage9 先写退步教训，程序再恢复同口径最佳达标代码，Stage3 从该基线继续修改；**本轮仍有 case <1** 时只记录知识，不自动恢复代码。恢复不新增评测、不改变原成绩或停滞窗口。若当前评测未通过版本绑定或快照校验，不自动恢复。
+A single-iteration regression still compares this iteration's result with the most recent iteration's `avg_speedup > 0` result, triggering at `≤ -5%` after rounding the percentage to one decimal place. **When all cases in this iteration are ≥1**, Stage9 first writes the regression lesson, then the program restores the best passing code of the same measurement standard, and Stage3 continues modifying from that baseline; **when some case in this iteration is still <1**, only the knowledge is recorded and the code is not automatically restored. Restoration adds no evaluations, does not change original scores or the stagnation window. If the current evaluation fails version binding or snapshot verification, no automatic restoration occurs.
 
-两类停滞及退步处置在 `log/workflow.log`、`log/state_transitions.log` 用 `=====` 醒目标记。停滞记录窗口、累计提升和“第几次进入本场景”；两个场景分别累计，同一轮恢复不重复计数，与人工咨询计数独立。次数保存在 `selection/semantic_events.json`；退步处置保存在 `selection/rollbacks/iterN/record.json`，包含前后性能、最佳来源、Stage9 决策和知识地址。实际恢复前的代码另存 `failed_impl/`，旧证据绑定保存在 `failed_binding.json`；Stage9/3 提示词会明确退步报告与恢复基线的区别。
+The two stagnation types and regression handling are prominently marked with `=====` in `log/workflow.log` and `log/state_transitions.log`. Stagnation records the window, cumulative improvement, and "which time entering this scenario"; the two scenarios accumulate separately, recovery in the same iteration is not double-counted, and counts are independent of the human consultation counter. Counts are saved in `selection/semantic_events.json`; regression handling is saved in `selection/rollbacks/iterN/record.json`, including before/after performance, best source, Stage9 decision, and knowledge location. The code before actual restoration is additionally saved in `failed_impl/`, and the old evidence binding is saved in `failed_binding.json`; the Stage9/3 prompts make explicit the difference between the regression report and the restored baseline.
 
-### 人类参与与 Stage9 场景裁剪
+### Human Participation and Stage9 Scenario Trimming
 
-公共配置已开启 `workflow.human_review.proactive_enabled` 和 `consultation_enabled`，可分别关闭；旧自定义配置缺少此段时保持无人值守行为。在项目根目录的**另一个终端**提交，不打断当前节点：
+The common configuration already enables `workflow.human_review.proactive_enabled` and `consultation_enabled`, which can be disabled separately; when an old custom configuration lacks this section, unattended behavior is preserved. Submit from **another terminal** in the project root directory, without interrupting the current node:
 
 ```bash
-python tools/human_review.py --work-dir "本次 work 目录" --message "先保留融合方案，重点优化两个慢 case"
-python tools/human_review.py --work-dir "本次 work 目录" --kind question --message "为什么推荐这个方案？"
-python tools/human_review.py --work-dir "本次 work 目录" --status
+python tools/human_review.py --work-dir "current work dir" --message "Keep the fusion scheme for now, focus on optimizing the two slow cases"
+python tools/human_review.py --work-dir "current work dir" --kind question --message "Why is this scheme recommended?"
+python tools/human_review.py --work-dir "current work dir" --status
 ```
 
-停滞第 3 次会在日志中提示《问题文档.md》的位置，内含 2～3 个选项和推荐理由。同一入口直接回复选项；回复“请等待”仅在原 2 分钟期限上加一次 10 分钟，正式意见立即结束等待。超时按推荐方向继续，不能记作人工同意。恢复沿用原截止时间，同轮不重复计数。
+The 3rd stagnation event prompts the location of the `questions_document.md` in the log, containing 2–3 options and recommendation rationale. Reply to the options directly through the same entry; replying "please wait" only extends the original 2-minute deadline by one 10-minute increment, while a formal opinion ends the wait immediately. On timeout, execution continues in the recommended direction and cannot be recorded as human consent. Resumption uses the original deadline, and the same iteration is not double-counted.
 
-Stage9 先处理人的原话，实质方向必须形成带意见编号的人工 P0；程序校验后才交给 Stage3。Stage3 在融合选择依据和 `develop/<iter>/human_feedback.json` 中写落实情况；已处理、已执行和退出导致未执行分开记录。纯问题先答疑，不自动当指令。
+Stage9 first processes the human's original words; substantive directions must become human P0 items with opinion numbers; only after program validation are they handed to Stage3. Stage3 records implementation status in the fusion selection rationale and in `develop/<iter>/human_feedback.json`; processed, executed, and not-executed-due-to-exit are recorded separately. Pure questions are answered first and are not automatically treated as instructions.
 
-原话及状态在 `<work>/human_review/inbox/`、`human_review/state.json`；每次问题/反馈包/证据版本在 `human_review/<iter>/<请求编号>/`。Stage9 实际收到的 role、prompt 与最终决策在 `knowledge/stage9/<iter>/<请求编号>/`，便于核查人工意见是否进入 P0。
+The original words and status are in `<work>/human_review/inbox/` and `human_review/state.json`; each question/feedback package/evidence version is in `human_review/<iter>/<request number>/`. The role, prompt, and final decision actually received by Stage9 are in `knowledge/stage9/<iter>/<request number>/`, for verifying whether human opinions entered P0.
 
-Stage9 按编译失败、精度失败、评测异常、普通优化、停滞审查、全部达标六类加载任务与默认输入；咨询只生成问题，回复后才提交最终账本。全部达标分支仍跳过 Stage7/8，最佳记录、退出窗口及 ±5% 经验规则保留。详情见 [人类参与方案](docs/workflow_human_review_design.md)。
+Stage9 loads tasks and default inputs in six categories: build failure, precision failure, evaluation anomaly, normal optimization, stagnation review, and all-pass. Consultation only generates a question; the final ledger is submitted only after a reply. The all-pass branch still skips Stage7/8, and best records, exit windows, and the ±5% experience rules are retained. See [Human Participation Design](docs/workflow_human_review_design.md) for details.
 
-### 最佳融合实现存在哪里、什么时候用
+### Where the Best Fusion Implementation Lives and When It Is Used
 
-只有 Stage6 完成有效的完整性能评测后才记录。还须正式精度通过、给定 case 与连续调用自测通过，并确认自测、精度、性能对应同一代码版本。缺失材料或代码已变化时不入库，继续原流程修复和补测。
+It is only recorded after Stage6 completes a valid full performance evaluation. It also requires a formal precision pass, passing self-tests for the given cases and for consecutive invocations, and confirmation that self-test, precision, and performance correspond to the same code version. If materials are missing or the code has changed, it is not admitted, and the original flow of repair and supplementary testing continues.
 
-旧任务若从未生成 Stage1.5 需求和方案目录，仍沿用原恢复流程；Stage3 可补录实际方案并标记 `probability=null`，完成自测和新评测后再入库。已经开始 Stage1.5 却缺少方案库不按旧任务放行。同轮重跑必须更新选择依据、自测及日志，程序不会把旧材料重新绑定到新代码。
+If an old task never generated the Stage1.5 requirements and scheme directory, the original recovery flow still applies; Stage3 may backfill the actual scheme marked `probability=null`, and it is admitted after self-testing and a new evaluation. A task that has already started Stage1.5 but lacks a scheme library is not admitted under the old-task rules. Re-running in the same iteration must update the selection rationale, self-test, and logs; the program will not re-bind old materials to new code.
 
-| 位置（相对工作目录） | 内容 |
+| Location (relative to the work directory) | Content |
 |---|---|
-| `selection/best.json` | 当前评测口径下的最佳记录：实现方案、融合方案、HAP 原始指标、avg_speedup/avg_speed、报告和代码快照路径 |
-| `selection/records/iterN-指纹/impl/` | 该次已评测实现的独立副本，后续写代码不覆盖 |
-| `selection/records/iterN-指纹/reports/` | 原始性能报告、性能/精度汇总和可用 profiler 数据的副本 |
-| `selection/records/iterN-指纹/evidence/` | 对应融合选择依据、本轮方案库、自测报告及日志 |
-| `selection/state.json` | 有效评测索引、比较口径和窗口配置；重复恢复同一轮不多计一次 |
-| `selection/current_implementation.json` | 当前开发产物与代码的哈希绑定，本身不是性能记录 |
+| `selection/best.json` | Best record under the current evaluation standard: implementation scheme, fusion scheme, raw HAP metrics, avg_speedup/avg_speed, report and code snapshot paths |
+| `selection/records/iterN-<fingerprint>/impl/` | Independent copy of that evaluated implementation; later code writing does not overwrite it |
+| `selection/records/iterN-<fingerprint>/reports/` | Copies of raw performance reports, performance/precision summaries, and available profiler data |
+| `selection/records/iterN-<fingerprint>/evidence/` | Corresponding fusion selection rationale, this iteration's scheme library, self-test report, and logs |
+| `selection/state.json` | Valid evaluation index, comparison standard, and window configuration; repeated restoration of the same iteration is not counted twice |
+| `selection/current_implementation.json` | Hash binding of the current development artifact and code; not itself a performance record |
 
-**如何选最好：精度和自测合格后，全部 case 达标优先；同一类再比较 avg_speedup，持平保留较早版本。**HAP 原样保存工具的 `performance_score` 和逐 case `perf_score/t_hw_us/op_times`，不编造新的综合值。尚无全部达标实现时保留最佳可用候选，并明确 `best_available`，不能称其达标。
+**How the best is chosen: after precision and self-test pass, all-cases-passing takes priority; within the same category, compare avg_speedup, and on ties keep the earlier version.** HAP's `performance_score` and per-case `perf_score/t_hw_us/op_times` are saved as-is from the tool, without fabricating new composite values. When no all-passing implementation exists yet, the best available candidate is retained and explicitly marked `best_available`, and it cannot be claimed as passing.
 
-只比较框架/后端及运行时版本、CANN 工具链指纹、硬件、任务/case 集合、评测工具及 baseline/计时策略相同的成绩；记录实际执行的 device_id，固定的 `metadata/*.json` 基准文件变化也会另开比较组，同一口径下报告数值的正常波动不另分组。历史不同口径结果须重测，不自动导入。Stage3/7/8/9 读取最佳记录和逐 case 历史趋势；语义退出或达到迭代上限时，Stage10 读取最佳快照的代码与报告，当前 `impl/` 可以继续保留最后一次尚未评测的修改。
+Only scores with the same framework/backend and runtime versions, CANN toolchain fingerprint, hardware, task/case set, evaluation tool, and baseline/timing strategy are compared; the actually executed device_id is recorded, and changes to the fixed `metadata/*.json` baseline files also open a new comparison group, while normal fluctuation of reported values under the same standard does not create a new group. Historical results under different standards must be re-measured and are not imported automatically. Stage3/7/8/9 read the best record and per-case historical trends; on semantic exit or reaching the iteration cap, Stage10 reads the code and report of the best snapshot, and the current `impl/` may keep the last not-yet-evaluated modification.
 
-## 项目结构
+## Project Structure
 
 ```
 pypto-pro-workflow/
-├── orchestrator.py          ← 主控制平面（唯一入口）
-├── config.yaml              ← 唯一运行配置（路径、迭代参数、Jev 连接与密钥，由 Git 跟踪）
-├── 测试用例.csv              ← 测试用例记录
-├── roles/                   ← 各阶段角色定义（agent prompt 或程序执行说明）
-│   ├── n1_stage1_requirements_analysis.md   ← 阶段1 需求分析（cannbot）
-│   ├── n1_stage1.5_jev_fusion_selection.md   ← 阶段1.5 融合方案选择（Jev，由程序调用）
-│   ├── n1_stage2_first_impl.md              ← 阶段2 首版实现（cannbot）
-│   ├── n1_stage3_fix_and_optimize.md        ← 阶段3 修改优化（cannbot）
-│   ├── n2_stage4_build.md                   ← 阶段4 编译部署（kerminal）
-│   ├── n2_stage5_precision_eval.md          ← 阶段5 精度评测（kerminal）
-│   ├── n2_stage6_perf_eval.md               ← 阶段6 性能评测说明（程序直接执行）
-│   ├── n2_stage7_kerminal_profile.md        ← 阶段7 profiling（kerminal）
-│   ├── n3_stage8_search.md                  ← 阶段8 搜索优化（hermes）
-│   ├── n4_stage9_tech_lead_guide.md         ← 阶段9 经验提炼（kerminal/tech_lead）
-│   └── n5_stage10_kerminal_report.md        ← 阶段10 最终报告（kerminal）
-├── lib/                     ← 工具库
-│   ├── framework_target.py  ← Triton Ascend 目标、后端与工作目录校验
-│   ├── fusion_selection.py  ← Stage1.5 Jev 评分、候选排序与持久化、方案库注入
-│   ├── fusion_evidence.py   ← 融合选择、自测结果与代码版本绑定
-│   ├── semantic_exit.py     ← 最佳实现快照、有效性能窗口与逐 case 趋势
-│   ├── jev_translation.py   ← 英文材料准备、保真校验与翻译缓存
-│   ├── cann_env.py          ← CANN 环境变量构建（从 config.yaml 读取 + source set_env.sh）
-│   ├── agent_runner.py      ← agent CLI 调用 + 环境注入
-│   ├── bench_parser.py      ← cann-bench 评测结果解析 + 反作弊 kernel_csv 自动分析
-│   ├── history_manager.py   ← 跨轮记忆管理（history/ledger/fix_plan/rounds 保护）
-│   ├── state.py             ← .state.json 状态管理
-│   ├── logger.py            ← 日志系统（workflow/state/history/N1-N5 共 8 个日志）
-│   └── handoff.py           ← 文件读写工具
-├── knowledge/               ← 知识库（不对 agent 直接展示，通过 orchestrator 注入）
-│   ├── anti_cheat_reference.md  ← 实际错误处理表 + 开发自检清单
-│   ├── fusion_method.md         ← 融合方法原始说明
-│   ├── fusion_options.json      ← Stage1.5 的详细候选方法（F1–F10）
-│   ├── arch_programming_guide.md ← Triton Ascend 编程与硬件边界
-│   └── profiling_guide.md       ← Profiling 数据解读指南
-├── docs/                    ← 设计、迁移计划与环境配置说明
+├── orchestrator.py          ← Main control plane (single entry point)
+├── config.yaml              ← Single run configuration (paths, iteration parameters, Jev connection and secrets, tracked by Git)
+├── test_cases.csv           ← Test case records
+├── roles/                   ← Role definitions for each stage (agent prompt or program execution instructions)
+│   ├── n1_stage1_requirements_analysis.md   ← Stage1 requirements analysis (cannbot)
+│   ├── n1_stage1.5_jev_fusion_selection.md   ← Stage1.5 fusion scheme selection (Jev, invoked by the program)
+│   ├── n1_stage2_first_impl.md              ← Stage2 first implementation (cannbot)
+│   ├── n1_stage3_fix_and_optimize.md        ← Stage3 modification and optimization (cannbot)
+│   ├── n2_stage4_build.md                   ← Stage4 build and deployment (kerminal)
+│   ├── n2_stage5_precision_eval.md          ← Stage5 precision evaluation (kerminal)
+│   ├── n2_stage6_perf_eval.md               ← Stage6 performance evaluation instructions (executed directly by the program)
+│   ├── n2_stage7_kerminal_profile.md        ← Stage7 profiling (kerminal)
+│   ├── n3_stage8_search.md                  ← Stage8 search optimization (hermes)
+│   ├── n4_stage9_tech_lead_guide.md         ← Stage9 experience distillation (kerminal/tech_lead)
+│   └── n5_stage10_kerminal_report.md        ← Stage10 final report (kerminal)
+├── lib/                     ← Utility library
+│   ├── framework_target.py  ← Triton Ascend target, backend, and work directory validation
+│   ├── fusion_selection.py  ← Stage1.5 Jev scoring, candidate sorting and persistence, scheme library injection
+│   ├── fusion_evidence.py   ← Binding of fusion selection, self-test results, and code versions
+│   ├── semantic_exit.py     ← Best implementation snapshot, valid performance windows, and per-case trends
+│   ├── jev_translation.py   ← English material preparation, fidelity validation, and translation cache
+│   ├── cann_env.py          ← CANN environment variable construction (read from config.yaml + source set_env.sh)
+│   ├── agent_runner.py      ← Agent CLI invocation + environment injection
+│   ├── bench_parser.py      ← cann-bench evaluation result parsing + anti-cheating kernel_csv automatic analysis
+│   ├── history_manager.py   ← Cross-iteration memory management (history/ledger/fix_plan/rounds protection)
+│   ├── state.py             ← .state.json state management
+│   ├── logger.py            ← Logging system (8 logs total: workflow/state/history/N1-N5)
+│   └── handoff.py           ← File read/write utilities
+├── knowledge/               ← Knowledge base (not shown directly to agents; injected via the orchestrator)
+│   ├── anti_cheat_reference.md  ← Real-world error handling table + development self-check checklist
+│   ├── fusion_method.md         ← Original description of fusion methods
+│   ├── fusion_options.json      ← Detailed candidate methods for Stage1.5 (F1–F10)
+│   ├── arch_programming_guide.md ← Triton Ascend programming and hardware boundaries
+│   └── profiling_guide.md       ← Profiling data interpretation guide
+├── docs/                    ← Design, migration plan, and environment configuration notes
 ├── examples/
-│   ├── triton_ascend_example/   ← 最小融合算子、构建脚本与 NPU 自测
-│   └── jev_smoke/               ← 独立 Jev 输入示例
-└── skills/triton-profiling-analysis/ ← 昇腾 Triton 性能分析
+│   ├── triton_ascend_example/   ← Minimal fused operator, build scripts, and NPU self-test
+│   └── jev_smoke/               ← Standalone Jev input example
+└── skills/triton-profiling-analysis/ ← Ascend Triton performance analysis
 ```
 
-## 运行时 work 目录
+## Runtime Work Directory
 
-每次运行自动创建 `work/<op>_<timestamp>/`：
+Each run automatically creates `work/<op>_<timestamp>/`:
 
 ```
 work/exp_20260828_232950/
-├── task/                  ← 软链接 → cann-bench task 目录（只读）
-├── example/               ← 软链接 → triton_ascend_cann_example（只读）
-├── workflow_target.json   ← 程序记录的 Triton Ascend 目标身份
-├── device_info.json       ← 当前芯片、运行时与 CANN 信息
-├── impl/                  ← 全局：当前最新算子代码
-│   ├── cann_bench/         ← Triton 实现与 __init__.py 导出接口
-│   ├── setup.py           ← 安装包配置
-│   └── build.sh           ← 构建入口
-├── ANALYSIS.md            ← 全局：阶段1 需求分析
-├── fusion_requirements.en.json ← 阶段1 给 Jev 的紧凑英文需求（≤6000字节）
-├── WORK_RECORD.md         ← 全局：工作留痕
-├── FINAL_REPORT.md        ← 全局：阶段10 最终报告
-├── .state.json            ← 全局：状态机（iteration/stage/history）
-├── fusion/                ← Stage1.5 产物，Stage2/3/7/8/9 读取方案库
-│   ├── fusion_library.json    ← 概率最高的前 n 个完整融合候选
-│   ├── ranking.json           ← 全部融合方法及概率
-│   ├── jev_request.json       ← Jev 请求留证
-│   ├── jev_response.json      ← Jev 响应留证
-│   └── translation/          ← 原文、英文材料、缓存指纹与 Kerminal 翻译记录
+├── task/                  ← Symlink → cann-bench task directory (read-only)
+├── example/               ← Symlink → triton_ascend_cann_example (read-only)
+├── workflow_target.json   ← Program-recorded Triton Ascend target identity
+├── device_info.json       ← Current chip, runtime, and CANN information
+├── impl/                  ← Global: current latest operator code
+│   ├── cann_bench/         ← Triton implementation and __init__.py export interface
+│   ├── setup.py           ← Package installation configuration
+│   └── build.sh           ← Build entry point
+├── ANALYSIS.md            ← Global: Stage1 requirements analysis
+├── fusion_requirements.en.json ← Stage1's compact English requirements for Jev (≤6000 bytes)
+├── WORK_RECORD.md         ← Global: work audit trail
+├── FINAL_REPORT.md        ← Global: Stage10 final report
+├── .state.json            ← Global: state machine (iteration/stage/history)
+├── fusion/                ← Stage1.5 artifacts; Stage2/3/7/8/9 read the scheme library
+│   ├── fusion_library.json    ← Top n complete fusion candidates by probability
+│   ├── ranking.json           ← All fusion methods and their probabilities
+│   ├── jev_request.json       ← Jev request record
+│   ├── jev_response.json      ← Jev response record
+│   └── translation/          ← Original text, English materials, cache fingerprints, and Kerminal translation records
 ├── knowledge/
-│   ├── history.json           ← 跨轮记忆（insights/ledger/rounds/suggest_next/fusion_kernel_strategy）
-│   ├── proven_patterns.md     ← 成功经验（性能提升≥5%时自动记录，stage9填内容+程序填数字）
-│   ├── regression_patterns.md ← 失败教训（性能退步≥5%时自动记录，同上）
-│   ├── tech_lead_pitfalls.md  ← 决策错题本（cannbot反馈→tech_lead裁定，✅误判/❌驳回）
-│   ├── stage9/iterN/<请求编号>/ ← 每次 Stage9 的独立交接目录
-│   │   ├── request.json       ← 程序记录的轮次、失败原因、性能对比与输出路径
-│   │   ├── history_before.json ← 调用前完整历史快照
-│   │   ├── decision.json      ← Stage9 只提交本轮账本、模型结论及经验分析
-│   │   └── commit.json        ← 程序完成合并与知识落盘后的记录
-│   └── _rounds_snapshot.json  ← Stage6 成绩备份（兼容旧工作目录）
-├── selection/                ← 程序维护的开发证据与有效性能记录
-│   ├── current_implementation.json ← 代码、方案选择和自测的版本绑定
-│   ├── best.json             ← 首次有效评测后才创建的最佳记录
-│   ├── state.json            ← 有效评测索引与窗口配置
-│   └── records/iterN-指纹/   ← impl/、reports/、evidence/ 和 manifest.json
-├── operator_iter/             ← 每轮 impl 备份（代码追溯用，不对 agent 展示）
+│   ├── history.json           ← Cross-iteration memory (insights/ledger/rounds/suggest_next/fusion_kernel_strategy)
+│   ├── proven_patterns.md     ← Success experiences (auto-recorded when performance improves ≥5%; stage9 fills content + program fills numbers)
+│   ├── regression_patterns.md ← Failure lessons (auto-recorded when performance regresses ≥5%; same as above)
+│   ├── tech_lead_pitfalls.md  ← Decision mistake log (cannbot feedback → tech_lead ruling, ✅misjudged/❌rejected)
+│   ├── stage9/iterN/<request number>/ ← Independent handoff directory for each Stage9 call
+│   │   ├── request.json       ← Program-recorded iteration, failure reason, performance comparison, and output paths
+│   │   ├── history_before.json ← Complete history snapshot before the call
+│   │   ├── decision.json      ← Stage9 only submits this iteration's ledger, model conclusions, and experience analysis
+│   │   └── commit.json        ← Record after the program completes merging and knowledge persistence
+│   └── _rounds_snapshot.json  ← Stage6 score backup (for compatibility with old work directories)
+├── selection/                ← Program-maintained development evidence and valid performance records
+│   ├── current_implementation.json ← Version binding of code, scheme selection, and self-test
+│   ├── best.json             ← Best record, created only after the first valid evaluation
+│   ├── state.json            ← Valid evaluation index and window configuration
+│   └── records/iterN-<fingerprint>/   ← impl/, reports/, evidence/, and manifest.json
+├── operator_iter/             ← impl backup for each iteration (for code traceability, not shown to agents)
 │   ├── iter1/
 │   └── iter{N}/
 ├── develop/
 │   ├── iter0/
-│   │   ├── design_rationale.md     ← 阶段2 首版设计思路
-│   │   ├── fusion_library.json     ← 本轮实际选择及原 Jev 概率
-│   │   ├── self_test_report.md     ← 自测报告（含同 shape 更换数据连续调用）
-│   │   └── self_test_result.json   ← 可核验的结果摘要，引用实际测试日志
+│   │   ├── design_rationale.md     ← Stage2 first-version design rationale
+│   │   ├── fusion_library.json     ← This iteration's actual selection and original Jev probabilities
+│   │   ├── self_test_report.md     ← Self-test report (including same-shape consecutive invocations with changed data)
+│   │   └── self_test_result.json   ← Verifiable result summary, referencing actual test logs
 │   ├── iter1/
-│   │   ├── design_rationale.md     ← 阶段3 第1轮优化设计思路
-│   │   ├── 融合方案选择决策依据.md ← 单独说明融合方案选择和实际改动
-│   │   ├── fusion_library.json     ← 本轮选择、改动及未评分的新方案
-│   │   ├── self_test_report.md     ← 阶段3 第1轮自测报告
-│   │   └── self_test_result.json   ← 给定 case 与连续调用测试结果及日志地址
+│   │   ├── design_rationale.md     ← Stage3 iteration-1 optimization design rationale
+│   │   ├── fusion_scheme_rationale.md ← Separate explanation of the fusion scheme selection and actual changes
+│   │   ├── fusion_library.json     ← This iteration's selection, changes, and new unscored schemes
+│   │   ├── self_test_report.md     ← Stage3 iteration-1 self-test report
+│   │   └── self_test_result.json   ← Given-case and consecutive-invocation test results and log locations
 │   └── iter{N}/...
 ├── build/
 │   ├── iter1/build.log
 │   └── iter2/build.log
 ├── eval/
 │   ├── iter1/
-│   │   ├── precision_result.json   ← 精度判定
-│   │   ├── precision_binding.json  ← 精度结果、代码版本和评测口径绑定
-│   │   ├── precision_reports/      ← 软链接到 cann-bench 精度报告
-│   │   ├── perf_result.json        ← 性能判定
-│   │   ├── perf_reports/           ← 软链接到 cann-bench 性能报告
-│   │   └── prof_data/              ← 深拷贝：本次任务各 case 的 profiler 数据
+│   │   ├── precision_result.json   ← Precision verdict
+│   │   ├── precision_binding.json  ← Binding of precision results, code version, and evaluation standard
+│   │   ├── precision_reports/      ← Symlinks to cann-bench precision reports
+│   │   ├── perf_result.json        ← Performance verdict
+│   │   ├── perf_reports/           ← Symlinks to cann-bench performance reports
+│   │   └── prof_data/              ← Deep copy: profiler data for each case of this task
 │   │       ├── 1/...kernel_details.csv
 │   │       ├── 2/...
 │   │       └── <case_id>/...
 │   └── iter2/
-│       ├── ...（同上）
-│       └── prof_data/              ← 每轮独立快照，不被下一轮覆盖
+│       ├── ...(same as above)
+│       └── prof_data/              ← Independent snapshot per iteration, not overwritten by the next
 ├── profile/
-│   ├── iter1/bottleneck_analysis.md ← 每轮唯一报告，正文标注 Stage7 或 Stage9
+│   ├── iter1/bottleneck_analysis.md ← Single report per iteration, body marked Stage7 or Stage9
 │   └── iter2/bottleneck_analysis.md
 ├── search/
 │   ├── iter1/
@@ -421,238 +421,238 @@ work/exp_20260828_232950/
 │   │   └── FIX_DIRECTIVE.md
 │   └── iter2/...
 └── log/
-    ├── workflow.log             ← 全局日志
-    ├── state_transitions.log   ← 状态切换专用
-    ├── history.log             ← history 变化日志（每轮完整 JSON 快照）
-    ├── N1.log                  ← cannbot 节点日志
-    ├── N2.log                  ← kerminal 节点日志
-    ├── N3.log                  ← hermes 节点日志
-    ├── N4.log                  ← tech_lead 节点日志
-    └── N5.log                  ← 报告节点日志
+    ├── workflow.log             ← Global log
+    ├── state_transitions.log   ← Dedicated to state transitions
+    ├── history.log             ← history change log (complete JSON snapshot per iteration)
+    ├── N1.log                  ← cannbot node log
+    ├── N2.log                  ← kerminal node log
+    ├── N3.log                  ← hermes node log
+    ├── N4.log                  ← tech_lead node log
+    └── N5.log                  ← Report node log
 ```
 
-说明：
-- `profile/iterN/bottleneck_analysis.md` 保持统一文件名。仍有 case 未达标时，Stage7 写报告，供 Stage8/9/3 读取；全部达标时，程序将 Stage9 已接收 JSON 的总体结论和逐 case 分析整理成同名报告，供 Stage3 读取，退出轮也保存。来源、轮次和 Stage9 决策路径写在报告内。重试失败不发布，人工复议成功覆盖同一文件；Stage9 对已有报告的直接改写会被撤销。Stage7 实际重跑前移除本轮旧报告，要求重新生成；从 Stage8/9 恢复则保留报告。发现本轮额外 Markdown 报告则停止交付，不静默删除。编译、精度或评测异常分支不补造性能分析。
-- `develop/iter0/` 是阶段2 首版实现的设计思路和自测报告，`iter{N}/` 是阶段3 每轮优化后的设计思路和自测报告
-- `eval/iter{N}/prof_data/` 是本次报告对应的完整 profiling 副本；程序先保存，再生成 `perf_result.json`。`source_csv_dir` 及所有有效 `kernel_csv` 均指向本轮 work 文件，原始采集目录被覆盖也不会改变这些引用。
-- 每次评测及重试使用独立的 `eval/iter{N}/perf_reports/attempt_<次数>_<编号>/`；日志记录源目录、保存目录和 case 关联数量。批量采集 `_batched/` 同样保存，无法唯一对应 case 的 CSV 留空并说明原因，不关联旧文件或其他 case。
-- 阶段7 读取的 design_rationale 是上一轮的（fallback 查找最近存在的，处理 build_fail 轮无产出的情况）
-- `build_fail`/`precision_fail` 只触发 bug 修复，不产出 design_rationale（设计未变）
-- 每次 Stage3（含修复轮）均更新独立的融合选择依据、本轮库和自测材料，注明保留方案或实际变更。
+Notes:
+- `profile/iterN/bottleneck_analysis.md` keeps a unified filename. When some cases still have not passed, Stage7 writes the report for Stage8/9/3 to read; when all cases pass, the program organizes the overall conclusion and per-case analysis from the JSON that Stage9 has accepted into a report with the same name for Stage3 to read, and it is also saved in the exit iteration. Source, iteration, and Stage9 decision paths are written inside the report. A failed retry is not published; a successful human re-review overwrites the same file. Stage9's direct rewrite of an existing report is reverted. Before actually re-running, Stage7 removes the previous iteration's old report and requires regeneration; when resuming from Stage8/9 the report is retained. If an extra Markdown report for this iteration is discovered, delivery stops rather than silently deleting it. Build, precision, or evaluation anomaly branches do not fabricate performance analysis.
+- `develop/iter0/` holds Stage2's first-implementation design rationale and self-test report; `iter{N}/` holds the design rationale and self-test report after each Stage3 optimization iteration
+- `eval/iter{N}/prof_data/` is the complete profiling copy corresponding to the report; the program saves it first, then generates `perf_result.json`. `source_csv_dir` and all valid `kernel_csv` entries point to files in this iteration's work directory, so overwriting the original collection directory does not change these references.
+- Each evaluation and retry uses an independent `eval/iter{N}/perf_reports/attempt_<count>_<number>/`; the log records the source directory, save directory, and number of associated cases. Batch collections `_batched/` are saved the same way; CSVs that cannot be uniquely mapped to a case are left empty with an explanation, never associated with old files or other cases.
+- The design_rationale read by Stage7 is from the previous iteration (fallback searches for the most recent existing one, handling iterations with no output due to build_fail)
+- `build_fail`/`precision_fail` only trigger bug fixes and produce no design_rationale (the design did not change)
+- Each Stage3 run (including fix iterations) updates its own fusion selection rationale, scheme library, and self-test materials, noting which schemes were retained or actually changed.
 
-## 一次迭代流程（以 exp 算子为例）
+## One Iteration Flow (using the exp operator as an example)
 
 ```
-启动 → 阶段1(cannbot分析task) → 阶段1.5(Jev评估融合方案、程序选前n个)
-     → 阶段2(cannbot按最高概率方案写Triton Ascend代码)
-     → 进入迭代循环：
-       阶段4: kerminal 打包、安装 wheel，并在源码目录外验证 import
-              → FAILED → stage9(tech_lead总结) → 阶段3(cannbot修复) → 重回阶段4
+Start → Stage1 (cannbot analyzes task) → Stage1.5 (Jev evaluates fusion schemes, program selects top n)
+     → Stage2 (cannbot writes Triton Ascend code per the highest-probability scheme)
+     → Enter the iteration loop:
+       Stage4: kerminal packages, installs the wheel, and verifies import outside the source directory
+              → FAILED → stage9 (tech_lead summary) → Stage3 (cannbot fixes) → back to Stage4
               → SUCCESS ↓
-       阶段5: kerminal 跑 cann-bench --no-perf 精度评测
-              → precision_fail → stage9(tech_lead总结) → 阶段3(cannbot修精度) → 重回阶段4
+       Stage5: kerminal runs cann-bench --no-perf precision evaluation
+              → precision_fail → stage9 (tech_lead summary) → Stage3 (cannbot fixes precision) → back to Stage4
               → true ↓
-       阶段6: orchestrator 直接执行 cann-bench 性能评测（不经 agent）
-              → 反作弊零分 → stage9(tech_lead反作弊分析) → 阶段3 → 重回阶段4
-              → 所有case speedup≥1.0 → stage9(证据审查和原有知识积累)
-                   → 满足 x 窗口 → 阶段10(最佳已评测快照) → 结束
-                   → 尚未满足 → 阶段3(按瓶颈继续优化) → 重回阶段4
-              → 有case<1.0 ↓
-       阶段7: kerminal 分析 profiling 数据，定位瓶颈
-       阶段8: hermes 搜索优化方案，输出 FIX_DIRECTIVE.md
-       阶段9: kerminal(tech_lead) 提交本轮 decision.json，程序校验后更新 history.json
-       阶段3: cannbot 按 FIX_DIRECTIVE + insights + fusion_kernel_strategy 修改代码
-     → 回到阶段4，下一轮迭代
+       Stage6: orchestrator directly executes cann-bench performance evaluation (not via an agent)
+              → anti-cheating zero score → stage9 (tech_lead anti-cheating analysis) → Stage3 → back to Stage4
+              → all cases speedup≥1.0 → stage9 (evidence review and existing knowledge accumulation)
+                   → x window satisfied → Stage10 (best evaluated snapshot) → end
+                   → not yet satisfied → Stage3 (continue optimizing per bottleneck) → back to Stage4
+              → some case <1.0 ↓
+       Stage7: kerminal analyzes profiling data and locates bottlenecks
+       Stage8: hermes searches for optimization schemes, outputs FIX_DIRECTIVE.md
+       Stage9: kerminal (tech_lead) submits this iteration's decision.json; after program validation, history.json is updated
+       Stage3: cannbot modifies code per FIX_DIRECTIVE + insights + fusion_kernel_strategy
+     → Back to Stage4, next iteration
 ```
 
-以上说明的是流程，不是 Triton 实测成绩。真实 NPU 上的完整 JIT、精度和性能结果，需要配置环境后运行新任务验证。
+The above describes the process, not measured Triton results. Full JIT, precision, and performance results on real NPU hardware require configuring the environment and running a new task to verify.
 
-## 跨轮记忆（history 机制）
+## Cross-Iteration Memory (history mechanism)
 
-每轮迭代结束后，阶段9 tech_lead 读取本轮结果和历轮设计，只写本次 `knowledge/stage9/<iter>/<请求编号>/decision.json`。程序核对请求编号、轮次和字段后，将 `ledger_entry` 合并到本轮账本，完整保留其他轮次和程序填写的成绩；Stage9 不直接覆盖 `history.json`。下一轮阶段3 cannbot 仍读取原有 history 摘要和 P0/P1/P2。
+After each iteration ends, the Stage9 tech_lead reads this iteration's results and previous iterations' designs, and writes only to this iteration's `knowledge/stage9/<iter>/<request number>/decision.json`. After the program verifies the request number, iteration, and fields, it merges the `ledger_entry` into this iteration's ledger, fully preserving other iterations' entries and program-filled scores; Stage9 does not directly overwrite `history.json`. In the next iteration, Stage3's cannbot still reads the existing history summary and P0/P1/P2.
 
-每次调用保留 `request.json`、调用前 `history_before.json`、原始 `decision.json` 和成功提交后的 `commit.json`。输出缺失、无效、属于其他轮次，或漏填本轮必须的经验/裁定时，程序汇总可独立检查的错误，让 Stage9 在同轮最多修正两次，分别保存在 `retry1/`、`retry2/`；首次加修正共三次，第三次仍不合格才停止，不重新评测、不增加迭代次数，也不将旧建议交给 Stage3。当前账本的 `stage9_decision_path` 指向实际采用的决策。
+Each call retains `request.json`, the pre-call `history_before.json`, the raw `decision.json`, and the `commit.json` after a successful submission. When output is missing, invalid, belongs to another iteration, or omits this iteration's required experiences/rulings, the program aggregates independently checkable errors and lets Stage9 make at most two corrections within the same iteration, saved in `retry1/` and `retry2/` respectively; the first attempt plus corrections total three attempts, and only if the third still fails does it stop — without re-evaluating, without adding iterations, and without passing old suggestions to Stage3. The current ledger's `stage9_decision_path` points to the actually adopted decision.
 
-**history.json 主要字段**：
+**Main fields of history.json**:
 
-| 字段 | 谁写 | 更新方式 | 给谁看 |
+| Field | Who writes | How updated | Who reads |
 |------|------|---------|--------|
-| `rounds` | 程序（stage6后自动） | 每轮追加 | tech_lead |
-| `ledger` | 程序写硬数据 + 合并 tech_lead 本轮方向/文件范围 | 按轮追加或更新，保留其他轮次 | tech_lead + cannbot |
-| `insights` | tech_lead（阶段9） | 每轮整体重写 | cannbot（最关键） |
-| `bottleneck_now` | tech_lead（阶段9） | 每轮替换 | cannbot |
-| `suggest_next` | tech_lead（阶段9） | 每轮替换（**P0/P1/P2 分优先级列表**） | cannbot（最优先执行） |
-| `worst_cases_tracker` | 程序合并 Stage9 的 case 分析 | 按 case 更新，保留其他历史 | cannbot |
-| `fusion_kernel_strategy` | tech_lead（阶段9） | **每轮累加追加**，不覆盖旧条目 | cannbot + tech_lead |
+| `rounds` | Program (automatically after stage6) | Appended each iteration | tech_lead |
+| `ledger` | Program writes hard data + merges tech_lead's directions/file scope for this iteration | Appended or updated per iteration, other iterations preserved | tech_lead + cannbot |
+| `insights` | tech_lead (Stage9) | Fully rewritten each iteration | cannbot (most critical) |
+| `bottleneck_now` | tech_lead (Stage9) | Replaced each iteration | cannbot |
+| `suggest_next` | tech_lead (Stage9) | Replaced each iteration (**P0/P1/P2 priority list**) | cannbot (highest execution priority) |
+| `worst_cases_tracker` | Program merges Stage9's case analysis | Updated per case, other history preserved | cannbot |
+| `fusion_kernel_strategy` | tech_lead (Stage9) | **Appended cumulatively each iteration**, old entries never overwritten | cannbot + tech_lead |
 
-**suggest_next 是结构化任务列表**：每条填写目标、证据、目标 case 及实际实现映射、逐文件修改步骤和验收方式；禁止修改的文件在本轮账本统一填写，允许修改的文件由程序从步骤汇总。完整示例见[Stage9 任务单说明](docs/workflow_stage9_plan_v2.md)。
+**suggest_next is a structured task list**: each entry specifies the goal, evidence, target cases and their actual implementation mapping, per-file modification steps, and acceptance criteria; files forbidden to modify are recorded uniformly in this iteration's ledger, and modifiable files are aggregated by the program from the steps. See [Stage9 Task Plan Description](docs/workflow_stage9_plan_v2.md) for a complete example.
 
-P0 是必须处理的正确性问题、关键方向或人工指导；P1 是有依据的改进；P2 是待尝试优化。融合变更按证据判断，不固定排在所有问题前面。cannbot 收到的渲染效果：`🔴[P0]` > `🟡[P1]` > `🟢[P2]`。
+P0 covers correctness issues, key directions, or human guidance that must be addressed; P1 covers evidence-backed improvements; P2 covers optimizations worth trying. Fusion changes are judged by evidence and are not fixed ahead of all other items. The rendered result cannbot receives: `🔴[P0]` > `🟡[P1]` > `🟢[P2]`.
 
-**fusion_kernel_strategy 示例**（累加追踪融合方案演变）：
+**fusion_kernel_strategy example** (cumulative tracking of fusion scheme evolution):
 ```json
 "fusion_kernel_strategy": [
-  {"iter": 1, "direction": "两段 kernel 经 HBM 传递", "evidence": "需结合完整评测判断收益", "status": "🔄待验证"},
-  {"iter": 3, "direction": "片上直传", "evidence": "精度通过且全部 case 实测达标", "status": "✅有效"}
+  {"iter": 1, "direction": "Two-stage kernels communicating via HBM", "evidence": "Benefit must be judged against the full evaluation", "status": "🔄pending verification"},
+  {"iter": 3, "direction": "On-chip direct transfer", "evidence": "Precision passed and all cases measured at target", "status": "✅effective"}
 ]
 ```
 
-**cannbot 阶段3 收到的历史经验（按优先级排列）**：
-1. `★ 本轮修改指令（P0/P1/P2）` — 优先正确性和未达标 case，再提高整体性能；融合变更按实际证据排序
-2. `历史经验知识库(insights)` — 核对已否决方向的硬件、shape 和实现条件，避免重复失败
-3. `当前性能瓶颈` — 优化要针对这个瓶颈
-4. `融合算子策略追踪` — 复用适用条件内的有效方案；新证据与历史冲突时回查
-5. `已验证的成功经验` — 延续有效方向（knowledge/proven_patterns.md）
-6. `已验证的失败教训` — 避免重复同条件下的失败（knowledge/regression_patterns.md）
-7. `决策错题本` — tech_lead 历轮误判，写代码时避开（knowledge/tech_lead_pitfalls.md）
-8. `最慢case追踪` — 查看逐 case 趋势，硬件上限须有当前环境证据
-9. `假设追踪账本(ledger)` — regression/no_change 的方向不要重复
-10. `性能趋势(rounds)` — 每轮 avg_speedup 变化
+**Historical experience cannbot receives in Stage3 (ordered by priority)**:
+1. `★ This iteration's modification instructions (P0/P1/P2)` — prioritize correctness and underperforming cases, then overall performance; fusion changes are ordered by actual evidence
+2. `Historical experience knowledge base (insights)` — verify the hardware, shape, and implementation conditions of already-rejected directions to avoid repeated failures
+3. `Current performance bottleneck` — optimizations must target this bottleneck
+4. `Fusion operator strategy tracking` — reuse effective schemes within their applicable conditions; when new evidence conflicts with history, check back
+5. `Verified success experiences` — continue effective directions (knowledge/proven_patterns.md)
+6. `Verified failure lessons` — avoid repeating failures under the same conditions (knowledge/regression_patterns.md)
+7. `Decision mistake log` — tech_lead's past misjudgments; avoid them when writing code (knowledge/tech_lead_pitfalls.md)
+8. `Slowest case tracking` — view per-case trends; hardware limits must be backed by evidence from the current environment
+9. `Hypothesis tracking ledger (ledger)` — do not repeat directions already marked regression/no_change
+10. `Performance trend (rounds)` — avg_speedup changes per iteration
 
-## 知识积累（proven_patterns / regression_patterns）
+## Knowledge Accumulation (proven_patterns / regression_patterns)
 
-程序在 stage6 后自动计算性能 diff（本轮 vs 上一轮有效数据），根据变化幅度触发知识积累：
+After stage6, the program automatically computes the performance diff (this iteration vs the previous iteration's valid data) and triggers knowledge accumulation based on the magnitude of change:
 
-| 条件 | 触发 | 文件 | 谁写内容 | 谁写数字 |
+| Condition | Trigger | File | Who writes content | Who writes numbers |
 |------|------|------|---------|---------|
-| avg_speedup 提升 ≥5% | 记录成功经验 | `knowledge/proven_patterns.md` | stage9 tech_lead 填 what_changed / why_it_worked | 程序填 speedup_before/after/delta_pct |
-| avg_speedup 退步 ≤-5% | 记录失败教训 | `knowledge/regression_patterns.md` | stage9 tech_lead 填 what_changed / why_it_failed | 程序填 speedup_before/after/delta_pct |
-| -5% < delta < +5% | 不记录 | — | — | — |
+| avg_speedup improves ≥5% | Record success experience | `knowledge/proven_patterns.md` | stage9 tech_lead fills what_changed / why_it_worked | Program fills speedup_before/after/delta_pct |
+| avg_speedup regresses ≤-5% | Record failure lesson | `knowledge/regression_patterns.md` | stage9 tech_lead fills what_changed / why_it_failed | Program fills speedup_before/after/delta_pct |
+| -5% < delta < +5% | Not recorded | — | — | — |
 
-流程：程序判断涨跌 → 注入 diff 和证据路径 → Stage9 在本次 `decision.json` 填写 `proven_pattern` 或 `regression_pattern` → 程序直接读取同名字段、补上真实数字并写入对应 Markdown。同轮重复审查更新原条目，不重复追加。达到阈值却缺少分析时停止 Stage9，不再写“未填写”的占位经验。
+Flow: the program determines improvement/regression → injects the diff and evidence paths → Stage9 fills `proven_pattern` or `regression_pattern` in this iteration's `decision.json` → the program reads the same-named field directly, adds the real numbers, and writes the corresponding Markdown. Repeated review in the same iteration updates the original entry instead of appending a duplicate. When the threshold is reached but the analysis is missing, Stage9 stops rather than writing a placeholder experience that says "not filled in".
 
-详细记录包含：实际改动、有效/失败原因、受影响 case 及分析、代码/profiling 证据、适用的硬件和 shape 条件、结论局限、后续复用或修正建议。程序另附前后轮次、平均加速比及变化百分比、可对齐 case 的成绩变化、报告/方案依据路径和原始决策地址。未证明的归因应注明待验证。
+Detailed records include: actual changes, reasons for success/failure, affected cases and analysis, code/profiling evidence, applicable hardware and shape conditions, conclusion limitations, and follow-up reuse or correction suggestions. The program additionally attaches the before/after iterations, average speedup and percentage change, score changes for alignable cases, report/scheme evidence paths, and the original decision location. Unproven attributions should be marked as pending verification.
 
-`history.json` 保存跨轮结论与账本；上述两个 Markdown 保存详细涨跌经验；每次原始分析留在独立 `decision.json`。历史旧格式继续可读，不自动将旧占位内容补写为已经验证的经验。
+`history.json` holds cross-iteration conclusions and the ledger; the two Markdown files above hold detailed improvement/regression experiences; each raw analysis remains in its own `decision.json`. Old history formats remain readable, and old placeholder content is never automatically rewritten as verified experience.
 
-这两个 knowledge 文件注入到 **stage2/3/7/8/9** 的 prompt 中，所有写代码和分析的角色都能看到。
+These two knowledge files are injected into the prompts of **stage2/3/7/8/9**, so every role writing code or doing analysis can see them.
 
-## 下级反馈 + 错题本（question.md / tech_lead_pitfalls.md）
+## Subordinate Feedback + Mistake Log (question.md / tech_lead_pitfalls.md)
 
-一个"下级反馈 → 上级裁定 → 沉淀 → 反哺"的闭环，防止 tech_lead 反复给出错误建议。
+A "subordinate feedback → superior ruling → accumulation → feedback into prompts" closed loop that prevents tech_lead from repeatedly giving wrong advice.
 
-**触发场景**：stage3 cannbot 实施 tech_lead 建议时，发现某条建议在硬件/框架层面确实不可行（有硬证据）。
+**Trigger scenario**: while implementing a tech_lead suggestion, stage3's cannbot discovers that a suggestion is genuinely infeasible at the hardware/framework level (with hard evidence).
 
-**完整闭环**：
+**Complete closed loop**:
 ```
-iter N:  stage9(给建议) → stage3(实施, 发现建议有误)
-                              ↓ 严格判断+硬证据
-                            写 develop/iterN/question.md
-iter N+1: stage9 读 iterN/question.md + 对应 history 意见
-            ↓ 裁定
-            ├─ ✅confirmed(确认误判) → 承认错误, 给正确做法
-            └─ ❌rejected(驳回)      → cannbot 理解错了, 说明正确认知
-          程序: 裁定结论写回 question.md + append 到错题本
-          之后 stage9 提意见前必读错题本, 不再重犯
+iter N:  stage9 (gives suggestion) → stage3 (implements it, finds the suggestion is wrong)
+                              ↓ strict judgment + hard evidence
+                            write develop/iterN/question.md
+iter N+1: stage9 reads iterN/question.md + corresponding history opinion
+            ↓ ruling
+            ├─ ✅confirmed (misjudgment confirmed) → admit the mistake, give the correct approach
+            └─ ❌rejected (rejected)      → cannbot misunderstood; explain the correct understanding
+          Program: ruling written back to question.md + appended to the mistake log
+          Afterwards stage9 must read the mistake log before giving advice, so mistakes are not repeated
 ```
 
-**严格把关**（防止 cannbot 拿 question 偷懒）：
-- 必须真的尝试过 + 有硬证据（编译错误/日志/profiler/官方文档限制）
-- 只能是客观不可行，不是"我觉得没必要"
-- 提 question 前先查错题本，已收录的不重复提
-- 无论建议对错，**仍需用替代方案完成本轮任务**——question 是附带反馈，不是拒绝执行
+**Strict gatekeeping** (preventing cannbot from using question.md to shirk work):
+- Must have genuinely attempted it + have hard evidence (compile errors / logs / profiler / official documentation limits)
+- Must be objectively infeasible, not "I don't think it's necessary"
+- Before raising a question, check the mistake log first; already-recorded items are not raised again
+- Regardless of whether the suggestion was right or wrong, **the current iteration's task must still be completed with an alternative scheme** — question.md is accompanying feedback, not a refusal to execute
 
-**错题本文件** `knowledge/tech_lead_pitfalls.md`：
-| verdict | 含义 | 记录内容 |
+**Mistake log file** `knowledge/tech_lead_pitfalls.md`:
+| verdict | Meaning | Recorded content |
 |---------|------|---------|
-| ✅confirmed | tech_lead 确实建议错了 | 误判原因 + 正确做法 |
-| ❌rejected | cannbot 理解错了 | 驳回原因 + 正确认知 |
+| ✅confirmed | tech_lead indeed gave wrong advice | Misjudgment reason + correct approach |
+| ❌rejected | cannbot misunderstood | Rejection reason + correct understanding |
 
-- 谁写：tech_lead 裁定后输出 `pitfall` 字段 → 程序 append（累加不覆盖）
-- 注入范围：**stage2/3/7/9**（写代码的、分析的、决策的都能看到），文件不存在时返回空不影响流程
-- 兜底：如果迭代提前退出导致 question.md 从未被裁定，stage10 会扫描并在报告中提示
+- Who writes: after tech_lead's ruling it outputs a `pitfall` field → the program appends (cumulative, never overwritten)
+- Injection scope: **stage2/3/7/9** (code writers, analyzers, and decision makers can all see it); if the file does not exist, empty content is returned without affecting the flow
+- Fallback: if early exit leaves a question.md never ruled on, stage10 scans for it and mentions it in the report
 
-## stage6 后路由判断
+## Post-stage6 Routing Decisions
 
-stage6 性能评测完成后，程序按以下顺序做 3 个判断（**顺序不能调换**）：
+After stage6 performance evaluation completes, the program makes 3 decisions in the following order (**the order cannot be swapped**):
 
 ```
-stage6 完成 → 程序写入 rounds/ledger → 程序算 perf_diff
+stage6 done → program writes rounds/ledger → program computes perf_diff
   ↓
-  ① 反作弊？(score_error_code 存在 或 avg_speedup=0)
-  │  YES → stage9(反作弊分析) → stage3 → 回 stage4
-  │         日志: [判断] 反作弊触发: no_npu_kernel_detected
+  ① Anti-cheating? (score_error_code exists or avg_speedup=0)
+  │  YES → stage9 (anti-cheating analysis) → stage3 → back to stage4
+  │         Log: [Decision] Anti-cheating triggered: no_npu_kernel_detected
   │
-  ② 性能达标？(所有 case speedup ≥ 1.0)
-  │  YES → 记录有效实现、计算 x 窗口 → stage9(审查和知识积累)
-  │         ├─ 累计提升不足5%且窗口满足 → stage10(最佳快照) → 结束
-  │         └─ 尚未满足 → stage3(perf_pass_optimize) → 回 stage4
+  ② Performance passing? (all cases speedup ≥ 1.0)
+  │  YES → record valid implementation, compute x window → stage9 (review and knowledge accumulation)
+  │         ├─ cumulative improvement <5% and window satisfied → stage10 (best snapshot) → end
+  │         └─ not yet satisfied → stage3 (perf_pass_optimize) → back to stage4
   │
-  ③ 正常性能不达标
-     → 记录有效实现、计算 y 窗口（仅提示重新审查，不强制换方案）
-     → stage7(profiling) → stage8(搜索) → stage9(perf_optimize) → stage3 → 回 stage4
-       日志: [判断] 性能不达标: avg_speedup=0.5, perf_pass=False
+  ③ Normal case: performance not passing
+     → record valid implementation, compute y window (only prompts re-review, does not force a scheme change)
+     → stage7 (profiling) → stage8 (search) → stage9 (perf_optimize) → stage3 → back to stage4
+       Log: [Decision] Performance not passing: avg_speedup=0.5, perf_pass=False
 ```
 
-perf_diff 数据（程序算一次，stage7/8/9 共享）：
-- 提升 ≥5%：注入 `📊 性能提升检测` + 逐 case 对比 + "请总结成功经验"
-- 退步 ≤-5%：注入 `⚠️ 性能退步检测` + 逐 case 对比 + "请分析退步原因"
-- ±5% 以内：不注入 diff 文本
+perf_diff data (computed once by the program, shared by stage7/8/9):
+- Improvement ≥5%: injects `📊 Performance improvement detected` + per-case comparison + "please summarize the success experience"
+- Regression ≤-5%: injects `⚠️ Performance regression detected` + per-case comparison + "please analyze the regression cause"
+- Within ±5%: no diff text is injected
 
-## state_transitions.log 日志格式
+## state_transitions.log Log Format
 
-每条状态切换带原因，关键判断点带 `[判断]` / `[知识积累]` 标签：
+Each state transition carries a reason; key decision points carry `[Decision]` / `[Knowledge accumulation]` tags:
 
 ```
-iter1_stage4 → iter1_stage5 | 编译成功，开始精度评测
-[判断] 精度失败: passed=18/24
-iter1_stage5 → iter1_stage9 | tech_lead经验总结(precision_fail)
-iter1_stage9 → iter1_stage3 | 回退修改代码(precision_fail)
+iter1_stage4 → iter1_stage5 | Build succeeded, starting precision evaluation
+[Decision] Precision failed: passed=18/24
+iter1_stage5 → iter1_stage9 | tech_lead experience summary (precision_fail)
+iter1_stage9 → iter1_stage3 | Fall back to code modification (precision_fail)
 
-iter2_stage6 后:
-[判断] 性能提升: avg_speedup 0.5→1.5 (+200%), iter1→iter2
-[判断] 性能不达标: avg_speedup=1.5, perf_pass=False → stage7→8→9→3
-[知识积累] 成功经验写入 proven_patterns.md: +200%
+After iter2_stage6:
+[Decision] Performance improvement: avg_speedup 0.5→1.5 (+200%), iter1→iter2
+[Decision] Performance not passing: avg_speedup=1.5, perf_pass=False → stage7→8→9→3
+[Knowledge accumulation] Success experience written to proven_patterns.md: +200%
 
-iter5_stage6 后:
-[判断] 性能退步: avg_speedup 3.0→2.5 (-16.7%), iter4→iter5
-[知识积累] 退步教训写入 regression_patterns.md: -16.7%
+After iter5_stage6:
+[Decision] Performance regression: avg_speedup 3.0→2.5 (-16.7%), iter4→iter5
+[Knowledge accumulation] Regression lesson written to regression_patterns.md: -16.7%
 
-iter9_stage6 后:
-iter9_stage9 → iter9_stage10 | 程序语义退出，交付最佳达标实现
+After iter9_stage6:
+iter9_stage9 → iter9_stage10 | Program semantic exit, delivering the best passing implementation
 ```
 ```bash
 tail -10 work/exp_xxx/log/N4.log   # tech_lead
 ```
 
-## 三个 Agent
+## The Three Agents
 
-| Agent | 节点 | 模型 | CLI 路径 | 配置文件 |
+| Agent | Node | Model | CLI path | Config file |
 |-------|------|------|---------|---------|
-| cannbot | N1（写代码） | GLM-5.3-Flash | `config.yaml → agents.cannbot.cli` | `~/.config/opencode/opencode.jsonc` |
-| kerminal | N2（编译评测）| kernelcat1.0 | `config.yaml → agents.kerminal.cli` | `~/.kerminal/config.toml` |
-| hermes | N3（搜索） | GLM-5.3-Flash | `config.yaml → agents.hermes.cli` | `~/.hermes/config.yaml` + `~/.hermes/.env` |
+| cannbot | N1 (writes code) | GLM-5.3-Flash | `config.yaml → agents.cannbot.cli` | `~/.config/opencode/opencode.jsonc` |
+| kerminal | N2 (build and evaluation) | kernelcat1.0 | `config.yaml → agents.kerminal.cli` | `~/.kerminal/config.toml` |
+| hermes | N3 (search) | GLM-5.3-Flash | `config.yaml → agents.hermes.cli` | `~/.hermes/config.yaml` + `~/.hermes/.env` |
 
-### 长提示词传递与启动失败恢复
+### Long Prompt Delivery and Startup Failure Recovery
 
-Linux 的 `Argument list too long` 同时可能来自单个参数、参数总量或环境变量，不能只看约 2 MB 的总量。三个 Agent 均不再把完整提示词作为启动参数；阶段顺序、角色正文、历史和人工 P0 保持原样。
+On Linux, `Argument list too long` can come from a single argument, the total argument size, or environment variables — it cannot be judged only by the ~2 MB total. All three Agents no longer pass the full prompt as a startup argument; the stage order, role body, history, and human P0 items remain unchanged.
 
-| Agent | 完整提示词如何传入 | 接口依据 |
+| Agent | How the full prompt is passed in | Interface basis |
 |-------|------------------|----------|
-| CANNBot（Stage1/2/3） | `run` 从文件接入的 stdin 读取全文 | [官方 Linux 1.1.2 发布包](https://registry.npmjs.org/cannbot-linux-x64/1.1.2) |
-| Kerminal（Stage4/5/7/9/10） | `-a never exec --skip-git-repo-check -C <cwd> -` 从 stdin 读取全文，返回实际退出码 | 本机 0.8.12 的 `help exec` 与完整命令的参数解析已验证；不再需要模拟终端 |
-| Hermes（Stage8） | 同一 Python 环境先启动 `lib/hermes_prompt.py`，再读取文件，在进程内部把全文交给原 `-z` 入口 | [官方 0.20.4 入口](https://github.com/NousResearch/hermes-agent/blob/e624e9fde561e1add9388384012b295fde669ade/pyproject.toml#L372)；该版本的 `-z` 不读取 stdin |
+| CANNBot (Stage1/2/3) | `run` reads the full text from stdin fed from a file | [Official Linux 1.1.2 release package](https://registry.npmjs.org/cannbot-linux-x64/1.1.2) |
+| Kerminal (Stage4/5/7/9/10) | `-a never exec --skip-git-repo-check -C <cwd> -` reads the full text from stdin and returns the actual exit code | Verified with the local 0.8.12 `help exec` and argument parsing of the full command; no terminal emulation needed |
+| Hermes (Stage8) | The same Python environment first starts `lib/hermes_prompt.py`, which reads the file and hands the full text to the original `-z` entry inside the process | [Official 0.20.4 entry point](https://github.com/NousResearch/hermes-agent/blob/e624e9fde561e1add9388384012b295fde669ade/pyproject.toml#L372); that version's `-z` does not read stdin |
 
-每次调用保留 `work/<任务>/log/prompts/<agent>_<角色文件名>_<唯一编号>.txt`，包含完整角色、任务和公共约束。日志打印传递方式、文件路径和 UTF-8 字节数；同轮重试保留独立文件，不截断或压缩。若系统仍报 E2BIG，日志再给出参数及环境的总字节数和最大单项字节数，不打印环境值。模型自身的上下文容量仍是另一项限制。
+Each call retains `work/<task>/log/prompts/<agent>_<role filename>_<unique number>.txt`, containing the complete role, task, and common constraints. The log prints the delivery method, file path, and UTF-8 byte count; retries in the same iteration keep independent files, without truncation or compression. If the system still reports E2BIG, the log additionally reports the total byte count of arguments and environment and the largest single item, without printing environment values. The model's own context capacity remains a separate limit.
 
-Hermes 要使用 `agents.hermes.cli` 指向的官方 pip Python 入口，支持直接入口或符号链接；保持原 venv 解释器和 `-t web,file --yolo --in <cwd>` 参数。未知二进制或自定义 shell 启动器会明确报错，不猜测、不退回长参数。若 Hermes 自身启用了宿主管理容器或二次启动，并试图把同一长提示词再次放进系统命令行，桥接会明确停止；本项目使用在目标环境内直接安装的 Python CLI。CLI 接口已核对，实际模型、工具权限和 NPU 仍需在部署环境联调。
+Hermes must use the official pip Python entry pointed to by `agents.hermes.cli`, supporting direct entry points or symlinks; keep the original venv interpreter and the `-t web,file --yolo --in <cwd>` arguments. Unknown binaries or custom shell launchers produce a clear error, with no guessing and no fallback to long arguments. If Hermes itself enables a host-managed container or a secondary launch and tries to put the same long prompt into the system command line again, the bridge stops explicitly; this project uses a Python CLI installed directly in the target environment. CLI interfaces have been verified; the actual model, tool permissions, and NPU still need joint testing in the deployment environment.
 
-其他入口已核对：Jev 翻译走 stdin JSON-RPC，Jev 评分走 SDK 请求体，评测和硬件探测只传路径、固定选项或短脚本。手动提供长文本时，用 `--optimize-hint-file 方向.md` 代替 `--optimize-hint "正文"`（两者互斥、后续作用相同）；人工建议用 `python3 tools/human_review.py --work-dir <work> --file 意见.md`。
+Other entry points have been verified: Jev translation goes through stdin JSON-RPC, Jev scoring goes through the SDK request body, and evaluation and hardware probing only pass paths, fixed options, or short scripts. When providing long text manually, use `--optimize-hint-file <direction>.md` instead of `--optimize-hint "<text>"` (mutually exclusive, same subsequent effect); human suggestions use `python3 tools/human_review.py --work-dir <work> --file <opinion>.md`.
 
-若旧版本在 Stage3 启动时因此中断，同步本轮 runner 和桥接文件后，使用原 `--task-dir` 和原 `--work-dir` 启动即可回到同轮 Stage3；原命令有 `--config` 时也保留。不需要另开 work，不会因此重做已经完成的评测或重复写经验。启动前仍按现有规则检查环境及恢复材料。
+If an older version was interrupted at Stage3 startup for this reason, after syncing this iteration's runner and bridge files, just start with the original `--task-dir` and original `--work-dir` to return to the same Stage3; if the original command had `--config`, keep it too. No new work directory is needed, and completed evaluations or already-written experiences are not redone or duplicated. Before startup, the environment and recovery materials are still checked under the existing rules.
 
-## 新环境安装指南
+## New Environment Installation Guide
 
-### 1. cannbot（Node.js）
+### 1. cannbot (Node.js)
 
 ```bash
-# 前提：Node.js >= 18
+# Prerequisite: Node.js >= 18
 npm install -g cannbot @cannbot-ai/install-helper
 
-# 验证
-cannbot --version   # 应显示 1.1.2+
+# Verify
+cannbot --version   # should show 1.1.2+
 
-# 配置 API key
+# Configure the API key
 mkdir -p ~/.config/opencode
 cat > ~/.config/opencode/opencode.jsonc << 'EOF'
 {
@@ -663,7 +663,7 @@ cat > ~/.config/opencode/opencode.jsonc << 'EOF'
       "name": "GLM (ZhipuAI)",
       "options": {
         "baseURL": "https://open.bigmodel.cn/api/paas/v4",
-        "apiKey": "<你的智谱API key>"
+        "apiKey": "<your ZhipuAI API key>"
       },
       "models": {
         "glm-5.3-flash": { "name": "GLM-5.3-Flash" }
@@ -675,16 +675,16 @@ cat > ~/.config/opencode/opencode.jsonc << 'EOF'
 EOF
 ```
 
-### 2. kerminal（二进制）
+### 2. kerminal (binary)
 
 ```bash
-# 安装（从官方安装脚本，会下载到 ~/.local/bin/kerminal）
+# Install (from the official install script; downloads to ~/.local/bin/kerminal)
 curl -fsSL https://kerminal.cn/install.sh | bash
 
-# 验证
+# Verify
 kerminal --version
 
-# 配置
+# Configure
 mkdir -p ~/.kerminal
 cat > ~/.kerminal/config.toml << 'EOF'
 model = "kernelcat1.0"
@@ -700,39 +700,39 @@ skills = true
 [model_providers.autokernel]
 name = "autokernel"
 wire_api = "messages"
-experimental_bearer_token = "<你的 autokernel token>"
+experimental_bearer_token = "<your autokernel token>"
 EOF
 ```
 
-### 3. hermes（Python venv）
+### 3. hermes (Python venv)
 
 ```bash
-# 安装（官方一键脚本，自带 Python 3.11 venv）
+# Install (official one-click script, includes a Python 3.11 venv)
 curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 
-# 或从源码安装（如果有 hermes-agent-main/）
+# Or install from source (if hermes-agent-main/ is available)
 cd hermes-agent-main && pip install -e .
 
-# 验证
+# Verify
 hermes status
 
-# 如果 /usr/local/bin/hermes 报 ModuleNotFoundError，做软链接：
+# If /usr/local/bin/hermes reports ModuleNotFoundError, create a symlink:
 ln -sf ~/.hermes/venvs/hermes-dev/bin/hermes /usr/local/bin/hermes
 
-# 配置模型
+# Configure the model
 cat > ~/.hermes/config.yaml << 'EOF'
 model:
   default: glm/glm-5.3-flash
 EOF
 
-# 配置 API key + 搜索引擎
+# Configure the API key + search engine
 cat > ~/.hermes/.env << 'EOF'
-GLM_API_KEY=<你的智谱API key>
+GLM_API_KEY=<your ZhipuAI API key>
 GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-TAVILY_API_KEY=<你的tavily key，可选，没有则用免费ddgs>
+TAVILY_API_KEY=<your tavily key, optional; if absent, use the free ddgs>
 EOF
 ```
 
-### 4. workflow 配置
+### 4. Workflow Configuration
 
-安装完三个 Agent 后，按"运行指南"中的"第一步：配置 config.yaml"修改路径，然后按"第二步：验证环境"确认所有组件可用。
+After installing the three Agents, modify the paths per "Step 1: Configure config.yaml" in the Running Guide, then confirm all components work per "Step 2: Verify the Environment".

@@ -19,7 +19,7 @@
   {
    "id": "F1",
    "name": "Kernel Fission / Partial Fusion",
-   "name_zh": "算子拆分／半融合",
+   "name_zh": "Operator fission / partial fusion",
    "summary": "Split a compound operator into independently tuned kernels, optionally fusing within each partition.",
    "graph_conditions": [
     "Stages prefer different schedules, layouts or execution resources.",
@@ -75,13 +75,13 @@
     "F8"
    ],
    "source_sections": [
-    "F1: Kernel Fission / Partial Fusion（拆分与半融合）"
+    "F1: Kernel Fission / Partial Fusion (fission and partial fusion)"
    ]
   },
   {
    "id": "F2",
    "name": "Vertical Fusion",
-   "name_zh": "垂直融合／单 kernel 全融合",
+   "name_zh": "Vertical fusion / single-kernel full fusion",
    "summary": "Fuse a producer-consumer chain and retain legal intermediate tiles on chip within one kernel.",
    "graph_conditions": [
     "A consumer depends on a producer.",
@@ -138,13 +138,13 @@
     "F9"
    ],
    "source_sections": [
-    "F2: Vertical Fusion（垂直融合）"
+    "F2: Vertical Fusion (vertical fusion)"
    ]
   },
   {
    "id": "F3",
    "name": "Horizontal Fusion",
-   "name_zh": "水平融合",
+   "name_zh": "Horizontal fusion",
    "summary": "Run independent operations in a shared kernel to improve utilization and amortize launches.",
    "graph_conditions": [
     "Branches are independent during fused execution.",
@@ -194,13 +194,13 @@
     "F7"
    ],
    "source_sections": [
-    "F3: Horizontal Fusion（水平融合）"
+    "F3: Horizontal Fusion (horizontal fusion)"
    ]
   },
   {
    "id": "F4",
    "name": "Input / Output Fusion",
-   "name_zh": "共享输入／多输出融合",
+   "name_zh": "Shared-input / multi-output fusion",
    "summary": "Share inputs or a producer among branches while preserving every required output.",
    "graph_conditions": [
     "Branches share inputs or consume the same producer.",
@@ -256,13 +256,13 @@
     "F9"
    ],
    "source_sections": [
-    "F4: Input / Output Fusion（输入输出融合）"
+    "F4: Input / Output Fusion (input/output fusion)"
    ]
   },
   {
    "id": "F5",
    "name": "Hybrid Routing",
-   "name_zh": "混合路由／按 shape 分发",
+   "name_zh": "Hybrid routing / shape-based dispatch",
    "summary": "Route metadata-defined case groups to validated concrete fusion or tiling variants.",
    "graph_conditions": [
     "Several implementations satisfy one complete contract.",
@@ -322,13 +322,13 @@
     "F10"
    ],
    "source_sections": [
-    "F5: Hybrid Routing（按形状路由）"
+    "F5: Hybrid Routing (shape-based routing)"
    ]
   },
   {
    "id": "F6",
    "name": "Multi-stage Pipeline with Inter-core On-chip Sharing",
-   "name_zh": "多阶段流水＋跨核片上共享",
+   "name_zh": "Multi-stage pipeline + inter-core on-chip sharing",
    "summary": "Exchange producer-consumer tiles through a verified inter-core on-chip sharing mechanism.",
    "graph_conditions": [
     "Stages can exchange ready tiles within a supported sharing scope.",
@@ -379,13 +379,13 @@
     "F9"
    ],
    "source_sections": [
-    "F6: Multi-stage Pipeline with Inter-core On-chip Sharing（跨核片上共享流水）"
+    "F6: Multi-stage Pipeline with Inter-core On-chip Sharing (inter-core on-chip shared pipeline)"
    ]
   },
   {
    "id": "F7",
    "name": "Split and Fusion Co-optimization",
-   "name_zh": "拆分与融合协同优化",
+   "name_zh": "Split and fusion co-optimization",
    "summary": "Jointly search legal decompositions and fusion partitions using reuse, resource and measurement evidence.",
    "graph_conditions": [
     "Compound operations admit equivalent primitive decompositions.",
@@ -440,13 +440,13 @@
     "F10"
    ],
    "source_sections": [
-    "F7: Split and Fusion Co-optimization（拆分融合协同搜索）"
+    "F7: Split and Fusion Co-optimization (split-fusion co-optimization search)"
    ]
   },
   {
    "id": "F8",
    "name": "Joint Compute-Memory Fusion",
-   "name_zh": "计算与访存联合融合",
+   "name_zh": "Joint compute-memory fusion",
    "summary": "Jointly schedule compute-heavy stages and memory-heavy subgraphs to reduce materialization or overlap work.",
    "graph_conditions": [
     "Compute connects to elementwise, reduction or layout subgraphs.",
@@ -498,13 +498,13 @@
     "F9"
    ],
    "source_sections": [
-    "F8: Joint Compute-Memory Fusion（计算访存联合融合）"
+    "F8: Joint Compute-Memory Fusion (joint compute-memory fusion)"
    ]
   },
   {
    "id": "F9",
    "name": "Deep Kernel Fusion",
-   "name_zh": "深度多算子融合",
+   "name_zh": "Deep multi-operator fusion",
    "summary": "Fuse a longer multi-operation region when a legal tiled schedule efficiently retains its live state.",
    "graph_conditions": [
     "A region contains multiple dependent compute/transform stages.",
@@ -556,13 +556,13 @@
     "F8"
    ],
    "source_sections": [
-    "F9: Deep Kernel Fusion（长链深度融合）"
+    "F9: Deep Kernel Fusion (long-chain deep fusion)"
    ]
   },
   {
    "id": "F10",
    "name": "Multi-device Compute-Communication Fusion",
-   "name_zh": "多卡／多节点通算融合",
+   "name_zh": "Multi-device / multi-node compute-communication fusion",
    "summary": "Jointly schedule distributed compute and communication with supported tile-level overlap.",
    "graph_conditions": [
     "The contract includes communication across devices/nodes.",
@@ -611,7 +611,7 @@
     "F7"
    ],
    "source_sections": [
-    "F10: Multi-device Compute-Communication Fusion（多设备通算融合）"
+    "F10: Multi-device Compute-Communication Fusion (multi-device compute-communication fusion)"
    ]
   }
  ]

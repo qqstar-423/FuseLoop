@@ -1,6 +1,6 @@
 """
-Agent Runner — 每次新进程调用 agent，不续接 session。
-上下文完全靠 orchestrator 注入的 prompt（含文件路径），agent 自己读文件。
+Agent Runner — invokes the agent as a fresh process each time; sessions are never continued.
+Context is supplied entirely by the orchestrator-injected prompt (including file paths); agents read files themselves.
 """
 
 import errno
@@ -73,7 +73,7 @@ def _agent_env(config):
 
 
 def _load_agent_config(agent_name: str) -> dict:
-    """从 config.yaml 读取指定 agent 的配置（cli 路径等）。"""
+    """Read the named agent\'s configuration (CLI path etc.) from config.yaml."""
     bound = _workflow_agent_configs.get()
     if bound is not None:
         return deepcopy(bound.get(agent_name, {}))
@@ -92,8 +92,8 @@ def _load_agent_config(agent_name: str) -> dict:
 
 
 GLOBAL_CONSTRAINT = (
-    "\n\n⛔ 禁令：task/ 目录下的所有文件（包括 golden.py、proto.yaml、cases.yaml、desc.md 等）"
-    "是评测基准数据，严禁修改、覆盖、删除。只能读取，不能写入。违反此规则会导致评测结果失效。\n"
+    "\n\n⛔ Prohibition: all files under the task/ directory (including golden.py, proto.yaml, cases.yaml, desc.md, etc.) "
+    "are evaluation benchmark data; modifying, overwriting or deleting them is strictly forbidden. Read-only, never write. Violating this rule invalidates the evaluation results.\n"
 )
 
 
@@ -113,8 +113,8 @@ def run_agent(agent: str, role_file: str, work_dir: str, prompt: str = "", confi
 
 def run_cannbot(role_file: str, work_dir: str, prompt: str, config: dict = None, node_log: logging.Logger = None) -> bool:
     """
-    调用 CANNBot — 每次新进程，不续接 session。
-    上下文靠 prompt 注入（含文件路径，agent 自己读）。
+    Call CANNBot — a fresh process every time; sessions are never continued.
+    Context comes from the injected prompt (including file paths; the agent reads them itself).
     """
     config = config or {}
     system_prompt = read_file_safe(role_file)
@@ -122,7 +122,7 @@ def run_cannbot(role_file: str, work_dir: str, prompt: str, config: dict = None,
 
     cli = config.get("cli")
     if not cli:
-        raise ValueError("cannbot cli 路径未配置，请检查 config.yaml agents.cannbot.cli")
+        raise ValueError("cannbot cli path is not configured; check config.yaml agents.cannbot.cli")
     cwd = config.get("cwd", work_dir)
     # CANNBot run reads non-TTY stdin as the message. A file-backed stdin avoids
     # both execve's argv limit and a pipe-write/output-read deadlock for long input.
@@ -130,22 +130,22 @@ def run_cannbot(role_file: str, work_dir: str, prompt: str, config: dict = None,
                                      transport="stdin", node_log=node_log)
     cmd = [cli, "run", "--format", "json", "--dangerously-skip-permissions"]
 
-    log.info(f"[N1 CANNBot] 启动，cwd={cwd}")
+    log.info(f"[N1 CANNBot] starting, cwd={cwd}")
     result = _run_with_heartbeat(cmd, cwd=cwd, env=_agent_env(config), agent_name="N1 CANNBot", node_log=node_log,
                                  stdin_path=prompt_path)
 
     if result.returncode != 0:
-        log.error(f"[N1 CANNBot] 失败，returncode={result.returncode}")
+        log.error(f"[N1 CANNBot] failed, returncode={result.returncode}")
         if "Prompt exceeds max length" in result.stdout + (result.stderr or ""):
-            log.error("[N1 CANNBot] 模型上下文超过限制；提示词已通过 stdin 完整传入，"
-                      "这与操作系统的命令行参数长度限制不同。请检查本次提示词文件与模型上下文容量。")
+            log.error("[N1 CANNBot] model context limit exceeded; the prompt was passed in full via stdin, "
+                      "which differs from the operating system's command-line argument length limit. Check this prompt file and the model's context capacity.")
     return result.returncode == 0
 
 
 def run_kerminal(role_file: str, work_dir: str, prompt: str = "", config: dict = None, node_log: logging.Logger = None) -> bool:
     """
-    调用 Kerminal — 每次新进程，不续接 session。
-    原生 exec 模式从 stdin 读取完整任务；沿用 -a never 和已配置环境。
+    Call Kerminal — a fresh process every time; sessions are never continued.
+    The native exec mode reads the full task from stdin; -a never and the configured environment are kept.
     """
     config = config or {}
     system_prompt = read_file_safe(role_file)
@@ -153,7 +153,7 @@ def run_kerminal(role_file: str, work_dir: str, prompt: str = "", config: dict =
 
     cli = config.get("cli")
     if not cli:
-        raise ValueError("kerminal cli 路径未配置，请检查 config.yaml agents.kerminal.cli")
+        raise ValueError("kerminal cli path is not configured; check config.yaml agents.kerminal.cli")
     cwd = config.get("cwd", work_dir)
     prompt_path = _save_agent_prompt(work_dir, role_file, full_prompt, agent="kerminal",
                                      transport="exec stdin", node_log=node_log)
@@ -161,9 +161,9 @@ def run_kerminal(role_file: str, work_dir: str, prompt: str = "", config: dict =
     # work directories need not be Git repositories. Do not add sandbox bypass.
     cmd = [cli, "-a", "never", "exec", "--skip-git-repo-check", "-C", cwd, "-"]
 
-    log.info(f"[N2 Kerminal] 启动，role={os.path.basename(role_file)}, cwd={cwd}")
+    log.info(f"[N2 Kerminal] starting, role={os.path.basename(role_file)}, cwd={cwd}")
     if node_log:
-        node_log.info(f"启动，role={os.path.basename(role_file)}")
+        node_log.info(f"starting, role={os.path.basename(role_file)}")
     result = _run_with_heartbeat(cmd, cwd=cwd, env=_agent_env(config), agent_name="N2 Kerminal",
                                  node_log=node_log, plain_text=True, stdin_path=prompt_path)
     return result.returncode == 0
@@ -171,8 +171,8 @@ def run_kerminal(role_file: str, work_dir: str, prompt: str = "", config: dict =
 
 def run_hermes(role_file: str, work_dir: str, prompt: str = "", config: dict = None, node_log: logging.Logger = None) -> bool:
     """
-    调用 Hermes CLI — 每次新进程，不续接 session。
-    和 cannbot/kerminal 一样走 CLI 调用。
+    Call the Hermes CLI — a fresh process every time; sessions are never continued.
+    Like cannbot/kerminal, it is invoked through a CLI.
     """
     config = config or {}
     system_prompt = read_file_safe(role_file)
@@ -180,27 +180,27 @@ def run_hermes(role_file: str, work_dir: str, prompt: str = "", config: dict = N
 
     cli = config.get("cli")
     if not cli:
-        raise ValueError("hermes cli 路径未配置，请检查 config.yaml agents.hermes.cli")
+        raise ValueError("hermes cli path is not configured; check config.yaml agents.hermes.cli")
     cwd = config.get("cwd", work_dir)
     prompt_path = _save_agent_prompt(work_dir, role_file, full_prompt, agent="hermes",
-                                     transport="Python进程内读取文件", node_log=node_log)
+                                     transport="file read inside the Python process", node_log=node_log)
     # Hermes 0.20.4 -z does not read stdin. Keep its existing oneshot behavior:
     # the bridge reads the file after process creation and runs the same entrypoint.
     from .hermes_prompt import build_command
     env = _agent_env(config)
     cmd = build_command(cli, prompt_path, cwd, env, ["-t", "web,file", "--yolo", "--in", cwd])
 
-    log.info(f"[N3 Hermes] 启动，cwd={cwd}")
+    log.info(f"[N3 Hermes] starting, cwd={cwd}")
     if node_log:
-        node_log.info(f"启动，cwd={cwd}")
+        node_log.info(f"starting, cwd={cwd}")
     result = _run_with_heartbeat(cmd, cwd=cwd, env=env, agent_name="N3 Hermes", timeout=0, node_log=node_log, plain_text=True)
 
     # A transport/CLI failure must not be masked by a report from an older round.
     if result.returncode != 0:
-        log.error(f"[N3 Hermes] 失败，returncode={result.returncode}，不能用旧报告视为成功")
+        log.error(f"[N3 Hermes] failed, returncode={result.returncode}; an old report must not be treated as success")
         return False
 
-    # 检查输出文件是否生成
+    # Check whether the output file was generated
     iter_search_dirs = [d for d in os.listdir(os.path.join(work_dir, "search")) if os.path.isdir(os.path.join(work_dir, "search", d))] if os.path.isdir(os.path.join(work_dir, "search")) else []
     search_report = None
     for d in sorted(iter_search_dirs, reverse=True):
@@ -212,15 +212,15 @@ def run_hermes(role_file: str, work_dir: str, prompt: str = "", config: dict = N
         search_report = os.path.join(work_dir, "search", "SEARCH_REPORT.md")
 
     if os.path.exists(search_report):
-        log.info(f"[N3 Hermes] SEARCH_REPORT.md 已生成: {search_report}")
+        log.info(f"[N3 Hermes] SEARCH_REPORT.md generated: {search_report}")
         return True
     else:
-        log.warning("[N3 Hermes] 搜索未完成（SEARCH_REPORT.md 未生成）")
+        log.warning("[N3 Hermes] search did not complete (SEARCH_REPORT.md was not generated)")
         return result.returncode == 0
 
 
 # ═══════════════════════════════════════════════════════════════
-# 底层工具函数
+# low-level helpers
 # ═══════════════════════════════════════════════════════════════
 
 
@@ -234,8 +234,8 @@ def _save_agent_prompt(work_dir, role_file, full_prompt, *, agent, transport, no
     with os.fdopen(fd, "wb") as stream:
         stream.write(payload)
     label = {"cannbot": "N1 CANNBot", "kerminal": "N2 Kerminal", "hermes": "N3 Hermes"}[agent]
-    message = (f"[{label}] 提示词传递={transport}，UTF-8字节数={len(payload)}，"
-               f"完整提示词文件={path}")
+    message = (f"[{label}] prompt transport={transport}, UTF-8 bytes={len(payload)}, "
+               f"full prompt file={path}")
     log.info(message)
     if node_log and node_log is not log:
         node_log.info(message)
@@ -251,10 +251,10 @@ def _start_process(cmd, *, env, agent_name, **kwargs):
             argv_sizes = [len(os.fsencode(value)) + 1 for value in cmd]
             env_sizes = [len(os.fsencode(key)) + len(os.fsencode(value)) + 2
                          for key, value in env.items()]
-            log.error(f"[{agent_name}] 进程尚未启动：系统拒绝命令行参数或环境变量过长(E2BIG)，"
-                      f"argv字节数={sum(argv_sizes)}，最大单参数字节数={max(argv_sizes, default=0)}，"
-                      f"env字节数={sum(env_sizes)}，最大单环境变量字节数={max(env_sizes, default=0)}。"
-                      "这不是模型上下文错误；请检查参数传递方式或环境变量大小。")
+            log.error(f"[{agent_name}] process never started: the system rejected the command-line arguments or environment as too long (E2BIG); "
+                      f"argv bytes={sum(argv_sizes)}, largest single argument={max(argv_sizes, default=0)}, "
+                      f"env bytes={sum(env_sizes)}, largest single environment variable={max(env_sizes, default=0)}. "
+                      "This is not a model context error; check the argument passing method or environment variable sizes.")
         raise
 
 
@@ -311,15 +311,15 @@ def _run_with_heartbeat(cmd: list, cwd: str, env: dict, agent_name: str, timeout
                 if timeout > 0 and elapsed > timeout:
                     proc.kill()
                     stop_requested = True
-                    log.error(f"[{agent_name}] 超时 ({timeout}s)，强制终止")
+                    log.error(f"[{agent_name}] timed out ({timeout}s); killing the process")
                 elif consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                     proc.kill()
                     stop_requested = True
-                    log.error(f"[{agent_name}] 连续{MAX_CONSECUTIVE_ERRORS}次API错误，主动终止进程")
+                    log.error(f"[{agent_name}] {MAX_CONSECUTIVE_ERRORS} consecutive API errors; terminating the process")
                     if nlog is not log:
-                        nlog.error(f"[{agent_name}] 连续{MAX_CONSECUTIVE_ERRORS}次API错误，主动终止进程")
+                        nlog.error(f"[{agent_name}] {MAX_CONSECUTIVE_ERRORS} consecutive API errors; terminating the process")
             if not stop_requested and now - last_heartbeat >= HEARTBEAT_INTERVAL:
-                log.info(f"[{agent_name}] 仍在运行... ({elapsed:.0f}s)")
+                log.info(f"[{agent_name}] still running... ({elapsed:.0f}s)")
                 last_heartbeat = now
 
             try:
@@ -327,7 +327,7 @@ def _run_with_heartbeat(cmd: list, cwd: str, env: dict, agent_name: str, timeout
             except Empty:
                 continue
             if read_error is not None:
-                raise RuntimeError(f"[{agent_name}] 读取 {name} 日志失败：{read_error}") from read_error
+                raise RuntimeError(f"[{agent_name}] failed to read the {name} log: {read_error}") from read_error
             if line is None:
                 open_streams.discard(name)
                 continue
@@ -336,22 +336,22 @@ def _run_with_heartbeat(cmd: list, cwd: str, env: dict, agent_name: str, timeout
                 stripped = line.strip()
                 if not stripped:
                     continue
-                # 解析 cannbot JSON 输出，提取关键信息打印
+                # Parse cannbot JSON output and print the key information
                 if '"type":"text"' in stripped or '"type":"error"' in stripped:
                     try:
                         import json as _json
                         data = _json.loads(stripped)
                         if data.get("type") == "error":
                             err_msg = data.get("error", {}).get("data", {}).get("message", str(data.get("error", "")))
-                            log.error(f"[{agent_name}] API错误: {err_msg}")
-                            nlog.error(f"[{agent_name}] API错误: {err_msg}")
+                            log.error(f"[{agent_name}] API error: {err_msg}")
+                            nlog.error(f"[{agent_name}] API error: {err_msg}")
                             consecutive_errors += 1
                         elif data.get("type") == "text":
                             text = data.get("part", {}).get("text", "")
                             if text.strip():
-                                log.info(f"[{agent_name}] 输出: {text.strip()[:200]}")
-                                nlog.info(f"[{agent_name}] 输出: {text.strip()[:200]}")
-                                consecutive_errors = 0  # 有正常输出则重置
+                                log.info(f"[{agent_name}] output: {text.strip()[:200]}")
+                                nlog.info(f"[{agent_name}] output: {text.strip()[:200]}")
+                                consecutive_errors = 0  # reset when normal output arrives
                     except Exception:
                         pass
                 elif '"tool":"' in stripped:
@@ -368,9 +368,9 @@ def _run_with_heartbeat(cmd: list, cwd: str, env: dict, agent_name: str, timeout
                 elif "error" in stripped.lower() or "ERROR" in stripped:
                     log.warning(f"[{agent_name}] {stripped[:200]}")
                 elif plain_text and len(stripped) > 5:
-                    # hermes 等纯文本输出的 agent：直接输出非 JSON 行
-                    log.info(f"[{agent_name}] 输出: {stripped[:200]}")
-                    nlog.info(f"[{agent_name}] 输出: {stripped[:200]}")
+                    # plain-text agents such as hermes: print non-JSON lines directly
+                    log.info(f"[{agent_name}] output: {stripped[:200]}")
+                    nlog.info(f"[{agent_name}] output: {stripped[:200]}")
 
         proc.wait()
     finally:
@@ -386,7 +386,7 @@ def _run_with_heartbeat(cmd: list, cwd: str, env: dict, agent_name: str, timeout
     stdout_all = "".join(chunks["stdout"])
     stderr_all = "".join(chunks["stderr"])
     elapsed = time.monotonic() - start
-    log.info(f"[{agent_name}] 结束，耗时={elapsed:.0f}s，returncode={proc.returncode}")
+    log.info(f"[{agent_name}] finished, elapsed={elapsed:.0f}s, returncode={proc.returncode}")
     if stderr_all:
         log.debug(f"[{agent_name}] stderr (last 500):\n{stderr_all[-500:]}")
 
@@ -395,8 +395,8 @@ def _run_with_heartbeat(cmd: list, cwd: str, env: dict, agent_name: str, timeout
 
 def _run_with_pty(cmd: list, cwd: str, env: dict, timeout: int = 0, node_log: logging.Logger = None, agent_label: str = "N2 Kerminal") -> tuple:
     """
-    运行需要 TTY 的命令（kerminal）。
-    模拟终端响应（CSI 6n）+ 自动按 Enter（欢迎屏）+ 空闲检测退出。
+    Run commands that require a TTY (kerminal).
+    Emulates terminal responses (CSI 6n) + presses Enter automatically (welcome screen) + exits on idle detection.
     """
     if pty is None:
         raise RuntimeError("NPU workflow agent execution requires a POSIX host. Standalone Jev/Kerminal RPC tools support Windows.")
@@ -408,7 +408,7 @@ def _run_with_pty(cmd: list, cwd: str, env: dict, timeout: int = 0, node_log: lo
     _ansi_re = re.compile(r'\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?\x07|\x1b[()][0-9A-B]|\x1b[M]|\x0f|\x0e|\r|\x1b\[\?[0-9]*[hl]')
 
     def _extract_lines(raw):
-        """从 TUI 原始输出提取可读行"""
+        """Extract readable lines from raw TUI output"""
         clean = _ansi_re.sub('', raw)
         clean = clean.replace('•', '').replace('›', '')
         lines = []
@@ -464,7 +464,7 @@ def _run_with_pty(cmd: list, cwd: str, env: dict, timeout: int = 0, node_log: lo
                     text = data.decode("utf-8", errors="replace")
                     output_chunks.append(text)
                     last_data_time = time.time()
-                    # 累积 TUI 输出到缓冲区
+                    # accumulate TUI output into the buffer
                     _tui_buffer += text
                     if '\x1b[6n' in text:
                         os.write(master_fd, b'\x1b[1;1R')
@@ -476,18 +476,18 @@ def _run_with_pty(cmd: list, cwd: str, env: dict, timeout: int = 0, node_log: lo
                 except OSError:
                     break
             else:
-                # 每次 select 超时（1秒），处理累积的 TUI 缓冲区
+                # on each select timeout (1 second), process the accumulated TUI buffer
                 if _tui_buffer:
                     lines = _extract_lines(_tui_buffer)
                     for line in lines:
                         if line not in _logged_lines and 'Worked for' not in line and 'context left' not in line and 'Press Enter' not in line:
-                            nlog.info(f"输出: {line[:200]}")
-                            log.info(f"[{agent_label}] 输出: {line[:200]}")
+                            nlog.info(f"output: {line[:200]}")
+                            log.info(f"[{agent_label}] output: {line[:200]}")
                             _logged_lines.add(line)
                     _tui_buffer = ""
                 if time.time() - last_heartbeat >= HEARTBEAT_INTERVAL:
-                    log.info(f"[{agent_label}] 仍在运行... ({time.time()-start:.0f}s)")
-                    nlog.info(f"仍在运行... ({time.time()-start:.0f}s)")
+                    log.info(f"[{agent_label}] still running... ({time.time()-start:.0f}s)")
+                    nlog.info(f"still running... ({time.time()-start:.0f}s)")
                     last_heartbeat = time.time()
                 if task_started and (time.time() - last_data_time) > idle_exit_seconds:
                     proc.terminate()
@@ -513,6 +513,6 @@ def _run_with_pty(cmd: list, cwd: str, env: dict, timeout: int = 0, node_log: lo
 
     proc.wait()
     elapsed = time.time() - start
-    log.info(f"[{agent_label}] 结束，耗时={elapsed:.0f}s，returncode={proc.returncode}")
-    nlog.info(f"结束，耗时={elapsed:.0f}s，returncode={proc.returncode}")
+    log.info(f"[{agent_label}] finished, elapsed={elapsed:.0f}s, returncode={proc.returncode}")
+    nlog.info(f"finished, elapsed={elapsed:.0f}s, returncode={proc.returncode}")
     return proc.returncode, "".join(output_chunks)

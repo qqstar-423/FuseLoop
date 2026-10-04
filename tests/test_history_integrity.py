@@ -98,75 +98,75 @@ class HistoryIntegrityTests(unittest.TestCase):
     def test_old_file_scope_cannot_override_current_plan(self):
         history = load_history(self.work)
         history["ledger"] = [
-            {"iter": 1, "reason": "perf_optimize", "direction": "调整主块",
+            {"iter": 1, "reason": "perf_optimize", "direction": "adjust the main block",
              "modify_files": ["main.py"], "readonly_files": ["helper.py"],
              "verdict": "regression", "avg_speedup_before": 2.0, "avg_speedup_after": 1.8},
-            {"iter": 2, "reason": "perf_optimize", "direction": "缩小尾块",
-             "evaluation_summary": "主块调整对平均性能无明显改善，尾块仍慢",
+            {"iter": 2, "reason": "perf_optimize", "direction": "shrink the tail block",
+             "evaluation_summary": "the main-block change did not clearly improve the average; the tail block is still slow",
              "modify_files": ["helper.py"], "readonly_files": ["main.py"],
              "verdict": "no_change", "avg_speedup_before": 1.8, "avg_speedup_after": 1.8},
         ]
         save_history(self.work, history)
         prompt = format_for_prompt(self.work)
-        self.assertIn("当时计划只读（仅回顾）: helper.py", prompt)
-        self.assertIn("当前计划可修改: helper.py", prompt)
-        self.assertNotIn("当前计划不可修改: helper.py", prompt)
-        self.assertIn("本轮评测回顾: 主块调整对平均性能无明显改善，尾块仍慢", prompt)
-        self.assertIn("评测后提出的下一步计划（尚未被本条 verdict 评价）: 缩小尾块", prompt)
-        self.assertIn("旧 direction（当时未区分已执行改动/下一步计划）: 调整主块", prompt)
-        self.assertIn("不能把它当作已失败的改动", prompt)
+        self.assertIn("read-only at the time (review only): helper.py", prompt)
+        self.assertIn("current plan may modify: helper.py", prompt)
+        self.assertNotIn("current plan must not modify: helper.py", prompt)
+        self.assertIn("This round's evaluation review: the main-block change did not clearly improve the average; the tail block is still slow", prompt)
+        self.assertIn("Next-step plan proposed after evaluation (not yet judged by this entry's verdict): shrink the tail block", prompt)
+        self.assertIn("Legacy direction (executed changes/next-step plan were not distinguished then): adjust the main block", prompt)
+        self.assertIn("must not be treated as an already-failed change", prompt)
         plan = get_latest_fix_plan(self.work)
-        self.assertIn("可修改的文件（只改这些）:\n  - helper.py", plan)
-        self.assertIn("不可修改的文件（绝对不能动）:\n  - main.py", plan)
+        self.assertIn("Files that may be modified (change only these):\n  - helper.py", plan)
+        self.assertIn("Files that must not be modified (absolutely untouchable):\n  - main.py", plan)
 
     def test_pending_latest_row_does_not_reactivate_old_scope(self):
         history = load_history(self.work)
         history["ledger"] = [
-            {"iter": 1, "direction": "旧计划", "modify_files": ["old.py"], "readonly_files": []},
+            {"iter": 1, "direction": "old plan", "modify_files": ["old.py"], "readonly_files": []},
             {"iter": 2, "direction": "(pending tech_lead)", "modify_files": [], "readonly_files": []},
         ]
         save_history(self.work, history)
-        self.assertNotIn("当前计划可修改", format_for_prompt(self.work))
+        self.assertNotIn("current plan may modify", format_for_prompt(self.work))
         self.assertEqual(get_latest_fix_plan(self.work), "")
 
     def test_historical_labels_do_not_overrule_latest_human_p0(self):
         history = load_history(self.work)
         history.update({
-            "suggest_next": [{"priority": "P0", "action": "复核尾块条件", "reason": "条件改变",
+            "suggest_next": [{"priority": "P0", "action": "recheck tail-block conditions", "reason": "conditions changed",
                               "source": "human", "human_message_id": "human-3"}],
-            "insights": ["❌已否决：旧 shape 分块失败"],
-            "worst_cases_tracker": {"case_1": "硬件限制，待核实"},
-            "fusion_kernel_strategy": [{"iter": 1, "strategy": "半融合", "status": "待验证"}],
+            "insights": ["❌ rejected: old shape tiling failed"],
+            "worst_cases_tracker": {"case_1": "hardware limitation, to be verified"},
+            "fusion_kernel_strategy": [{"iter": 1, "strategy": "partial fusion", "status": "pending verification"}],
         })
         save_history(self.work, history)
         prompt = format_for_prompt(self.work)
-        self.assertIn("[人工意见 human-3]", prompt)
-        self.assertIn("条件或证据改变时按最新计划重新验证", prompt)
-        self.assertIn("不能据此永久跳过", prompt)
-        self.assertIn("半融合", prompt)
-        self.assertNotIn("融合方向 >", prompt)
-        self.assertNotIn("不要再尝试这个方向", prompt)
-        self.assertNotIn("不要浪费时间", prompt)
+        self.assertIn("[human feedback human-3]", prompt)
+        self.assertIn("when conditions or evidence change, re-verify per the latest plan", prompt)
+        self.assertIn("never justifies permanently skipping", prompt)
+        self.assertIn("partial fusion", prompt)
+        self.assertNotIn("fusion direction >", prompt)
+        self.assertNotIn("do not try this direction again", prompt)
+        self.assertNotIn("do not waste time", prompt)
 
     def test_unknown_history_metrics_render_without_false_downtrend(self):
         append_round(self.work, 1, {"cases": [{"case_id": "case_1", "speedup": None}]}, None)
         prompt = format_for_prompt(self.work)
-        self.assertIn("avg_speedup=未知 ?", prompt)
-        self.assertIn("worst=case_1(未知)", prompt)
+        self.assertIn("avg_speedup=unknown ?", prompt)
+        self.assertIn("worst=case_1(unknown)", prompt)
         self.assertNotIn("None", prompt)
 
     def test_structured_case_tracker_shows_source_iteration_and_readable_conclusion(self):
         history = load_history(self.work)
         history["worst_cases_tracker"] = {
-            "case_1": {"iteration": 3, "observation": "0.8x → 0.9x", "explanation": "尾块利用率不足",
-                       "next_action": "试验减小尾块", "evidence": "profile/iter3/bottleneck_analysis.md"},
-            "case_2": {"iteration": 1, "explanation": "历史访存瓶颈"},
+            "case_1": {"iteration": 3, "observation": "0.8x → 0.9x", "explanation": "tail-block utilization is insufficient",
+                       "next_action": "try a smaller tail block", "evidence": "profile/iter3/bottleneck_analysis.md"},
+            "case_2": {"iteration": 1, "explanation": "historical memory-access bottleneck"},
         }
         save_history(self.work, history)
         prompt = format_for_prompt(self.work)
-        self.assertIn("case_1 [iter3]\n  结论: 尾块利用率不足", prompt)
-        self.assertIn("后续动作: 试验减小尾块", prompt)
-        self.assertIn("证据: profile/iter3/bottleneck_analysis.md", prompt)
+        self.assertIn("case_1 [iter3]\n  Conclusion: tail-block utilization is insufficient", prompt)
+        self.assertIn("Next action: try a smaller tail block", prompt)
+        self.assertIn("Evidence: profile/iter3/bottleneck_analysis.md", prompt)
         self.assertIn("case_2 [iter1]", prompt)
         self.assertNotIn("{'iteration':", prompt)
 

@@ -1,10 +1,10 @@
 """
-CANN 环境变量构建模块 — 从 config.yaml 读取，通过 source set_env.sh 获取完整环境。
+CANN environment variable builder — reads from config.yaml and sources set_env.sh for the full environment.
 
-核心思路：CANN 自带 set_env.sh，直接 source 它得到的环境和新开终端一模一样。
-不再手动拼路径列表，换环境只需改 config.yaml 中的 toolkit_path。
+Core idea: CANN ships its own set_env.sh; sourcing it yields exactly the environment of a fresh terminal.
+No more hand-built path lists; switching environments only requires changing toolkit_path in config.yaml.
 
-用法:
+Usage:
     from lib.cann_env import build_cann_env, build_cann_shell_prefix, load_cann_config
 """
 
@@ -56,9 +56,9 @@ def load_cann_config(config_path=None):
 
 def _source_set_env_sh(cfg):
     """
-    用 bash --login 启动子 shell（和用户新开终端一致），
-    再 source set_env.sh，然后 dump 全部环境变量。
-    这样能捕获 set_env.sh 设的所有 ASCEND_*/CANN_*/TOOLCHAIN_* 等变量。
+    Start a subshell with bash --login (matching a fresh user terminal),
+    source set_env.sh, then dump all environment variables.
+    This captures every ASCEND_*/CANN_*/TOOLCHAIN_* variable set by set_env.sh.
     """
     set_env_sh = os.path.join(cfg["toolkit_path"], "set_env.sh")
     if not os.path.isfile(set_env_sh):
@@ -71,23 +71,23 @@ def _source_set_env_sh(cfg):
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"CANN set_env.sh 执行失败：{set_env_sh}；不能继续使用其他 Toolkit 的环境")
+            raise RuntimeError(f"CANN set_env.sh execution failed: {set_env_sh}; another Toolkit\'s environment cannot be used to continue")
         env_from_sh = {}
         for entry in result.stdout.split("\0"):
             if "=" in entry:
                 key, val = entry.split("=", 1)
                 env_from_sh[key] = val
         if not env_from_sh:
-            raise RuntimeError(f"CANN set_env.sh 未返回环境：{set_env_sh}")
+            raise RuntimeError(f"CANN set_env.sh returned no environment: {set_env_sh}")
         return env_from_sh
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"CANN set_env.sh 无法执行：{set_env_sh}") from exc
+        raise RuntimeError(f"CANN set_env.sh could not be executed: {set_env_sh}") from exc
 
 
 def build_cann_env(extra=None, config_path=None):
     """
-    构建包含 CANN 环境变量的 env dict，供 subprocess 使用。
-    通过 bash --login + source set_env.sh 获取完整环境（和新开终端一致）。
+    Build an env dict containing the CANN environment variables for subprocess use.
+    The full environment is obtained via bash --login + source set_env.sh (matching a fresh terminal).
     """
     global _cached_cann_env
     cfg = load_cann_config(config_path)
@@ -148,8 +148,8 @@ def build_cann_env(extra=None, config_path=None):
 
 def build_cann_shell_prefix(config_path=None):
     """
-    生成 bash -c 可用的 shell 前缀字符串。
-    直接 source set_env.sh，和新开终端的环境一模一样。
+    Generate a shell prefix string usable with bash -c.
+    It sources set_env.sh directly, giving exactly the environment of a fresh terminal.
     """
     cfg = load_cann_config(config_path)
     set_env_sh = os.path.join(cfg["toolkit_path"], "set_env.sh")
@@ -164,7 +164,7 @@ def build_cann_shell_prefix(config_path=None):
 
 
 def _ld_library_paths(cfg):
-    """兼容接口：供 bench_parser 等直接调用。优先从 set_env.sh 获取。"""
+    """Compatibility interface for direct calls from bench_parser etc. Prefers values from set_env.sh."""
     sourced = _source_set_env_sh(cfg)
     if sourced and sourced.get("LD_LIBRARY_PATH"):
         dr = cfg["driver_path"]
@@ -184,7 +184,7 @@ def _ld_library_paths(cfg):
 
 
 def _pythonpath_dirs(cfg):
-    """兼容接口。"""
+    """Compatibility interface."""
     sourced = _source_set_env_sh(cfg)
     if sourced and sourced.get("PYTHONPATH"):
         return [p for p in sourced["PYTHONPATH"].split(":") if p]
@@ -193,7 +193,7 @@ def _pythonpath_dirs(cfg):
 
 
 def _path_dirs(cfg):
-    """兼容接口。"""
+    """Compatibility interface."""
     sourced = _source_set_env_sh(cfg)
     if sourced and sourced.get("PATH"):
         paths = sourced["PATH"].split(":")

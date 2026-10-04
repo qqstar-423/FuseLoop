@@ -1,54 +1,54 @@
-## 当前阶段：提交最终决策
+## Current Stage: Submit Final Decision
 
-唯一输出是 prompt 指定的 `decision.json`：首次位于 `knowledge/stage9/<iter>/<请求编号>/`，两次同轮修正分别位于原请求的 `retry1/`、`retry2/` 子目录，以 prompt 给出的路径和新请求编号为准。首次加两次修正共尝试三次，第三次仍不合格则停止。程序校验后合并当前轮账本。只写本次文件，不修改 history、知识 Markdown、旧请求文件或原 question.md。
+The sole output is the prompt-specified `decision.json`: the first attempt is in `knowledge/stage9/<iter>/<request number>/`, and the two same-round corrections are in the original request's `retry1/`, `retry2/` subdirectories, per the paths and new request numbers given in the prompt. First attempt plus two corrections makes three tries in total; if the third still fails, it stops. After validation, the program merges the current round's ledger. Write only this file; do not modify history, knowledge Markdown, old request files, or the original question.md.
 
-先读本次请求目录中的三份程序文件；路径均相对 `<work>`，`<iter>` 是 `iter0`、`iter1` 等实际目录名，修正时读取本次 `retry1/` 或 `retry2/` 下的对应版本。程序会汇总能独立检查的错误；逐条处理 `validation_error.json` 的 `errors`，不要只修第一条：
+First read the three program files in this request directory; paths are relative to `<work>`, `<iter>` is an actual directory name such as `iter0`, `iter1`, and when correcting, read the corresponding version under this round's `retry1/` or `retry2/`. The program summarizes independently checkable errors; process each entry of `validation_error.json`'s `errors`, not just the first:
 
-- `knowledge/stage9/<iter>/<请求编号>/decision_schema.json`：程序定义的字段与类型；按当前场景的条件要求填写，不自行增加字段。
-- `knowledge/stage9/<iter>/<请求编号>/decision_template.json`：本次输出骨架；复制本次 iteration/request_id，填入真实内容，不能原样提交占位内容。
-- `knowledge/stage9/<iter>/<请求编号>/case_catalog.json`：程序收集的 case 编号及输入线索。`complete=true` 时目标编号从 `case_ids` 选；编译阶段或材料不完整时 `case_ids=null`，`observed_case_ids` 仅供参考，须自行核对输入原文，不能声称程序已验证编号完整。实际实现关系仍须查 dispatcher 和代码。
+- `knowledge/stage9/<iter>/<request number>/decision_schema.json`: the program-defined fields and types; fill in per the current scenario's conditions; do not add fields yourself.
+- `knowledge/stage9/<iter>/<request number>/decision_template.json`: this round's output skeleton; copy this round's iteration/request_id and fill in real content; do not submit placeholder content as-is.
+- `knowledge/stage9/<iter>/<request number>/case_catalog.json`: the case numbers and input clues collected by the program. When `complete=true`, target numbers are chosen from `case_ids`; during the build stage or when materials are incomplete, `case_ids=null` and `observed_case_ids` are for reference only — you must check the input originals yourself and cannot claim the program has verified the numbers are complete. The actual implementation relationships still require checking the dispatcher and code.
 
-必填字段：
+Required fields:
 
-- `plan_version`：固定为整数 `2`。
-- `iteration`：复制 prompt 的当前轮整数；编译/精度失败也使用本轮，不用最近成功评测轮。
-- `request_id`：原样复制本次请求编号。
-- `ledger_entry`：含非空 `evaluation_summary`（已检查的改动、结果及证据）、非空 `direction`（下一步方向概览）、`readonly_files`（本轮全局禁止修改的具体文件）及当前场景要求的 `case_analysis`。**不填写 `modify_files`、`action_plan` 或 `fix_plan`**；允许修改范围和每轮任务存档由程序从下面的任务自动生成。成绩和 verdict 评价已测实现，不评价新 direction；不回传 iter、reason、成绩或 verdict。
-- `suggest_next`：可执行任务列表，每项按下一节填写；仅程序明确语义退出时可为空。P0 是必须做的正确性问题、关键方向或人工指导，P1 为有依据的改进，P2 为待尝试优化。方向穷尽也只是建议，退出仍由程序决定。
+- `plan_version`: fixed to the integer `2`.
+- `iteration`: copy the prompt's current round integer; build/precision failures also use this round, not the most recent successful evaluation round.
+- `request_id`: copy this round's request number verbatim.
+- `ledger_entry`: contains a non-empty `evaluation_summary` (checked changes, results, and evidence), a non-empty `direction` (overview of the next-step direction), `readonly_files` (the specific files globally forbidden to modify this round), and the `case_analysis` required by the current scenario. **Do not fill in `modify_files`, `action_plan`, or `fix_plan`**; the allowed modification scope and each round's task archive are generated automatically by the program from the tasks below. Scores and verdicts evaluate the tested implementation, not the new direction; do not echo back iter, reason, scores, or verdict.
+- `suggest_next`: the list of executable tasks, each filled per the next section; it may be empty only when the program explicitly exits semantically. P0 is must-do correctness problems, key directions, or human guidance; P1 is evidence-based improvements; P2 is optimizations worth trying. Exhausting directions is only a suggestion; exit is still decided by the program.
 
-### 每条建议就是一份可检查的任务单
+### Each Suggestion Is a Checkable Task Order
 
-| 字段 | 怎么填 |
+| Field | How to fill |
 |---|---|
-| `task_id` | 本轮唯一编号，如 `T1`，便于 Stage3 逐项回报。 |
-| `priority`、`task_type` | P0/P1/P2；类型为 `inspect`（本轮只检查）或 `modify`（有修改/新建）。 |
-| `action`、`reason` | 一句话概括目标及依据；具体方法只写下面的 `changes`，不另藏执行指令。 |
-| `case_scope`、`target_cases`、`operator_reason` | `cases`：填写完整 case ID；catalog完整时从case_ids选，不完整时回查原始输入，工程理由为空。`operator`：整体构建/公共接口等工程任务，case列表为空并写明工程理由。不能用operator绕过已知case的路由核对。 |
-| `case_bindings` | 每个目标 case 一条：`case_id`、`implementation_files`（实际实现文件）、`route_evidence`（每条含 `file`、`location`、`explanation`，说明路由位置及为什么对应）。工程任务用空列表。 |
-| `changes` | 每个文件明确 `file`、`operation`（inspect/modify/create）、`location`（函数、符号或位置）、`method`（检查什么，或具体怎么改）。inspect 任务全部只读；modify 任务至少含一项 modify/create。 |
-| `acceptance_checks` | 非空文字列表，说明怎样确认完成，如复核 case 路由、给定 case 精度自测、验证目标耗时及其他 case 未退步。预期不是实测结果。 |
+| `task_id` | A unique number this round, e.g. `T1`, so Stage3 can report item by item. |
+| `priority`, `task_type` | P0/P1/P2; type is `inspect` (inspect only this round) or `modify` (involves modification/creation). |
+| `action`, `reason` | One sentence summarizing the goal and basis; specific methods go only in `changes` below; do not hide execution directives elsewhere. |
+| `case_scope`, `target_cases`, `operator_reason` | `cases`: fill in complete case IDs; when the catalog is complete choose from case_ids, when incomplete check the original inputs, and the engineering reason is empty. `operator`: overall build/common-interface engineering tasks, with an empty case list and a stated engineering reason. Do not use operator to bypass routing verification for known cases. |
+| `case_bindings` | One entry per target case: `case_id`, `implementation_files` (actual implementation files), `route_evidence` (each containing `file`, `location`, `explanation`, stating the routing location and why it corresponds). Use an empty list for engineering tasks. |
+| `changes` | For each file specify `file`, `operation` (inspect/modify/create), `location` (function, symbol, or position), `method` (what to check, or exactly how to change it). inspect tasks are entirely read-only; modify tasks must contain at least one modify/create. |
+| `acceptance_checks` | A non-empty list of statements on how completion is confirmed, e.g. re-checking case routing, precision self-testing of the given cases, verifying target timings, and that other cases did not regress. Expectations are not measured results. |
 
-不手填每条的 `inspect_files`、`modify_files`，这些兼容字段由程序从 `changes` 派生。程序还自动汇总本轮 `ledger.modify_files`，禁止其与全局 `readonly_files` 冲突；同一文件跨任务也必须一致。`inspect` 是重点检查对象，不是读取白名单。
+Do not hand-fill each item's `inspect_files` or `modify_files`; these compatibility fields are derived by the program from `changes`. The program also automatically aggregates this round's `ledger.modify_files`, which must not conflict with the global `readonly_files`; the same file across tasks must also be consistent. `inspect` marks a key inspection target, not a read whitelist.
 
-当前任务单规则：`case_scope=cases` 时，每个目标 case 至少有一条操作落在它绑定的实现文件上；`modify` 任务是修改/新建，`inspect` 任务是检查源码并对照证据。检查 profiler 的任务也须列出这项源码核对。`changes.file` 中的 `inspect` 同样填写实际文件，不填 `eval/<iter>/prof_data` 这样的目录；可以先浏览目录找到对应报告，再列出具体路径，不能猜造文件名。
+Current task-order rules: when `case_scope=cases`, at least one operation of each target case must land on its bound implementation files; a `modify` task modifies/creates, an `inspect` task inspects the source and checks it against evidence. Tasks inspecting the profiler must also list that source check. `inspect` entries in `changes.file` must also give the actual file, not a directory like `eval/<iter>/prof_data`; you may first browse the directory to find the corresponding report, then list the specific path — do not guess file names.
 
-文件较多时也要逐个填写实际路径，不用目录或通配符扩大范围；共用文件可在不同任务中列出，程序会汇总去重。原始需求及参考答案、上游报告、历史账本、初始融合库、最佳快照、人工消息和程序状态等是固定只读输入，不能通过省略 `readonly_files` 授权 Stage3 修改。评测或编译链路有问题时，给出实现工程内可执行的修复，或如实说明外部问题及待处理事项，不能改旧报告伪造修复结果。
+Even with many files, fill in actual paths one by one; do not use directories or wildcards to widen the scope; shared files may be listed in different tasks, and the program aggregates and deduplicates. The original requirements and reference answers, upstream reports, the historical ledger, the initial fusion library, best snapshots, human messages, and program state are fixed read-only inputs; do not authorize Stage3 to modify them by omitting `readonly_files`. When the evaluation or build chain has problems, give a fix executable within the implementation project, or truthfully state the external problem and pending items; do not alter old reports to fake a fix.
 
-以上路径都相对当前 work 根目录，列具体文件，不用绝对路径、`..`、通配符或目录范围。提交前核对 case 的 dtype/shape、dispatcher 路由及实际实现文件，不能凭 case 名猜文件。逐条核对概括、case 映射、文件操作和方法：若 case7 走 c2，要调整其遍历顺序，就在 changes 明确修改 c2，不能把 c2 列为只读；若保持只读，只能安排检查，method 不得夹带“试着修改”。无法确定实际目标文件时先查证；仍不能定位就如实给出有证据支持的检查任务，不伪造映射或改法。
+All the above paths are relative to the current work root; list specific files, not absolute paths, `..`, wildcards, or directory ranges. Before submitting, check each case's dtype/shape, dispatcher routing, and actual implementation files; do not guess files from case names. Verify each item's summary, case mapping, file operations, and methods: if case7 goes through c2 and its traversal order must be adjusted, make it explicit in changes that c2 is modified — do not list c2 as read-only; if keeping it read-only, only schedule an inspection, and the method must not smuggle in "try modifying". When the actual target file cannot be determined, verify first; if it still cannot be located, truthfully give an evidence-supported inspection task; do not fake mappings or changes.
 
-程序检查结构、完整目录下的case编号、声明的映射/操作一致性、文件存在及范围冲突；目录不完整时不冒充已完成编号校验，也不能据此认为路由解释或改法已自动证明正确。本轮没有额外语义审查模型。收到错误时结合证据修正整份任务单，不能删除目标case、改成工程任务或扩大权限来绕过检查。
+The program checks structure, case numbers under the complete directory, consistency of declared mappings/operations, file existence, and scope conflicts; when the directory is incomplete, do not pretend number validation is done, and do not take it as proof that routing explanations or changes are automatically correct. This round has no additional semantic review model. Upon receiving errors, correct the whole task order against the evidence; do not bypass checks by deleting target cases, converting to engineering tasks, or expanding permissions.
 
-性能场景还须在 `ledger_entry.case_analysis` 中逐一记录 prompt 列出的最慢 case（最多6个；case_id 原样复制，不改成 case_18 等别名）。每项包含非空 `case_id`、`observation`（本轮现象）、`explanation`（结论，明确已证实/推测/待验证）、`evidence`（报告字段、代码位置或 Stage7 对应段落）、`next_action`（改法或下一步验证；无需改动也须说明）。可以复用 Stage7 的具体证据，但先核对代码与报告；不知道根因就写待验证及如何确认，不编造结论。程序检查覆盖后保存到本轮账本，并按 case 更新长期追踪。编译、精度及评测异常场景的 `ledger_entry.case_analysis` 只能省略或填 `[]`；失败 case 的现象、原因和证据写入 `evaluation_summary`，具体修复及验证要求写入对应的 `suggest_next` 任务。
+In performance scenarios, also record each slow case listed in the prompt in `ledger_entry.case_analysis` (at most 6; copy case_id verbatim; do not change it to aliases like case_18). Each item contains a non-empty `case_id`, `observation` (this round's symptom), `explanation` (conclusion, clearly marked confirmed/speculated/to-be-verified), `evidence` (report fields, code locations, or the corresponding Stage7 passage), and `next_action` (the change or next verification; even if no change is needed, state it). You may reuse Stage7's specific evidence, but check the code and reports first; if the root cause is unknown, write to-be-verified and how to confirm; do not fabricate conclusions. After the program checks coverage, it saves them to this round's ledger and updates long-term tracking per case. In build, precision, and evaluation-anomaly scenarios, `ledger_entry.case_analysis` may only be omitted or filled with `[]`; the failing cases' symptom, cause, and evidence go into `evaluation_summary`, and the specific fixes and verification requirements go into the corresponding `suggest_next` tasks.
 
-总结以几句能支撑决策的话为宜，详细推导引用文件；不机械凑字数，也不删掉关键适用条件。保持“本轮结果”和“下一步计划”各自清楚。
+Keep the summary to a few sentences that support decisions, citing files for detailed reasoning; do not pad mechanically, and do not drop key applicability conditions. Keep "this round's results" and "next-step plan" clearly separate.
 
-按当前场景实际需要填写模型结论；没有新证据时可省略相应字段，程序保留原值：
+Fill in the model conclusions per the current scenario's actual needs; when there is no new evidence, the corresponding fields may be omitted and the program keeps the original values:
 
-- `insights`：提供更新后的完整列表，只替换此模型结论字段。每条按 `[方向] iterX–iterY | 证据: … | 结论: … | 状态: 已验证/已否决/待继续` 写；合并同方向、更新过时判断，保留仍有效的历史经验，不编造指标。
-- `bottleneck_now`：当前主要问题；性能场景说明瓶颈类型、受影响 case，以及报告中有依据的占比。
-- `worst_cases_tracker`：可省略；程序从本轮 case_analysis 自动更新 case 的结论并标记轮次，保留其他 case。需要补充其他已测 case 时可提交增量对象，键使用报告的完整 case_id；不复制全量历史，也不把旧结论冒充本轮分析。各轮原始分析保留在 ledger[].case_analysis。
-- `fusion_kernel_strategy`：仅提交本轮新尝试列表，每条 `iter` 为本轮整数，`direction` 描述实际数据流，`evidence` 引用绑定的代码或报告，`status` 说明已验证/无效/待验证。无新尝试可省略或给空列表；程序保留并去重追加旧条目，不复制历史。
+- `insights`: provide the updated complete list, replacing only this model-conclusion field. Write each entry as `[direction] iterX–iterY | evidence: … | conclusion: … | status: verified/rejected/to-be-continued`; merge same directions, update outdated judgments, keep historical experience that is still valid; do not fabricate metrics.
+- `bottleneck_now`: the current main problem; in performance scenarios, state the bottleneck type, affected cases, and the evidence-based share from the report.
+- `worst_cases_tracker`: may be omitted; the program automatically updates the conclusions and round marks for cases from this round's case_analysis and keeps other cases. To supplement other tested cases, you may submit incremental objects keyed by the report's complete case_id; do not copy the full history, and do not pass off old conclusions as this round's analysis. Each round's raw analyses are kept in ledger[].case_analysis.
+- `fusion_kernel_strategy`: submit only this round's new attempts; each entry's `iter` is this round's integer, `direction` describes the actual data flow, `evidence` references the bound code or reports, and `status` states verified/invalid/to-be-verified. If there are no new attempts, omit or give an empty list; the program keeps and deduplicates appended old entries; do not copy history.
 
-顶层仅使用以上字段，以及本次条件规则明确要求的 `proven_pattern`、`regression_pattern`、`pitfall`、`human_responses`。不要输出 `rounds`、`ledger`、`exit_decision`、`_pending_*` 或自行增加控制字段。模型只提交分析；程序填写硬指标并保留历史。
+Use only the above fields at the top level, plus the `proven_pattern`, `regression_pattern`, `pitfall`, and `human_responses` explicitly required by this round's conditional rules. Do not output `rounds`, `ledger`, `exit_decision`, `_pending_*`, or add control fields yourself. The model only submits analysis; the program fills in hard metrics and keeps history.
 
-`proven_pattern` / `regression_pattern` 仅在本次可比性能涨跌条件触发时填写；精度失败不是“性能退步”。`pitfall` 仅用于裁定本次指定的开发 `question.md`，不是通用错误笔记。本轮 schema 没列出的这些字段必须省略，不能自行设计 id/title/fix 等格式；有用的错误原因、教训仍须保留在 `evaluation_summary` 和修复任务中。
+`proven_pattern` / `regression_pattern` are filled only when this round's comparable performance up/down condition is triggered; a precision failure is not a "performance regression". `pitfall` is only for adjudicating this round's specified developer `question.md`, not a general mistake notebook. These fields not listed in this round's schema must be omitted; do not invent formats like id/title/fix yourself; useful error causes and lessons must still be kept in `evaluation_summary` and the fix tasks.

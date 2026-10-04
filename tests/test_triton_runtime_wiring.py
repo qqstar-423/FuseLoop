@@ -120,7 +120,7 @@ class TritonRuntimeWiringTests(unittest.TestCase):
         other = fixture.work / "different_task"
         other.mkdir()
         with fixture.patches(), patch("sys.argv", ["orchestrator.py", "--task-dir", str(other),
-                "--work-dir", str(fixture.work)]), self.assertRaisesRegex(ValueError, "task 与 --task-dir 不一致"):
+                "--work-dir", str(fixture.work)]), self.assertRaisesRegex(ValueError, "task does not match --task-dir"):
             orchestrator.main()
         self.assertEqual(fixture.events, [])
         self.assertEqual(original.read_text(encoding="utf-8"), "original task")
@@ -130,7 +130,7 @@ class TritonRuntimeWiringTests(unittest.TestCase):
         task = work / "task"
         task.mkdir(parents=True)
         self.assertEqual(ensure_task_link(work, task), task.resolve())
-        with self.assertRaisesRegex(ValueError, "task 目录不存在"):
+        with self.assertRaisesRegex(ValueError, "task directory does not exist"):
             ensure_task_link(work, self.root / "missing")
 
     def test_eval_preserves_full_probe_environment_and_ctypes_compatibility(self):
@@ -169,7 +169,7 @@ class TritonRuntimeWiringTests(unittest.TestCase):
         config = self.config_file("synthetic.yaml", toolkit)
         with patch.object(cann_env.subprocess, "run", return_value=SimpleNamespace(
                 returncode=1, stdout="", stderr="synthetic failure")) as run, \
-                self.assertRaisesRegex(RuntimeError, "set_env.sh 执行失败"):
+                self.assertRaisesRegex(RuntimeError, "set_env.sh execution failed"):
             cann_env.build_cann_env(config_path=config)
         self.assertIn("&& env -0", run.call_args.args[0][-1])
         self.assertIsNone(cann_env._cached_cann_env)

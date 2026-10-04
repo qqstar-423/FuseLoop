@@ -117,7 +117,7 @@ class State:
         lines = []
         for h in recent:
             lines.append(
-                f"- 迭代{h['iteration']}: 精度={'PASS' if h.get('precision_pass') else 'FAIL'}, "
-                f"性能加速比={h.get('speedup', 'N/A')}"
+                f"- Iteration{h['iteration']}: precision={'PASS' if h.get('precision_pass') else 'FAIL'}, "
+                f"perf speedup={h.get('speedup', 'N/A')}"
             )
-        return "\n".join(lines) if lines else "(无历史记录)"
+        return "\n".join(lines) if lines else "(no history records)"

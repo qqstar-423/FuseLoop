@@ -1,4 +1,4 @@
-"""Offline workflow checks with real evidence, selection and Tech Lead bookkeeping."""
+﻿"""Offline workflow checks with real evidence, selection and Tech Lead bookkeeping."""
 
 from contextlib import ExitStack
 import json
@@ -165,13 +165,13 @@ class SemanticRoutingTests(unittest.TestCase):
         self.assertEqual((Path(best["implementation_dir"]) / "synthetic_op.py").read_text(encoding="utf-8"),
                          "# implementation revision 0\n")
         logs = (self.work / "log/workflow.log").read_text(encoding="utf-8")
-        for token in ("[最佳实现] 更新 iter1", "[最佳实现] 保留 iter1", "avg_speedup=1.6",
+        for token in ("[best implementation] updated iter1", "[best implementation] kept iter1", "avg_speedup=1.6",
                       "avg_speed=1.6", "HAP.performance_score=12.75", '"perf_score": 0.4',
-                      "all_cases_pass=True", "min_case_speedup=1.6", "融合方法=['F2']",
+                      "all_cases_pass=True", "min_case_speedup=1.6", "fusion methods=['F2']",
                       best["implementation_dir"], best["performance_report"], best["performance_result"],
                       best["manifest_path"], best["evidence_paths"]["decision_rationale"]):
             self.assertIn(token, logs)
-        self.assertNotIn("【场景2停滞", logs)
+        self.assertNotIn("[Scenario 2 stagnation", logs)
 
     def test_iteration_limit_reports_best_evaluated_snapshot_and_keeps_live_revision(self):
         self.perfs = {1: (1.6,), 2: (1.4,)}
@@ -205,26 +205,26 @@ class SemanticRoutingTests(unittest.TestCase):
         self.assertIn("y=2", notice)
         self.assertIn("iter1→iter3", notice)
         self.assertIn("1.49% < 5%", notice)
-        self.assertIn("慢 case 持续改善", notice)
-        self.assertTrue(all("【场景2停滞" not in text for iteration, stage, text in self.seen
+        self.assertIn("slow cases keep improving", notice)
+        self.assertTrue(all("[Scenario 2 stagnation" not in text for iteration, stage, text in self.seen
                             if stage == "stage9" and iteration < 3))
         workflow_log = (self.work / "log/workflow.log").read_text(encoding="utf-8")
         state_log = (self.work / "log/state_transitions.log").read_text(encoding="utf-8")
-        self.assertIn("[WARNING] ===== 场景2停滞触发：第1次进入本场景 =====", state_log)
-        self.assertIn("[WARNING] [Stage9 提示词追加]\n" + notice, workflow_log)
-        inputs = workflow_log.split("[Stage9 融合重点审查输入及证据来源]\n", 1)[1].split("\n[", 1)[0]
-        for path in (self.fixture.library_path, self.work / "develop/iter2/融合方案选择决策依据.md",
+        self.assertIn("[WARNING] ===== Scenario 2 stagnation trigger: entry 1 into this scene =====", state_log)
+        self.assertIn("[WARNING] [Stage9 prompt addition]\n" + notice, workflow_log)
+        inputs = workflow_log.split("[Stage9 fusion review inputs and evidence sources]\n", 1)[1].split("\n[", 1)[0]
+        for path in (self.fixture.library_path, self.work / "develop/iter2/fusion_scheme_rationale.md",
                      self.work / "develop/iter2/fusion_library.json", self.work / "develop/iter2/self_test_report.md",
                      self.work / "selection/state.json", Path(status["best"]["manifest_path"]),
                      self.work / "profile/iter3/bottleneck_analysis.md", self.work / "search/iter3/FIX_DIRECTIVE.md"):
             self.assertIn(str(path).replace('\\', '/'), inputs.replace('\\', '/'))
-        self.assertNotIn(str(self.work / "develop/iter3/融合方案选择决策依据.md"), inputs)
+        self.assertNotIn(str(self.work / "develop/iter3/fusion_scheme_rationale.md"), inputs)
         for stage in ("stage7", "stage8", "stage9"):
-            self.assertIn(str(self.work / "develop/iter2/融合方案选择决策依据.md"),
+            self.assertIn(str(self.work / "develop/iter2/fusion_scheme_rationale.md"),
                           self.fixture.prompts[stage])
-            self.assertIn("相对工作目录：`develop/iter2/融合方案选择决策依据.md`", self.fixture.prompts[stage])
-            self.assertIn("迭代模板：`develop/<iter>/融合方案选择决策依据.md`", self.fixture.prompts[stage])
-            self.assertNotIn(str(self.work / "develop/iter3/融合方案选择决策依据.md"),
+            self.assertIn("relative to working directory: `develop/iter2/fusion_scheme_rationale.md`", self.fixture.prompts[stage])
+            self.assertIn("iteration template: `develop/<iter>/fusion_scheme_rationale.md`", self.fixture.prompts[stage])
+            self.assertNotIn(str(self.work / "develop/iter3/fusion_scheme_rationale.md"),
                              self.fixture.prompts[stage])
 
     def test_resume_underperforming_stage9_keeps_review_notice_without_recounting(self):
@@ -238,7 +238,7 @@ class SemanticRoutingTests(unittest.TestCase):
         self.assertEqual(self.fixture.events.count("stage6"), 3)
         self.assertEqual(self.selection_status()["window"], status_before["window"])
         self.assertIn(orchestrator.fusion_review_hint(status_before, 3), self.fixture.prompts["stage9"])
-        self.assertIn("[Stage9 融合重点审查输入及证据来源]",
+        self.assertIn("[Stage9 fusion review inputs and evidence sources]",
                       (self.work / "log/workflow.log").read_text(encoding="utf-8"))
 
     def test_regression_and_improvement_still_write_knowledge_via_real_tech_lead(self):
@@ -260,11 +260,11 @@ class SemanticRoutingTests(unittest.TestCase):
         self.assertIn("Keep the measured tile", proven)
         self.assertIn("10.5", proven)
         for report in (regression, proven):
-            self.assertIn("逐 case 分析", report)
+            self.assertIn("Per-case analysis", report)
             self.assertIn("synthetic_op_1", report)
             self.assertIn("perf_result.json", report)
-        self.assertNotIn("tech_lead 未填写", regression + proven)
-        self.assertNotIn("待分析", regression + proven)
+        self.assertNotIn("tech_lead not filled in", regression + proven)
+        self.assertNotIn("to be analyzed", regression + proven)
         self.assertEqual([iteration for iteration, stage, _ in self.seen if stage == "stage9"], [1, 2, 3])
         history = load_history(str(self.work))
         self.assertEqual([entry["iter"] for entry in history["ledger"]], [1, 2, 3])

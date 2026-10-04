@@ -23,7 +23,7 @@ class TritonPromptPathTests(unittest.TestCase):
         self.assertIn("impl/cann_bench/", prompt.replace("\\", "/"))
         self.assertIn("setup.py", prompt)
         self.assertNotIn("synthetic_op_impl.py", prompt)
-        stage2 = next(call for call in events.call_args_list if "阶段2" in call.args[1])
+        stage2 = next(call for call in events.call_args_list if "Stage2" in call.args[1])
         self.assertTrue(any(Path(item).name == "impl" for item in stage2.args[3]))
         self.assertFalse(any(item.endswith("_impl.py") for item in stage2.args[3]))
 
@@ -42,7 +42,7 @@ class TritonPromptPathTests(unittest.TestCase):
                     flow.perfs = {1: (1.6,)}
                 with patch.object(orchestrator, "log_io", wraps=orchestrator.log_io) as events:
                     flow.run_workflow(max_iterations=1)
-                repairs = [call for call in events.call_args_list if "阶段3" in call.args[1]]
+                repairs = [call for call in events.call_args_list if "Stage3" in call.args[1]]
                 self.assertTrue(repairs)
                 for call in repairs:
                     for paths in (call.args[2], call.args[3]):

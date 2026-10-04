@@ -45,7 +45,7 @@ def assert_target_implementation(directory):
             # of the previous target must still not enter a Triton run.
             previous_framework = bool(re.search(r"(?m)^\s*(?:from|import)\s+pypto(?:_pro)?\b", source))
         if previous_framework:
-            raise ValueError(f"实现仍导入旧 PyPTO 框架：{path}。请先提供 Triton Ascend 实现，并使用新的 work 目录；旧文件未改动。")
+            raise ValueError(f"The implementation still imports the old PyPTO framework: {path}. Provide a Triton Ascend implementation and use a new work directory; the old files were not modified.")
 
 
 def ensure_workflow_target(work_dir):
@@ -56,9 +56,9 @@ def ensure_workflow_target(work_dir):
         try:
             target = json.loads(marker.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError) as exc:
-            raise ValueError(f"无法核对工作目录目标框架：{marker}；请使用新的 work 目录") from exc
+            raise ValueError(f"Cannot verify the working directory\'s target framework: {marker}; use a new work directory") from exc
         if not isinstance(target, dict) or any(target.get(key) != value for key, value in TARGET_IDENTITY.items()):
-            raise ValueError(f"工作目录不是 Triton Ascend 任务：{marker}。禁止跨框架断点续跑，请使用新的 work 目录。")
+            raise ValueError(f"The working directory is not a Triton Ascend task: {marker}. Cross-framework checkpoint resume is forbidden; use a new work directory.")
         assert_target_implementation(work / "impl")
         return marker
     existing = [work / name for name in (".state.json", "history.json", "device_info.json", "ANALYSIS.md")
@@ -68,7 +68,7 @@ def ensure_workflow_target(work_dir):
         if folder.is_dir() and any(path.is_file() for path in folder.rglob("*")):
             existing.append(folder)
     if existing:
-        raise ValueError(f"已有工作目录缺少 {TARGET_FILE}，无法证明其属于 Triton Ascend；禁止把旧 PyPTO 任务直接续跑。请新建 work 目录。已有文件未改动。")
+        raise ValueError(f"The existing work directory lacks {TARGET_FILE}, so it cannot be proven to belong to Triton Ascend; resuming an old PyPTO task directly is forbidden. Create a new work directory. Existing files were not modified.")
     work.mkdir(parents=True, exist_ok=True)
     atomic_write_json(marker, TARGET_IDENTITY)
     return marker
@@ -79,11 +79,11 @@ def ensure_example_link(work_dir, cannbench_repo):
     source = Path(cannbench_repo).resolve() / "examples" / "triton_ascend_cann_example"
     link = Path(work_dir) / "example"
     if not (source / "cann_bench" / "__init__.py").is_file():
-        raise ValueError(f"缺少 Triton Ascend 标准示例：{source}；请更新 paths.cannbench_repo 对应仓库，确认 cann_bench/__init__.py 存在。")
+        raise ValueError(f"Missing the standard Triton Ascend example: {source}; update the repository at paths.cannbench_repo and confirm cann_bench/__init__.py exists.")
     assert_target_implementation(source)
     if os.path.lexists(link):
         if not link.is_dir() or link.resolve() != source:
-            raise ValueError(f"工作目录 example 来源不匹配：{link}；要求指向 {source}。请使用新 work 目录，不能继续使用旧框架示例。")
+            raise ValueError(f"The working directory\'s example source does not match: {link}; it must point to {source}. Use a new work directory; the old framework\'s example cannot be reused.")
     else:
         os.symlink(source, link, target_is_directory=True)
     return source
@@ -94,10 +94,10 @@ def ensure_task_link(work_dir, task_dir):
     source = Path(task_dir).resolve()
     link = Path(work_dir) / "task"
     if not source.is_dir():
-        raise ValueError(f"算子 task 目录不存在：{source}")
+        raise ValueError(f"Operator task directory does not exist: {source}")
     if os.path.lexists(link):
         if not link.is_dir() or link.resolve() != source:
-            raise ValueError(f"工作目录 task 与 --task-dir 不一致：{link}；本次要求 {source}。请使用对应的 task 或新 work 目录，禁止混用需求与评测用例。")
+            raise ValueError(f"The working directory\'s task does not match --task-dir: {link}; {source} is required. Use the matching task or a new work directory; mixing requirements with evaluation cases is forbidden.")
     else:
         os.symlink(source, link, target_is_directory=True)
     return source
@@ -124,14 +124,14 @@ def read_cann_toolchain(env):
                 continue
             raw = path.read_bytes()
             if not raw.strip():
-                raise RuntimeError(f"CANN 版本信息为空：{path}")
+                raise RuntimeError(f"CANN version info is empty: {path}")
             content = raw.decode("utf-8-sig", errors="replace")
             versions = re.findall(r"(?mi)^\s*version\s*=\s*(.+?)\s*$", content)
             resolved = str(path.resolve())
             files[resolved] = {"path": resolved, "sha256": hashlib.sha256(raw).hexdigest(),
                                "version": versions[0] if versions else "see_version_file"}
     if not files:
-        raise RuntimeError("无法验证 CANN 工具链版本：请核对当前 CANN 环境变量及 compiler/version.info 或 version.info；缺少版本证据时不允许混用性能记录。")
+        raise RuntimeError("Cannot verify the CANN toolchain version: check the current CANN environment variables and compiler/version.info or version.info; mixing performance records without version evidence is not allowed.")
     return {"verified": True, "cann_roots": roots,
             "version_files": [files[key] for key in sorted(files)]}
 
@@ -163,27 +163,27 @@ def detect_triton_runtime(device_id=0, config_path=None):
         result = subprocess.run(["python3", "-c", script], capture_output=True, text=True,
                                 timeout=60, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"Triton Ascend 运行环境检测无法完成：{exc}") from exc
+        raise RuntimeError(f"Triton Ascend runtime environment detection could not complete: {exc}") from exc
     if result.returncode:
-        raise RuntimeError("Triton Ascend 运行环境检测失败；请检查 triton-ascend、torch_npu 与 CANN 的版本兼容性。\n"
+        raise RuntimeError("Triton Ascend runtime environment detection failed; check version compatibility among triton-ascend, torch_npu and CANN.\n"
                            + (result.stderr or result.stdout)[-1200:])
     lines = [line.split("=", 1)[1] for line in result.stdout.splitlines()
              if line.startswith("WORKFLOW_TRITON_RUNTIME=")]
     try:
         runtime = json.loads(lines[-1])
     except (IndexError, TypeError, ValueError) as exc:
-        raise RuntimeError("Triton Ascend 检测没有返回有效的后端信息") from exc
+        raise RuntimeError("Triton Ascend detection returned no valid backend information") from exc
     if not isinstance(runtime, dict):
-        raise RuntimeError("Triton Ascend 检测没有返回后端对象")
+        raise RuntimeError("Triton Ascend detection returned no backend object")
     # triton-ascend registers the active compiler target as "npu". This is
     # distinct from the human-readable distribution/backend label above.
     if runtime.get("driver_backend") != "npu":
-        raise RuntimeError(f"本项目要求 Triton Ascend，实际活动后端为 {runtime.get('driver_backend', 'unknown')}；不能使用 CUDA/HIP 后端代替。")
+        raise RuntimeError(f"This project requires Triton Ascend, but the actual active backend is {runtime.get('driver_backend', 'unknown')}; a CUDA/HIP backend cannot substitute.")
     versions = runtime.get("runtime_versions")
     if (not isinstance(versions, dict) or any(not isinstance(versions.get(name), str)
             or not versions[name].strip() or versions[name].lower() == "unknown"
             for name in ("triton", "triton_ascend", "torch", "torch_npu"))):
-        raise RuntimeError("Triton Ascend 检测缺少实际 triton/triton-ascend/torch/torch_npu 版本")
+        raise RuntimeError("Triton Ascend detection lacks actual triton/triton-ascend/torch/torch_npu versions")
     runtime.update(framework=FRAMEWORK, backend=BACKEND, programming_model=PROGRAMMING_MODEL,
                    toolchain=toolchain)
     return runtime

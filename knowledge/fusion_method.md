@@ -1,134 +1,134 @@
-# Triton Ascend 融合算子方案
+# Triton Ascend Fusion Operator Plans
 
-本目录为 Stage1.5、开发、分析和决策节点提供 **10 类方法、24 个变体**。具体选项与稳定 ID 在 `knowledge/fusion_options.json`，以当前任务、芯片和 triton-ascend 能力选用，不预先规定哪种方法一定更快。
+This directory provides **10 method classes with 24 variants** for the Stage1.5, development, analysis and decision nodes. Concrete options and stable IDs are in `knowledge/fusion_options.json`; choose based on the current task, chip and triton-ascend capabilities — no method is pre-declared to always be faster.
 
-这些是设计选项，不是已验证 Triton 性能结论。旧 PyPTO 材料由用户另存备份，不作为当前框架的 API、能力或成绩。Jev 为每类独立评分，概率不必相加为 1，不等于实测收益；暂时不可表达的方法仍保留 ID，但必须说明能力缺口，不能仅凭高概率要求开发实现。
+These are design options, not verified Triton performance conclusions. Old PyPTO materials were backed up separately by the user and do not serve as the current framework's APIs, capabilities, or results. Jev scores each class independently; probabilities need not sum to 1 and do not equal measured gains; methods that are currently inexpressible keep their IDs, but the capability gap must be stated — implementation cannot be demanded on high probability alone.
 
-## 共同前提
+## Common Preconditions
 
-- 数学语义、接口、给定 case 与精度要求不变。核心计算由自定义 `@triton.jit` 实现；host 不代算，不复用旧输入的结果。
-- 每个 program 的访存遵守真实 stride、边界 mask、归约中性值和累加精度。grid/分块结合实际 Vector/Cube 核数与存活数据量选择。
-- 单 kernel 不保证中间结果全在片上；多 kernel 不等于失败。只有实际编译与 profiler 才能证明物化、溢出、搬运和计算单元。
-- L2 Cache 不是 DSM；容量不保证驻留，不保证不落 HBM。独立 program/stream 不能假定存在任意全局同步或跨核共享地址空间。
-- GPU 专用通信、warp/SM 调度和论文原型不自动适用于昇腾 Triton。所有 API、流水选项和同步机制以安装版本与实验证据核对。
-- 正式比较须同框架/后端、硬件、case、基准和计时口径；自测结果、论文数字、Jev 概率不能充当正式性能成绩。
+- Math semantics, interfaces, given cases and precision requirements stay unchanged. Core computation is implemented by custom `@triton.jit`; the host does not compute on the kernel's behalf and does not reuse results from old inputs.
+- Each program's memory accesses follow real strides, boundary masks, reduction neutral values and accumulation precision. grid/tiling are chosen against the actual Vector/Cube core counts and live data volume.
+- A single kernel does not guarantee intermediate results stay on chip; multiple kernels do not mean failure. Only actual compilation and profiler evidence can prove materialization, spills, transfers and compute units.
+- The L2 Cache is not DSM; capacity does not guarantee residency and does not guarantee staying off HBM. Independent programs/streams cannot assume arbitrary global synchronization or a cross-core shared address space.
+- GPU-specific communication, warp/SM scheduling and paper prototypes do not automatically apply to Ascend Triton. All APIs, pipelining options and synchronization mechanisms must be verified against the installed version and experimental evidence.
+- Official comparison requires the same framework/backend, hardware, cases, baseline and timing protocol; self-test results, paper numbers and Jev probabilities cannot serve as official performance results.
 
-## F1: Kernel Fission / Partial Fusion（拆分与半融合）
+## F1: Kernel Fission / Partial Fusion (fission and partial fusion)
 
-把复合计算拆成多个 kernel，每段选择合适的布局和分块，段内仍可融合。例如卷积 kernel 写工作区，激活 kernel 再读工作区并写输出。
+Split a compound computation into multiple kernels, choosing a suitable layout and tiling for each segment; fusion within a segment is still allowed. For example, a convolution kernel writes a workspace, and an activation kernel then reads the workspace and writes the output.
 
-适合全融合资源过重、不同阶段最优分工不同的情况。代价是工作区读写与额外启动；各 kernel 仍有真实数据依赖，不能宣称没有同步成本。Triton 中显式分配工作区，保证初始化与执行顺序，整体工作都计入评测。
+Suitable when full fusion is too resource-heavy or when different stages have different optimal divisions of labor. The cost is workspace read/write and extra launches; kernels still have real data dependencies, so claiming there is no synchronization cost is not allowed. In Triton, allocate the workspace explicitly, guarantee initialization and execution order, and count all work in the evaluation.
 
-变体：
+Variants:
 
-- `F1.compute_epilogue_split`：计算与后处理拆分.
-- `F1.partial_fusion_partitions`：分段内部融合.
-- `F1.primitive_orchestration`：原语拆分后重新编排.
+- `F1.compute_epilogue_split`: split computation and epilogue.
+- `F1.partial_fusion_partitions`: fusion within segments.
+- `F1.primitive_orchestration`: decompose into primitives, then re-orchestrate.
 
-## F2: Vertical Fusion（垂直融合）
+## F2: Vertical Fusion (vertical fusion)
 
-将相邻生产者和消费者放在同一 kernel 的计算过程中，例如矩阵计算后直接做偏置和激活，再写输出。
+Place adjacent producers and consumers inside the same kernel's computation, e.g., after matrix computation, do bias and activation directly, then write the output.
 
-适合依赖、布局和分块可兼容的链路。可减少物化，但中间张量、归约或同步可能增大资源需求。对 `tl.dot` 及 CV 融合核实后端支持，不能从源码里“只有一次 launch”推断实际无 HBM 中间读写。
+Suitable for chains whose dependencies, layouts and tiling are compatible. It can reduce materialization, but intermediate tensors, reductions or synchronization may increase resource demand. Verify backend support for `tl.dot` and CV fusion; do not infer from "only one launch" in the source code that there are no actual HBM intermediate reads/writes.
 
-变体：
+Variants:
 
-- `F2.compute_epilogue`：计算与后处理同核.
-- `F2.loop_chain`：兼容循环链融合.
-- `F2.tiled_pipeline`：按块生产消费流水.
+- `F2.compute_epilogue`: computation and epilogue in the same kernel.
+- `F2.loop_chain`: fusion of compatible loop chains.
+- `F2.tiled_pipeline`: block-wise producer-consumer pipelining.
 
-## F3: Horizontal Fusion（水平融合）
+## F3: Horizontal Fusion (horizontal fusion)
 
-把没有数据依赖的分支组织在一次 kernel 调用中，以减少启动或改善资源利用；不同 program 可负责不同合法区域。
+Organize branches without data dependencies into a single kernel invocation to reduce launches or improve resource utilization; different programs may handle different legal regions.
 
-适合许多小分支或互补工作。需要检查不同区域的工作量、分支条件与资源需求；两个独立分支放在同一文件或 wrapper 里不算完成水平融合，GPU 线程/warp 分区方法不能直接照搬。
+Suitable for many small branches or complementary work. Check the workload, branch conditions and resource needs of the different regions; putting two independent branches in the same file or wrapper does not count as horizontal fusion, and GPU thread/warp partitioning methods cannot be copied directly.
 
-变体：
+Variants:
 
-- `F3.complementary_regions`：互补独立区域.
-- `F3.small_branches`：多个独立小分支.
+- `F3.complementary_regions`: complementary independent regions.
+- `F3.small_branches`: multiple independent small branches.
 
-## F4: Input / Output Fusion（输入输出融合）
+## F4: Input / Output Fusion (input/output fusion)
 
-多个分支共享输入时复用加载，或生产者直接计算多个任务要求的输出，减少重复读写。
+When multiple branches share inputs, reuse loads; or a producer directly computes several outputs required by the task, reducing duplicate reads/writes.
 
-适合多消费者、多输出图。先确认复用范围、广播/布局和输出接口，再评估增加的活跃张量。单一卷积加激活链不因名字包含“输入输出”就自动适合这类。
+Suitable for multi-consumer, multi-output graphs. First confirm the reuse scope, broadcast/layout and output interfaces, then evaluate the added live tensors. A single conv-plus-activation chain is not automatically suitable for this class just because the name contains "input/output".
 
-变体：
+Variants:
 
-- `F4.shared_input`：共享输入分支.
-- `F4.producer_multi_consumer`：生产者与多个消费者.
-- `F4.multi_output`：任务要求的多输出.
+- `F4.shared_input`: branches sharing inputs.
+- `F4.producer_multi_consumer`: producer with multiple consumers.
+- `F4.multi_output`: the multiple outputs required by the task.
 
-## F5: Hybrid Routing（按形状路由）
+## F5: Hybrid Routing (shape-based routing)
 
-针对不同 shape/dtype/合法元数据选择不同的 kernel 或分块，例如部分 case 用 F1，另一些用 F2；也可以在同一融合方式内选择不同 BLOCK/grid。
+Choose different kernels or tiling for different shape/dtype/legal metadata, e.g., some cases use F1 and others use F2; you may also choose different BLOCK/grid within one fusion method.
 
-这是多种具体方案的选择方式。路由条件必须来自输入元数据，完整覆盖任务，不按测试编号或答案分流；同 shape 更换数据必须仍正确。每个分支都要编译、自测和统一评测，保留通用路径处理未专门优化的合法输入。
+This is a selection mechanism over multiple concrete plans. Routing conditions must come from input metadata, must fully cover the task, and must not branch by test index or answer; with the same shape but different data, correctness must still hold. Every branch must be compiled, self-tested and evaluated under the same protocol; keep a generic path to handle legal inputs that were not specially optimized.
 
-变体：
+Variants:
 
-- `F5.fusion_boundary_routing`：不同融合边界路由.
-- `F5.schedule_routing`：调度与分块路由.
-- `F5.specialized_with_fallback`：专用实现加通用路径.
+- `F5.fusion_boundary_routing`: routing across different fusion boundaries.
+- `F5.schedule_routing`: routing of scheduling and tiling.
+- `F5.specialized_with_fallback`: specialized implementations plus a generic path.
 
-## F6: Multi-stage Pipeline with Inter-core On-chip Sharing（跨核片上共享流水）
+## F6: Multi-stage Pipeline with Inter-core On-chip Sharing (inter-core on-chip shared pipeline)
 
-让多个阶段通过硬件与后端确实支持的跨核片上通信交换块数据，减少全局工作区物化。
+Have multiple stages exchange tile data via inter-core on-chip communication that the hardware and backend genuinely support, reducing global workspace materialization.
 
-这是强能力依赖方案。必须证明共享范围、地址可见性、同步与进度机制均可由当前 triton-ascend 表达，并覆盖正确性；仅有 L2 容量、stream 或普通 program_id 不满足前提。不能确认支持时应明确不可直接实现，可研究 F1/F2/F5，不能改名假装已有 DSM。
+This is a strongly capability-dependent plan. You must prove that sharing scope, address visibility, synchronization and progress mechanisms can all be expressed by the current triton-ascend and that correctness is covered; L2 capacity, streams or ordinary program_id do not satisfy the preconditions. When support cannot be confirmed, state clearly that it cannot be directly implemented; F1/F2/F5 may be explored, but you cannot rename something and pretend DSM already exists.
 
-变体：
+Variants:
 
-- `F6.cooperative_shared_tiles`：协作阶段共享数据块.
-- `F6.cross_kernel_sharing`：有明确支持的跨kernel共享.
+- `F6.cooperative_shared_tiles`: cooperating stages sharing data tiles.
+- `F6.cross_kernel_sharing`: cross-kernel sharing with explicit support.
 
-## F7: Split and Fusion Co-optimization（拆分融合协同搜索）
+## F7: Split and Fusion Co-optimization (split-fusion co-optimization search)
 
-枚举合法拆分和融合边界，以成本估计和真实评测筛选组合；搜索出来的执行方案通常由其他方法组成。
+Enumerate legal splits and fusion boundaries, screening combinations with cost estimates and real evaluation; the resulting execution plan is usually composed of other methods.
 
-适合多阶段算子存在多个合法分区的情况。搜索须保证依赖、精度和资源限制，控制编译/评测成本；不能跳过困难 case，也不能把估计速度写成实测。它改变选方案的方法，不新增或绕过本 workflow 的 Stage。
+Suitable when a multi-stage operator has multiple legal partitions. The search must respect dependencies, precision and resource constraints and control compilation/evaluation cost; you cannot skip difficult cases, and estimated speed cannot be written up as measured. It changes how plans are selected; it does not add to or bypass this workflow's Stages.
 
-变体：
+Variants:
 
-- `F7.reuse_guided_partition`：按数据复用搜索分区.
-- `F7.cost_guided_search`：按成本搜索合法组合.
+- `F7.reuse_guided_partition`: search partitions by data reuse.
+- `F7.cost_guided_search`: search legal combinations by cost.
 
-## F8: Joint Compute-Memory Fusion（计算访存联合融合）
+## F8: Joint Compute-Memory Fusion (joint compute-memory fusion)
 
-联合考虑计算与布局变换、加载、归约或后处理的调度，使可重叠的工作合理配合，减少不必要的中间物化。
+Jointly consider the scheduling of computation and layout transforms, loads, reductions or epilogues so that overlapping-capable work cooperates reasonably, reducing unnecessary intermediate materialization.
 
-适合搬运和计算互相制约的链路。先确认当前后端是否能表达所需流水与布局；写在同一 kernel 不代表编译器自动并发，也不保证消除 event/同步。用编译结果、时间线或其他有效指标验证，与普通 F2 区分实际调度差异。
+Suitable for chains where transfers and computation constrain each other. First confirm whether the current backend can express the required pipelining and layout; being written in the same kernel does not mean the compiler automatically overlaps, nor does it guarantee eliminating events/synchronization. Verify with compilation results, the timeline or other valid metrics, and distinguish the actual scheduling difference from ordinary F2.
 
-变体：
+Variants:
 
-- `F8.compute_memory_pipeline`：计算与访存子图流水.
-- `F8.back_to_back_compute`：相邻计算阶段联合调度.
+- `F8.compute_memory_pipeline`: compute and memory-subgraph pipelining.
+- `F8.back_to_back_compute`: jointly scheduling adjacent compute stages.
 
-## F9: Deep Kernel Fusion（长链深度融合）
+## F9: Deep Kernel Fusion (long-chain deep fusion)
 
-把较长的依赖链或带共享分支的子图合并，尽量消除多次中间读写。
+Merge longer dependency chains or subgraphs with shared branches, eliminating as many intermediate reads/writes as possible.
 
-适合分块后活跃中间数据和精度约束仍可控制的区域。算子数量多本身不是优势；长链可能带来资源溢出、重复计算、复杂同步或错误归约。必须与合理的部分融合方案比较，不能为了“全融合”强制替换更快的方案。
+Suitable for regions where, after tiling, live intermediate data and precision constraints remain controllable. Many operators is not an advantage in itself; long chains may bring resource spills, repeated computation, complex synchronization or wrong reductions. It must be compared against reasonable partial-fusion plans; you cannot force-replace a faster plan for the sake of "full fusion".
 
-变体：
+Variants:
 
-- `F9.long_chain`：长依赖链.
-- `F9.branched_region`：有共享分支的深度区域.
+- `F9.long_chain`: long dependency chains.
+- `F9.branched_region`: deep regions with shared branches.
 
-## F10: Multi-device Compute-Communication Fusion（多设备通算融合）
+## F10: Multi-device Compute-Communication Fusion (multi-device compute-communication fusion)
 
-把任务本身要求的多卡/多节点通信与计算按块组织，研究在满足通信语义的前提下重叠执行。
+Organize the multi-device/multi-node communication required by the task itself together with computation by tiles, exploring overlapped execution while satisfying communication semantics.
 
-单设备计算任务通常没有选择它的依据。需要实际拓扑、通信 API、可见性、进度和死锁检查；CUDA/NVLink/RDMA 原型不能自动视为昇腾后端可用。所有必需通信和准备成本纳入同口径评测，不擅自改变任务设备范围。
+Single-device compute tasks usually have no basis for choosing it. Requires an actual topology, communication APIs, visibility, progress and deadlock checks; CUDA/NVLink/RDMA prototypes cannot automatically be assumed available on the Ascend backend. All required communication and preparation costs are included in a same-protocol evaluation; do not change the task's device scope on your own.
 
-变体：
+Variants:
 
-- `F10.single_node`：节点内通算流水.
-- `F10.multi_node`：跨节点通算流水.
+- `F10.single_node`: intra-node compute-communication pipelining.
+- `F10.multi_node`: cross-node compute-communication pipelining.
 
-## 如何比较
+## How to Compare
 
-先确认图依赖与能力前提，再按 case 分组提出可实现方案。Stage2 从 Jev 高概率且可实现的候选起步；后续 Stage3/7/8/9 结合实际代码、当前方案依据和评测证据决定保留或调整。少量 case 慢优先定位局部分块、边界和固定开销，不因均值停滞就自动更换整个融合方案。
+First confirm graph dependencies and capability preconditions, then group by case and propose implementable plans. Stage2 starts from candidates with high Jev probability that are implementable; later Stage3/7/8/9 decide to keep or adjust based on the actual code, the current plan's rationale and evaluation evidence. When a few cases are slow, first localize per-case tiling, boundaries and fixed overhead; do not automatically switch the entire fusion plan just because the mean stagnates.
 
-所有尝试仍写入既有的本轮融合库、决策依据、自测、正式评测与 history 文件；保持 Stage 路由和退出规则。
+All attempts are still written into the existing fusion library, decision rationale, self-tests, official evaluation and history files for this round; keep Stage routing and exit rules.

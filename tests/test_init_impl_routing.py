@@ -1,4 +1,4 @@
-"""Exercise emergency imports through the real control plane, without providers."""
+﻿"""Exercise emergency imports through the real control plane, without providers."""
 
 from contextlib import ExitStack
 import hashlib
@@ -137,8 +137,8 @@ class InitImplRoutingTests(unittest.TestCase):
         history = json.loads((self.work / "knowledge/history.json").read_text())
         self.assertEqual([row["iter"] for row in history["rounds"]], [1])
         self.assertNotIn("old_sentinel", history)
-        self.assertIn("跳过 Stage1", str(self.log.info.call_args_list))
-        self.assertIn("已复制", str(self.log.info.call_args_list))
+        self.assertIn("skipping Stage1", str(self.log.info.call_args_list))
+        self.assertIn("copied", str(self.log.info.call_args_list))
         self.assertIn("init_impl_manifest.json", self.prompts["stage4"])
 
     def test_stage3_generated_source_keeps_matching_selftests_and_enters_build(self):
@@ -150,7 +150,7 @@ class InitImplRoutingTests(unittest.TestCase):
         evidence = load_evidence(self.work)
         self.assertTrue(evidence["eligible"], evidence)
         self.assertEqual(evidence["stage"], 3)
-        self.assertTrue((self.work / "develop/iter0/融合方案选择决策依据.md").is_file())
+        self.assertTrue((self.work / "develop/iter0/fusion_scheme_rationale.md").is_file())
         self.assertFalse((self.work / "develop/iter2").exists())
         self.assertNotIn(str(self.work / "develop/iter0/design_rationale.md"), self.prompts["stage7"])
         self.assertTrue((self.work / "selection/best.json").is_file())
@@ -189,7 +189,7 @@ class InitImplRoutingTests(unittest.TestCase):
 
     def test_changed_hardware_stops_before_any_agent_and_preserves_scored_device_file(self):
         self.device["ub_size_kb"] += 1
-        with self.patches(), self.assertRaisesRegex(ValueError, "芯片/框架"):
+        with self.patches(), self.assertRaisesRegex(ValueError, "chip/framework"):
             orchestrator.main()
         self.assertEqual(self.events, [])
         self.assertEqual((self.work / "device_info.json").read_bytes(),
@@ -199,7 +199,7 @@ class InitImplRoutingTests(unittest.TestCase):
         (self.source / "fusion/ranking.json").unlink()
         with self.patches(), self.assertRaises(ValueError):
             orchestrator.main()
-        with self.patches(resume=True), self.assertRaisesRegex(ValueError, "上次导入未完成"):
+        with self.patches(resume=True), self.assertRaisesRegex(ValueError, "the previous import did not finish"):
             orchestrator.main()
         self.assertEqual(self.events, [])
 

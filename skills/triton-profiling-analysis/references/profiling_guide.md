@@ -1,59 +1,59 @@
-# Triton Ascend NPU Profiling 数据解读指南
+# Triton Ascend NPU Profiling Data Interpretation Guide
 
-分析 cann-bench 的昇腾 profiler 数据。当前流程使用 `kernel_details` 口径；baseline、HAP、speedup、score 均直接读取报告。本文中的路径和 kernel 名是结构示意，没有提供任何已测 Triton 成绩。
+Analyze cann-bench's Ascend profiler data. The current workflow uses the `kernel_details` protocol; baseline, HAP, speedup and score are read directly from the report. Paths and kernel names in this document are structural illustrations; no measured Triton results are provided.
 
-## 1. 从报告定位证据
+## 1. Locating Evidence from the Report
 
-`lib/bench_parser.py` 调用 cann-bench → 指定 NPU 上执行候选 → `torch_npu.profiler` 采集 → cann-bench 解析原报告 → workflow 写入 `eval/<iter>/perf_result.json`。
+`lib/bench_parser.py` calls cann-bench → executes the candidate on the specified NPU → `torch_npu.profiler` collects → cann-bench parses the original report → the workflow writes `eval/<iter>/perf_result.json`.
 
-先读 `perf_result.json` 的 `source_json`、`cases`、`worst_6_cases` 和每条 `kernel_csv`；通过真实路径找到数据，不能按固定进程名猜目录。warmup/repeat 和设备以本轮命令与 `comparison_context` 为准。`perf_comparison.json` 说明是否与前轮可比，口径不一致不算涨跌。
+First read `perf_result.json`'s `source_json`, `cases`, `worst_6_cases` and each `kernel_csv`; locate the data through real paths, and do not guess directories from a fixed process name. Warmup/repeat and the device follow this round's command and `comparison_context`. `perf_comparison.json` states whether comparison with previous rounds is valid; with inconsistent protocols, no gain/loss is counted.
 
 ```text
-eval/<iter>/prof_data/<case_id>/<本次采集目录>/ASCEND_PROFILER_OUTPUT/
-  kernel_details.csv   每次 kernel 的执行明细，主证据
-  op_statistic.csv     按算子/kernel 汇总，辅助定位热点
-  step_trace_time.csv 整体计算与空闲时间
-  api_statistic.csv    host API 调用与拷贝
-  trace_view.json      时间线、相关调用与间隔
+eval/<iter>/prof_data/<case_id>/<this collection directory>/ASCEND_PROFILER_OUTPUT/
+  kernel_details.csv   per-kernel execution details, primary evidence
+  op_statistic.csv     aggregation by operator/kernel, helps locate hotspots
+  step_trace_time.csv  overall compute and idle time
+  api_statistic.csv    host API calls and copies
+  trace_view.json      timeline, related calls and gaps
 ```
 
-部分 profiler 版本不产出所有文件或列，明确缺失项和结论限制；不要伪造。原始二进制与数据库用于进一步诊断时保留，不能仅凭没有某辅助 CSV 就判定算子失败。
+Some profiler versions do not produce all files or columns; state explicitly what is missing and the limits of your conclusions; do not fabricate. Keep the raw binaries and databases for further diagnosis; do not declare an operator failed merely because some auxiliary CSV is absent.
 
-## 2. kernel_details.csv：逐 kernel 看执行
+## 2. kernel_details.csv: Examining Execution Kernel by Kernel
 
-| 列 | 读法 |
+| Column | How to Read |
 |---|---|
-| `Name` | 对照源码、JIT 产物与调用链确认 kernel 身份；不依赖固定前缀 |
-| `Duration(us)` | 看对应 case 每次调用的各 kernel 耗时及重复稳定性 |
-| `Wait Time(us)` | 结合时间线与调度分析等待，单列不能证明芯片内部流水气泡 |
-| `Block Num` | 结合任务块数、Vector/Cube 核数和具体后端解释；小 case 核少可以合理 |
-| `Accelerator Core` | 对照算法所需计算单元；Vector 算子在 `AI_VECTOR_CORE` 执行正常，矩阵算子是否走 Cube 需进一步核实 |
-| `OP State` | 记录实际值，不能仅凭 static/dynamic 判定是否自定义实现 |
+| `Name` | Confirm kernel identity against the source code, JIT artifacts and the call chain; do not rely on fixed prefixes |
+| `Duration(us)` | Look at each kernel's time per invocation in the corresponding case and its repeat stability |
+| `Wait Time(us)` | Analyze waiting together with the timeline and scheduling; a single column cannot prove intra-chip pipeline bubbles |
+| `Block Num` | Interpret together with the task's block count, Vector/Cube core counts and the specific backend; few cores for a small case can be reasonable |
+| `Accelerator Core` | Check against the compute unit the algorithm requires; Vector operators running on `AI_VECTOR_CORE` is normal; whether matrix operators use Cube needs further verification |
+| `OP State` | Record the actual value; do not judge custom implementation by static/dynamic alone |
 
-先按 cann-bench 的规则识别评测自身的 `CannBenchCacheClean`，再分析候选计算与必要辅助工作。出现 transpose/pad/aclnn 等名称时，查明是否来自候选包装层、数据准备或评测框架；源码禁止用现成算子替代核心计算，但不能仅靠名称判断。
+First identify the evaluation's own `CannBenchCacheClean` according to cann-bench's rules, then analyze the candidate computation and necessary auxiliary work. When names such as transpose/pad/aclnn appear, determine whether they come from the candidate wrapper layer, data preparation or the evaluation framework; the source code is forbidden from replacing core computation with off-the-shelf operators, but do not judge by name alone.
 
-多 kernel 方案要看完整工作量，不能只挑最快一行，不能把多个 kernel 耗时取平均当作一次融合调用耗时。正式 `elapsed_us` 以本轮 cann-bench `kernel_details` 解析结果为准；它汇总 kernel 执行时间，不包含 kernel 间隔，不能称为完整端到端延迟。
+For multi-kernel solutions, look at the complete workload; do not cherry-pick only the fastest row, and do not average multiple kernels' times and call it one fused invocation's time. The official `elapsed_us` follows this round's cann-bench `kernel_details` parsing result; it aggregates kernel execution time, does not include inter-kernel gaps, and must not be called complete end-to-end latency.
 
-## 3. op_statistic.csv：找主要耗时
+## 3. op_statistic.csv: Finding the Main Time Costs
 
-按实际耗时占比定位热点，并回看原始重复记录。均值/最值相差较大时检查输入对应关系、JIT/预热、运行干扰与采集质量；不能自行过滤不利结果来制造收益。
+Locate hotspots by actual time share, then return to the original repeat records. When the mean/max differ substantially, check input correspondence, JIT/warmup, run interference and collection quality; do not filter out unfavorable results to manufacture gains.
 
-## 4. step_trace_time.csv：看计算与空闲
+## 4. step_trace_time.csv: Compute Versus Idle
 
-在列定义明确且分母有效时参考 `Computing / Stage`。低占比可能来自小任务、host 调度、同步或其他工作；结合时间线验证，不能把一个比值直接当作硬件利用率的完整结论。
+Refer to `Computing / Stage` only when column definitions are clear and the denominator is valid. Low ratios may come from small tasks, host scheduling, synchronization or other work; verify with the timeline, and do not treat a single ratio as the complete conclusion on hardware utilization.
 
-## 5. api_statistic.csv：看 host 和拷贝
+## 5. api_statistic.csv: Host and Copies
 
-查 `aclrtMemcpy` 等 API 的次数与持续时间，再定位其发生范围、方向和调用来源。实际 bench 若给出 `cpu_fallback_detected`，按原错误处理；诊断时区分评测准备与候选核心计算，不把所有拷贝无条件归为 CPU 代算。
+Check the counts and durations of APIs such as `aclrtMemcpy`, then locate their scope, direction and call origin. If the actual bench reports `cpu_fallback_detected`, handle it per the original error; during diagnosis, distinguish evaluation preparation from the candidate's core computation, and do not classify all copies unconditionally as CPU computing on the kernel's behalf.
 
-## 6. trace_view.json：补充时间线
+## 6. trace_view.json: Supplementary Timeline
 
-按当前 kernel 的真实身份、设备、stream 和相关调用筛选事件。时间线用于解释启动、等待和跨 kernel 依赖；相邻事件可能重叠，不能假定全部串行或仅靠名字相同认定同一次调用。
+Filter events by the current kernel's real identity, device, stream and related calls. Use the timeline to explain launches, waits and cross-kernel dependencies; adjacent events may overlap, so do not assume everything is serial or identify the same invocation by name alone.
 
-不使用其他框架专属 trace 事件充当 Triton 耗时。历史 `trace_view` 成绩与当前 `kernel_details` 不同口径，不能直接比较；框架/后端、硬件、case、基准与计时方式一致后才讨论收益。
+Do not use trace events specific to other frameworks as Triton time. Historical `trace_view` results and the current `kernel_details` use different protocols and cannot be compared directly; discuss gains only after the framework/backend, hardware, cases, baselines and timing method are consistent.
 
-## 7. 报告怎么写
+## 7. How to Write the Report
 
-对最多 6 个最慢 case 各写：**结论、证据文件/行或事件、下一步验证**。再回看全部 case 的分布和慢 case 趋势，区分 mask/stride、分块、固定开销、资源压力与融合方案结构性问题。缺少证明时写假设和验证方法，不给确定结论。
+For up to 6 of the slowest cases, each write: **conclusion, evidence file/line or event, next verification step**. Then review the distribution across all cases and slow-case trends, distinguishing mask/stride, tiling, fixed overhead, resource pressure and structural issues of the fusion plan. Where proof is lacking, write hypotheses and validation methods; do not give definitive conclusions.
 
-当前方案与设计文件必须对应被评测代码。自测是正确性证据，Jev 概率是初始方向，其他框架旧案例只说明历史背景，均不能替代当前 Triton 实测。
+The current plan and design files must correspond to the evaluated code. Self-tests are correctness evidence; Jev probabilities are initial directions; old cases from other frameworks only indicate historical background — none of these can substitute for current measured Triton results.

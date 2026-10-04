@@ -1,4 +1,4 @@
-"""Offline emergency-import boundaries, provenance and restart validation."""
+﻿"""Offline emergency-import boundaries, provenance and restart validation."""
 
 import hashlib
 import json
@@ -59,7 +59,7 @@ def make_source(root, stage=2):
     write_json(work / "fusion/fusion_library.json", library)
     develop = work / "develop" / ("iter0" if stage == 2 else "iter2")
     develop.mkdir(parents=True, exist_ok=True)
-    rationale = "design_rationale.md" if stage == 2 else "融合方案选择决策依据.md"
+    rationale = "design_rationale.md" if stage == 2 else "fusion_scheme_rationale.md"
     (develop / rationale).write_text(f"Implement {work / 'impl'}; source {develop / 'fusion_library.json'}", encoding="utf-8")
     (develop / "self_test_report.md").write_text("Two genuine synthetic test records.", encoding="utf-8")
     (develop / "self_test.log").write_text("Synthetic tests pass", encoding="utf-8")
@@ -134,7 +134,7 @@ class InitImplTests(unittest.TestCase):
         manifest = self.prepare()
         self.assertEqual(manifest["source_development_binding"]["stage"], 3)
         self.assertEqual(manifest["source_develop_dir"], str(self.source / "develop/iter2"))
-        self.assertTrue((self.work / "develop/iter0/融合方案选择决策依据.md").is_file())
+        self.assertTrue((self.work / "develop/iter0/fusion_scheme_rationale.md").is_file())
         self.assertFalse((self.work / "develop/iter0/design_rationale.md").exists())
         validate_init_impl_inputs(self.work, self.device, self.source / "task")
 
@@ -150,16 +150,16 @@ class InitImplTests(unittest.TestCase):
 
     def test_missing_stage_input_stops_and_leaves_failed_marker(self):
         (self.source / "ANALYSIS.md").unlink()
-        with self.assertRaisesRegex(ValueError, "必要材料"):
+        with self.assertRaisesRegex(ValueError, "required material"):
             self.prepare()
-        with self.assertRaisesRegex(ValueError, "上次导入未完成"):
+        with self.assertRaisesRegex(ValueError, "the previous import did not finish"):
             load_init_impl_manifest(self.work)
 
     def test_mismatching_task_stops(self):
         other = self.root / "other-task"
         other.mkdir()
         (other / "cases.yaml").write_text("cases: [3]", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "任务.*不一致"):
+        with self.assertRaisesRegex(ValueError, "task disagrees"):
             prepare_init_impl(self.source / "impl", self.work, other)
 
     def test_invalid_probability_is_rejected_before_copy(self):
@@ -184,7 +184,7 @@ class InitImplTests(unittest.TestCase):
     def test_modified_imported_metadata_is_rejected_on_resume(self):
         self.prepare()
         (self.work / "ANALYSIS.md").write_text("changed", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "被修改"):
+        with self.assertRaisesRegex(ValueError, "was modified"):
             validate_init_impl_inputs(self.work, self.device, self.source / "task")
 
     def test_later_stage3_changes_to_impl_do_not_block_resume(self):
@@ -195,7 +195,7 @@ class InitImplTests(unittest.TestCase):
     def test_existing_target_files_are_never_overwritten(self):
         (self.work / "impl").mkdir(parents=True)
         (self.work / "impl/user.py").write_text("keep", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "必须为空"):
+        with self.assertRaisesRegex(ValueError, "must be empty"):
             self.prepare()
         self.assertEqual((self.work / "impl/user.py").read_text(), "keep")
 
@@ -208,14 +208,14 @@ class InitImplTests(unittest.TestCase):
         with patch.object(Path, "read_bytes", fail):
             with self.assertRaises(OSError):
                 self.prepare()
-        with self.assertRaisesRegex(ValueError, "上次导入未完成"):
+        with self.assertRaisesRegex(ValueError, "the previous import did not finish"):
             load_init_impl_manifest(self.work)
 
     def test_copy_log_lists_sources_and_skipped_stages(self):
         with self.assertLogs("triton-ascend-workflow", level="INFO") as captured:
             self.prepare()
         output = "\n".join(captured.output)
-        self.assertIn("跳过 Stage1、Stage1.5、Stage2", output)
+        self.assertIn("skipping Stage1, Stage1.5 and Stage2", output)
         self.assertIn(str(self.source / "develop/iter0"), output)
         self.assertIn(str(self.work / "fusion"), output)
 
@@ -224,20 +224,20 @@ class InitImplTests(unittest.TestCase):
         request = json.loads(path.read_text())
         request["state"]["hardware"]["chip_model"] = "other chip"
         write_json(path, request)
-        with self.assertRaisesRegex(ValueError, "请求与来源摘要"):
+        with self.assertRaisesRegex(ValueError, "request and source digests"):
             self.prepare()
 
     def test_source_link_is_rejected_before_contents_are_copied(self):
         from lib.init_impl import _linked
         blocked = self.source / "fusion"
         with patch("lib.init_impl._linked", side_effect=lambda path: path == blocked or _linked(path)):
-            with self.assertRaisesRegex(ValueError, "符号链接"):
+            with self.assertRaisesRegex(ValueError, "symbolic links"):
                 self.prepare()
         self.assertFalse((self.work / "impl").exists())
 
     def test_original_fusion_source_change_rejected(self):
         (self.source / "ANALYSIS.md").write_text("new task definition", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "原始输入不一致"):
+        with self.assertRaisesRegex(ValueError, "disagrees with the original input"):
             self.prepare()
 
     def test_specified_snapshot_code_is_never_replaced_by_best(self):
@@ -274,9 +274,9 @@ class InitImplTests(unittest.TestCase):
         shutil.copytree(self.source / "task", self.work / "task")
         (self.work / "ANALYSIS.md").write_text("corrupted imported source", encoding="utf-8")
         self.source, self.work = self.work, self.root / "destination2"
-        with self.assertRaisesRegex(ValueError, "被修改"):
+        with self.assertRaisesRegex(ValueError, "was modified"):
             self.prepare()
-        with self.assertRaisesRegex(ValueError, "上次导入未完成"):
+        with self.assertRaisesRegex(ValueError, "the previous import did not finish"):
             load_init_impl_manifest(self.work)
 
     def test_impl_copy_uses_same_exclusions_as_existing_evidence_hash(self):

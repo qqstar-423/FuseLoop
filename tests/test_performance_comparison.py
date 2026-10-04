@@ -73,7 +73,7 @@ class PerformanceComparisonTests(unittest.TestCase):
         previous["comparison_context"].update(metric="trace_view", baseline_protocol="trace-view-v1")
         result = compare_performance(previous, self.report)
         self.assertFalse(result["comparable"])
-        self.assertIn("计时口径", result["reason"])
+        self.assertIn("timing protocol", result["reason"])
         self.assertIn("comparison_context.metric", result["mismatch_fields"])
         self.assertIn("comparison_context.baseline_protocol", result["mismatch_fields"])
 
@@ -120,7 +120,7 @@ class PerformanceComparisonTests(unittest.TestCase):
         current["cases"][0]["baseline_perf_us"] = 40.1
         result = compare_performance(self.report, current)
         self.assertFalse(result["comparable"])
-        self.assertIn("实际基准耗时", result["reason"])
+        self.assertIn("actual baseline timing", result["reason"])
         self.assertEqual(result["mismatch_fields"], ["case_baselines.op_2"])
 
     def test_case_set_change_is_rejected_even_with_same_count(self):
@@ -138,7 +138,7 @@ class PerformanceComparisonTests(unittest.TestCase):
         before = deepcopy(previous)
         result = compare_performance(previous, self.report, self.context)
         self.assertFalse(result["comparable"])
-        self.assertIn("缺少", result["reason"])
+        self.assertIn("incomplete", result["reason"])
         self.assertIn("previous.comparison_context", result["mismatch_fields"])
         self.assertEqual(previous, before)
 
@@ -264,7 +264,7 @@ class PerformanceComparisonTests(unittest.TestCase):
         before = deepcopy(self.report)
         result = compare_performance(self.report, self.report, expected)
         self.assertFalse(result["comparable"])
-        self.assertIn("当前轮存档", result["reason"])
+        self.assertIn("the current round's archive", result["reason"])
         self.assertEqual(result["mismatch_fields"], ["expected_context.task_sha256"])
         self.assertEqual(self.report, before)
         self.assertFalse(compare_performance(self.report, self.report, {})["comparable"])

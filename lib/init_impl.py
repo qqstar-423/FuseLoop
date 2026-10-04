@@ -1,4 +1,4 @@
-"""Import Stage1/1.5 inputs and matching development evidence for a build restart.
+﻿"""Import Stage1/1.5 inputs and matching development evidence for a build restart.
 
 No provider, configuration, historical evaluation or best-version lookup is used.
 The caller owns stage routing and whether old self-test evidence is still valid.
@@ -35,7 +35,7 @@ def _json(path):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
-        raise ValueError(f"--init-impl 材料无法读取为 JSON: {path}") from exc
+        raise ValueError(f"--init-impl material cannot be read as JSON: {path}") from exc
 
 
 def _encoded(value):
@@ -49,37 +49,37 @@ def _linked(path):
 
 def _safe_path(path, root):
     if not path.resolve().is_relative_to(root.resolve()):
-        raise ValueError(f"--init-impl 材料路径越过来源目录: {path}")
+        raise ValueError(f"--init-impl material path escapes the source directory: {path}")
     for parent in (path, *path.parents):
         if parent == root.parent:
             break
         if parent.exists() and _linked(parent):
-            raise ValueError(f"--init-impl 材料不能经过符号链接或目录联接: {path}")
+            raise ValueError(f"--init-impl material must not pass through symbolic links or junctions: {path}")
 
 
 def _files(directory, *, ignore_generated=False, ignored_dirs=None):
     """Do not follow symlinks, junctions or reparse points in imported trees."""
     if _linked(directory):
-        raise ValueError(f"--init-impl 不能复制符号链接或目录联接: {directory}")
+        raise ValueError(f"--init-impl cannot copy symbolic links or junctions: {directory}")
     ignored_dirs = _IGNORED if ignored_dirs is None else ignored_dirs
     for item in sorted(directory.iterdir()):
         if ignore_generated and (item.name in ignored_dirs or item.name.endswith(".egg-info")
                                  or item.suffix in {".pyc", ".pyo"}):
             continue
         if _linked(item):
-            raise ValueError(f"--init-impl 不能复制符号链接或目录联接: {item}")
+            raise ValueError(f"--init-impl cannot copy symbolic links or junctions: {item}")
         if item.is_dir():
             yield from _files(item, ignore_generated=ignore_generated, ignored_dirs=ignored_dirs)
         elif item.is_file():
             yield item
         else:
-            raise ValueError(f"--init-impl 不支持特殊文件: {item}")
+            raise ValueError(f"--init-impl does not support special files: {item}")
 
 
 def _task_hash(task_dir):
     directory = Path(task_dir).resolve(strict=True)  # task/ itself is normally a link.
     if not directory.is_dir():
-        raise ValueError("--init-impl 任务目录不存在。")
+        raise ValueError("--init-impl task directory does not exist.")
     digest = hashlib.sha256()
     count = 0
     for path in _files(directory, ignore_generated=True):
@@ -89,7 +89,7 @@ def _task_hash(task_dir):
         digest.update(path.read_bytes() + b"\0")
         count += 1
     if not count:
-        raise ValueError("--init-impl 任务目录没有可核对的需求/case/参考实现文件。")
+        raise ValueError("--init-impl task directory has no verifiable requirement/case/reference implementation files.")
     return digest.hexdigest()
 
 
@@ -99,7 +99,7 @@ def _source_work(source):
                 or ((parent / "device_info.json").is_file()
                     and (parent / "fusion/fusion_library.json").is_file())):
             return parent
-    raise ValueError("--init-impl 必须位于已有 workflow work 目录内，找不到 Stage1/1.5/2 材料。")
+    raise ValueError("--init-impl must be inside an existing workflow work directory; Stage1/1.5/2 material was not found.")
 
 
 def _required(work, develop=None):
@@ -107,23 +107,23 @@ def _required(work, develop=None):
         path = work / relative
         _safe_path(path, work)
         if not path.is_file() or not path.read_bytes().strip():
-            raise ValueError(f"--init-impl 缺少已完成 Stage1/1.5/2 的必要材料: {relative}；不会自动重跑这些阶段。")
+            raise ValueError(f"--init-impl is missing required material from completed Stage1/1.5/2: {relative}; these stages are not rerun automatically.")
     if develop is not None:
         for name in _DEVELOP_REQUIRED:
             path = develop / name
             _safe_path(path, work)
             if not path.is_file() or not path.read_bytes().strip():
-                raise ValueError(f"--init-impl 缺少对应实现的开发材料: {path}")
-        rationales = [develop / name for name in ("design_rationale.md", "融合方案选择决策依据.md")]
+                raise ValueError(f"--init-impl is missing the development material for the corresponding implementation: {path}")
+        rationales = [develop / name for name in ("design_rationale.md", "fusion_scheme_rationale.md")]
         for path in rationales:
             _safe_path(path, work)
         if not any(path.is_file() and path.read_bytes().strip() for path in rationales):
-            raise ValueError("--init-impl 缺少对应实现的设计/融合选择依据。")
+            raise ValueError("--init-impl is missing the corresponding implementation\'s design/fusion selection rationale.")
 
 
 def _device_signature(device):
     if not isinstance(device, dict) or not device.get("chip_model"):
-        raise ValueError("--init-impl 芯片信息缺少 chip_model。")
+        raise ValueError("--init-impl chip info lacks chip_model.")
     return {key: device[key] for key in _DEVICE_FIELDS if key in device}
 
 
@@ -137,19 +137,19 @@ def _validate_fusion(work, original_hashes=None, develop=None):
     library, ranking = (_json(work / "fusion" / name) for name in ("fusion_library.json", "ranking.json"))
     response, request = (_json(work / "fusion" / name) for name in ("jev_response.json", "jev_request.json"))
     if not all(isinstance(value, dict) for value in (library, ranking, response, request)):
-        raise ValueError("--init-impl 融合评分材料必须为 JSON 对象。")
+        raise ValueError("--init-impl fusion scoring material must be JSON objects.")
     candidates, top_n = ranking.get("candidates"), library.get("top_n")
     if (ranking.get("schema_version") != 1 or library.get("schema_version") != 1
             or not isinstance(candidates, list) or not candidates or type(top_n) is not int
             or not 1 <= top_n <= len(candidates) or library.get("candidates") != candidates[:top_n]):
-        raise ValueError("--init-impl 融合库与完整排名/Top N 不一致。")
+        raise ValueError("--init-impl fusion library disagrees with the full ranking/Top N.")
     answers, questions = response.get("answers"), request.get("questions")
     if not isinstance(answers, dict) or not isinstance(questions, dict):
-        raise ValueError("--init-impl Jev 原始请求或响应缺少选项。")
+        raise ValueError("--init-impl Jev raw request or response is missing options.")
     ids, previous = set(), float("inf")
     for index, candidate in enumerate(candidates, 1):
         if not isinstance(candidate, dict) or not isinstance(candidate.get("method"), dict):
-            raise ValueError("--init-impl 融合排名条目不合法。")
+            raise ValueError("--init-impl fusion ranking entry is invalid.")
         method, probability = candidate["method"], candidate.get("probability")
         identity = method.get("id")
         if (not isinstance(identity, str) or not identity or identity in ids
@@ -157,37 +157,37 @@ def _validate_fusion(work, original_hashes=None, develop=None):
                 or type(candidate.get("rank")) is not int or candidate["rank"] != index
                 or isinstance(probability, bool) or not isinstance(probability, (int, float))
                 or not math.isfinite(probability) or not 0 <= probability <= 1 or probability > previous):
-            raise ValueError("--init-impl 融合方法、排序或概率不合法。")
+            raise ValueError("--init-impl fusion methods, ordering or probabilities are invalid.")
         answer = answers.get(identity)
         if (not isinstance(answer, dict) or answer.get("type") != "noul"
                 or isinstance(answer.get("noul"), bool) or answer.get("noul") != probability):
-            raise ValueError("--init-impl 融合概率与 Jev 原始响应不一致。")
+            raise ValueError("--init-impl fusion probabilities disagree with the raw Jev response.")
         ids.add(identity)
         previous = probability
     if set(answers) != ids or set(questions) != ids:
-        raise ValueError("--init-impl Jev 请求、响应和完整排名选项不一致。")
+        raise ValueError("--init-impl Jev request, response and full ranking options disagree.")
     response_sha = _sha(json.dumps(response, ensure_ascii=False, sort_keys=True, allow_nan=False).encode("utf-8"))
     for document in (library, ranking):
         if document.get("response_sha256") != response_sha:
-            raise ValueError("--init-impl Jev 响应摘要不一致。")
+            raise ValueError("--init-impl Jev response digests disagree.")
         sources = document.get("sources", {})
         if not isinstance(sources, dict) or not all(isinstance(value, dict) for value in sources.values()):
-            raise ValueError("--init-impl Jev 评分来源记录不合法。")
+            raise ValueError("--init-impl Jev scoring source records are invalid.")
         for key, relative in (("stage1_analysis", "ANALYSIS.md"),
                               ("stage1_requirements", "fusion_requirements.en.json"),
                               ("hardware", "device_info.json")):
             expected = (original_hashes or {}).get(relative) or _sha((work / relative).read_bytes())
             if not isinstance(sources.get(key), dict) or sources[key].get("sha256") != expected:
-                raise ValueError(f"--init-impl Jev 评分与原始输入不一致: {relative}")
+                raise ValueError(f"--init-impl Jev scoring disagrees with the original input: {relative}")
         fingerprint = _sha(json.dumps({
             "protocol": document.get("protocol"), "request": request,
             "jev_config": document.get("jev_config"),
             "source_sha256": {key: value.get("sha256") for key, value in sources.items()},
         }, ensure_ascii=False, sort_keys=True, allow_nan=False).encode("utf-8"))
         if document.get("fingerprint_sha256") != fingerprint:
-            raise ValueError("--init-impl Jev 请求与来源摘要不一致。")
+            raise ValueError("--init-impl Jev request and source digests disagree.")
     if library.get("fingerprint_sha256") != ranking.get("fingerprint_sha256"):
-        raise ValueError("--init-impl 融合库与完整排名来自不同的评分。")
+        raise ValueError("--init-impl the fusion library and full ranking come from different scorings.")
     if develop is not None:
         _validate_library(_json(develop / "fusion_library.json"), library)
 
@@ -245,11 +245,11 @@ def load_init_impl_manifest(work_dir):
         return None
     result = _json(path)
     if isinstance(result, dict) and result.get("status") == "preparing":
-        raise ValueError("--init-impl 上次导入未完成；请用原 --init-impl 命令新建 work 重试，不要恢复半复制目录。")
+        raise ValueError("--init-impl the previous import did not finish; retry with the original --init-impl command into a new work directory; do not restore a half-copied directory.")
     if (not isinstance(result, dict) or result.get("schema_version") != 1
             or result.get("status") != "prepared" or result.get("skipped_stages") != [1, 1.5, 2]
             or not isinstance(result.get("copied_files"), list) or not result["copied_files"]):
-        raise ValueError("--init-impl 导入清单不完整，不能作为跳过阶段的依据。")
+        raise ValueError("--init-impl the import manifest is incomplete and cannot justify skipping stages.")
     return result
 
 
@@ -258,13 +258,13 @@ def prepare_init_impl(source_impl, work_dir, task_dir, *, optimize_hint="", log=
     log = log or logging.getLogger("triton-ascend-workflow")
     source = Path(source_impl).absolute()
     if not source.is_dir() or _linked(source):
-        raise ValueError("--init-impl 必须指向实际实现目录，不能是符号链接。")
+        raise ValueError("--init-impl must point to an actual implementation directory, not a symbolic link.")
     source, work = source.resolve(), Path(work_dir).resolve()
     source_work = _source_work(source)
     if work.is_relative_to(source_work) or source_work.is_relative_to(work):
-        raise ValueError("--init-impl 来源和新 work 不能互相包含。")
+        raise ValueError("--init-impl the source and new work must not contain each other.")
     if (work / MANIFEST).exists() or (work / ".state.json").exists():
-        raise ValueError("--init-impl 只能导入新 work，不能覆盖已有任务状态。")
+        raise ValueError("--init-impl can only import into a new work directory; existing task state must not be overwritten.")
     work.mkdir(parents=True, exist_ok=True)
     result = {"schema_version": 1, "status": "preparing", "source_work_dir": str(source_work),
               "source_impl_dir": str(source), "work_dir": str(work), "optimize_hint": optimize_hint,
@@ -286,7 +286,7 @@ def prepare_init_impl(source_impl, work_dir, task_dir, *, optimize_hint="", log=
     _validate_fusion(source_work, fusion_input_hashes, develop=source_develop)
     task_sha = _task_hash(source_work / "task")
     if task_sha != _task_hash(task_dir):
-        raise ValueError("--init-impl 原任务与 --task-dir 的需求/case/参考实现不一致。")
+        raise ValueError("--init-impl the original task disagrees with --task-dir\'s requirements/cases/reference implementation.")
     files = [(source_work / name, name) for name in _ROOT_FILES]
     roots = ((source, "impl"), (source_work / "fusion", "fusion"),
              (source_develop, "develop/iter0"))
@@ -296,20 +296,20 @@ def prepare_init_impl(source_impl, work_dir, task_dir, *, optimize_hint="", log=
                                         ignored_dirs=_IGNORED - {".pytest_cache"})
                      if not (destination == "develop/iter0" and path.name in _EXCLUDED_DEVELOP))
     if not any(relative.startswith("impl/") for _, relative in files):
-        raise ValueError("--init-impl 实现目录为空。")
+        raise ValueError("--init-impl the implementation directory is empty.")
     for _, relative in files:
         target = work / relative
         for parent in (target, *target.parents):
             if parent == work.parent:
                 break
             if parent.exists() and _linked(parent):
-                raise ValueError(f"--init-impl 目标不能经过符号链接: {parent}")
+                raise ValueError(f"--init-impl the target must not pass through a symbolic link: {parent}")
         if target.exists():
-            raise ValueError(f"--init-impl 不覆盖已有文件: {target}")
+            raise ValueError(f"--init-impl does not overwrite existing files: {target}")
     for _, relative in roots:
         target = work / relative
         if target.exists() and (not target.is_dir() or any(target.iterdir())):
-            raise ValueError(f"--init-impl 目标目录必须为空: {target}")
+            raise ValueError(f"--init-impl the target directory must be empty: {target}")
     result.update(source_develop_dir=str(source_develop), source_device_info=device,
                   task_sha256=task_sha, source_development_binding=binding,
                   fusion_input_hashes=fusion_input_hashes)
@@ -317,7 +317,7 @@ def prepare_init_impl(source_impl, work_dir, task_dir, *, optimize_hint="", log=
     copied = []
     for path, relative in files:
         if _linked(path):
-            raise ValueError(f"--init-impl 不能复制符号链接: {path}")
+            raise ValueError(f"--init-impl cannot copy symbolic links: {path}")
         original = path.read_bytes()
         data = original
         # Implementation and provider payloads are immutable source evidence.
@@ -350,15 +350,15 @@ def prepare_init_impl(source_impl, work_dir, task_dir, *, optimize_hint="", log=
     with temporary.open("xb") as output:
         output.write(_encoded(result))
     temporary.replace(work / MANIFEST)
-    log.info("===== 应急实现导入：跳过 Stage1、Stage1.5、Stage2，直接进入 Stage4 build =====")
-    log.info("[应急导入] 指定实现=%s；原 work=%s；新 work=%s；文件数=%d；清单=%s",
+    log.info("===== Emergency implementation import: skipping Stage1, Stage1.5 and Stage2; entering Stage4 build directly =====")
+    log.info("[emergency import] specified implementation=%s; original work=%s; new work=%s; file count=%d; manifest=%s",
              source, source_work, work, len(copied), work / MANIFEST)
     for relative in (*_ROOT_FILES, "impl/", "fusion/", "develop/iter0/"):
         origin = source if relative == "impl/" else source_develop if relative == "develop/iter0/" else source_work / relative
-        log.info("[应急导入] 已复制 %s -> %s", origin, work / relative)
+        log.info("[emergency import] copied %s -> %s", origin, work / relative)
     if binding is None:
-        log.warning("[应急导入] 无法确认指定代码与开发材料的版本绑定；导入首版材料仅供参考，旧自测不作为本次通过证据。")
-    log.info("[应急导入] 不继承旧评测、history、最佳成绩、退出计数、人工意见和无关轮次材料。")
+        log.warning("[emergency import] cannot confirm the version binding between the specified code and development material; the imported first-version material is for reference only and old self-tests are not proof of passing this time.")
+    log.info("[emergency import] old evaluations, history, best scores, exit counters, human feedback and unrelated round material are not inherited.")
     return result
 
 
@@ -367,24 +367,24 @@ def validate_init_impl_inputs(work_dir, current_device_info, task_dir):
     work = Path(work_dir).resolve()
     manifest = load_init_impl_manifest(work)
     if manifest is None:
-        raise ValueError("--init-impl 导入清单不存在。")
+        raise ValueError("--init-impl the import manifest does not exist.")
     if _task_hash(task_dir) != manifest.get("task_sha256"):
-        raise ValueError("--init-impl 当前任务与导入时不一致，不能继续使用旧分析和融合评分。")
+        raise ValueError("--init-impl the current task differs from the imported one; the old analysis and fusion scores cannot keep being used.")
     original_device = _device_signature(manifest.get("source_device_info"))
     current_device = _device_signature(current_device_info)
     if original_device != current_device:
         changed = sorted(key for key in original_device.keys() | current_device.keys()
                          if original_device.get(key) != current_device.get(key))
-        raise ValueError("--init-impl 当前芯片/框架参数与原评分环境不一致: " + ", ".join(changed))
+        raise ValueError("--init-impl current chip/framework parameters disagree with the original scoring environment: " + ", ".join(changed))
     original_hashes = {}
     seen = set()
     for entry in manifest["copied_files"]:
         if not isinstance(entry, dict) or not isinstance(entry.get("destination"), str):
-            raise ValueError("--init-impl 文件清单条目不合法。")
+            raise ValueError("--init-impl a file manifest entry is invalid.")
         relative = Path(entry["destination"])
         if (not relative.parts or relative.is_absolute() or ".." in relative.parts
                 or relative.as_posix() in seen):
-            raise ValueError("--init-impl 文件清单存在越界或重复路径。")
+            raise ValueError("--init-impl the file manifest contains out-of-scope or duplicate paths.")
         seen.add(relative.as_posix())
         if relative.parts[0] == "impl":
             continue  # Stage3 may legitimately modify the implementation later.
@@ -392,10 +392,10 @@ def validate_init_impl_inputs(work_dir, current_device_info, task_dir):
         _safe_path(path, work)
         if (not path.is_file() or not path.resolve().is_relative_to(work)
                 or _linked(path) or _sha(path.read_bytes()) != entry.get("sha256")):
-            raise ValueError(f"--init-impl 导入材料丢失或被修改: {relative.as_posix()}")
+            raise ValueError(f"--init-impl imported material is missing or was modified: {relative.as_posix()}")
         original_hashes[relative.as_posix()] = entry.get("source_sha256")
     if not set(_REQUIRED) <= seen:
-        raise ValueError("--init-impl 文件清单缺少必要 Stage1/1.5/2 材料。")
+        raise ValueError("--init-impl the file manifest lacks required Stage1/1.5/2 material.")
     _required(work, work / "develop/iter0")
     # Immediate copy provenance differs from original Jev inputs after a prior
     # import has relocated paths in ANALYSIS or requirements. Keep both hashes.
@@ -405,5 +405,5 @@ def validate_init_impl_inputs(work_dir, current_device_info, task_dir):
             or not all(isinstance(fusion_input_hashes[name], str)
                        and re.fullmatch(r"[0-9a-f]{64}", fusion_input_hashes[name])
                        for name in _ROOT_FILES)):
-        raise ValueError("--init-impl 缺少原始 Jev 评分输入摘要。")
+        raise ValueError("--init-impl is missing the original Jev scoring input digests.")
     _validate_fusion(work, fusion_input_hashes, work / "develop/iter0")

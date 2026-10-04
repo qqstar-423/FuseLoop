@@ -335,7 +335,7 @@ class FusionSelectionTests(unittest.TestCase):
     def test_legacy_consumers_without_new_stage_inputs_preserve_existing_route(self):
         (self.work / "fusion_requirements.en.json").unlink()
         for stage in ("stage3", "stage7", "stage8", "stage9"):
-            self.assertIn("旧任务", format_fusion_library_for_prompt(self.work, stage))
+            self.assertIn("legacy task", format_fusion_library_for_prompt(self.work, stage))
         with self.assertRaises(FileNotFoundError):
             format_fusion_library_for_prompt(self.work, "stage2")
         (self.work / "fusion").mkdir()
@@ -363,9 +363,9 @@ class FusionSelectionTests(unittest.TestCase):
                 prompt = format_fusion_library_for_prompt(self.work, stage)
                 self.assertIn(str(fusion_library_path(self.work).resolve()), prompt)
                 self.assertIn(json.dumps(library, ensure_ascii=False, indent=2), prompt)
-                self.assertIn("不得自行修改", prompt)
+                self.assertIn("do not modify", prompt)
                 if stage == 2:
-                    self.assertIn("概率最高", prompt)
+                    self.assertIn("highest-probability", prompt)
         with self.assertRaises(ValueError):
             format_fusion_library_for_prompt(self.work, 6)
 

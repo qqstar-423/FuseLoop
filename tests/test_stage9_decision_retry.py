@@ -272,9 +272,9 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         first_error = self.read_json(first_path.parent / "validation_error.json")
         self.assertGreaterEqual(len(first_error["errors"]), 2)
         self.assertTrue(any("no inspect operation" in error for error in first_error["errors"]))
-        self.assertTrue(any("eval/iter2/prof_data" in error and "具体文件" in error
+        self.assertTrue(any("eval/iter2/prof_data" in error and "concrete files" in error
                             for error in first_error["errors"]))
-        for token in ("T3", "no inspect operation", "eval/iter2/prof_data", "具体文件"):
+        for token in ("T3", "no inspect operation", "eval/iter2/prof_data", "concrete files"):
             self.assertIn(token, retry_prompt)
         for output, _ in requests:
             self.assertEqual(self.read_json(output.parent / "request.json")["scene"], "all_passed")
@@ -304,7 +304,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
             retry_error = self.read_json(retry_path.parent / "validation_error.json")
             self.assertIs(retry_error["will_retry"], False)
             self.assertIn("eval/iter2/prof_data", retry_error["error"])
-            self.assertIn("具体文件", retry_error["error"])
+            self.assertIn("concrete files", retry_error["error"])
             self.assertNotIn("no inspect operation", retry_error["error"])
             self.assertFalse((retry_path.parent / "commit.json").exists())
             self.assertFalse((self.work / "knowledge/proven_patterns.md").exists())
@@ -390,15 +390,15 @@ class Stage9DecisionRetryTests(unittest.TestCase):
             self.assertTrue(any(path in error for error in first_error["errors"]))
             self.assertIn(path, prompts[1])
         self.assertIn("suggest_next[3].action", prompts[1])
-        self.assertTrue(any(bad_reports[0] in error and "具体文件" in error for error in first_error["errors"]))
+        self.assertTrue(any(bad_reports[0] in error and "concrete files" in error for error in first_error["errors"]))
         self.assertIn(bad_reports[2], second_error["error"])
         self.assertNotIn("readonly_files", second_error["error"])
         self.assertNotIn("suggest_next[3].action", second_error["error"])
         self.assertNotIn(bad_reports[1], second_error["error"])
         self.assertIn(bad_reports[2], prompts[2])
         self.assertIn(str(outputs[1].parent / "validation_error.json"), prompts[2])
-        self.assertEqual([line for line in prompts[2].splitlines() if line.startswith("Stage9 输出文件：")],
-                         [f"Stage9 输出文件：{outputs[2]}"])
+        self.assertEqual([line for line in prompts[2].splitlines() if line.startswith("Stage9 output file:")],
+                         [f"Stage9 output file: {outputs[2]}"])
         for output, request in zip(outputs, requests):
             self.assert_pattern_contract(output, "proven_pattern")
             self.assertEqual(self.read_json(output.parent / "history_before.json"), before)
@@ -424,11 +424,11 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         for name in ("workflow.log", "state_transitions.log"):
             logs = (self.work / "log" / name).read_text(encoding="utf-8")
             for index, request in enumerate(requests):
-                self.assertTrue(any(request["request_id"] in line and f"尝试次数={index + 1}/3" in line
-                                    and f"修正次数={index}/2" in line for line in logs.splitlines()))
-            self.assertIn("下一步=同轮修正1/2次", logs)
-            self.assertIn("下一步=同轮修正2/2次", logs)
-            self.assertNotIn("===== Stage9 修正失败，停止交付 =====", logs)
+                self.assertTrue(any(request["request_id"] in line and f"attempts={index + 1}/3" in line
+                                    and f"corrections={index}/2" in line for line in logs.splitlines()))
+            self.assertIn("next step=in-round correction 1/2", logs)
+            self.assertIn("next step=in-round correction 2/2", logs)
+            self.assertNotIn("===== Stage9 correction failed; delivery stopped =====", logs)
 
     def test_all_pattern_errors_reach_one_correction_before_single_experience_commit(self):
         self.routing.perfs = {1: (1.6, 1.8), 2: (1.8, 2.0)}
@@ -536,8 +536,8 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         for filename in ("workflow.log", "state_transitions.log"):
             logs = (self.work / "log" / filename).read_text(encoding="utf-8")
             self.assertIn(str(retry_path.parent / "validation_error.json"), logs)
-            self.assertIn("Stage9 修正失败", logs)
-            self.assertIn("不进入 Stage3", logs)
+            self.assertIn("Stage9 correction failed", logs)
+            self.assertIn("not entering Stage3", logs)
             for index, case_id in enumerate(case_ids):
                 for token in (f"proven_pattern.case_analysis[{index}].explanation", case_id):
                     self.assertIn(token, first_error["error"])
@@ -597,21 +597,21 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         self.assertIn(str(first_path), retry_prompt)
         self.assertIn("FUSION_HANDOFF[stage9]", retry_prompt)
         output_hint = next(line for line in retry_prompt.splitlines()
-                           if "用途：本次 Stage9 决策输出（待你生成）" in line)
+                           if "Purpose: This round's Stage9 decision output (to be generated by you)" in line)
         retry_relative = retry_path.relative_to(self.work).as_posix()
-        self.assertIn(f"文件：`{retry_path}`", output_hint)
-        self.assertIn(f"相对工作目录：`{retry_relative}`", output_hint)
-        self.assertIn(f"迭代模板：`{retry_relative.replace('/iter2/', '/<iter>/')}`", output_hint)
+        self.assertIn(f"File: `{retry_path}`", output_hint)
+        self.assertIn(f"relative to working directory: `{retry_relative}`", output_hint)
+        self.assertIn(f"iteration template: `{retry_relative.replace('/iter2/', '/<iter>/')}`", output_hint)
         output_contract = [line for line in retry_prompt.splitlines()
-                           if line.startswith("Stage9 输出文件：")]
-        self.assertEqual(output_contract, [f"Stage9 输出文件：{retry_path}"])
+                           if line.startswith("Stage9 output file:")]
+        self.assertEqual(output_contract, [f"Stage9 output file: {retry_path}"])
         previous_relative = first_path.relative_to(self.work).as_posix()
         previous_template = previous_relative.replace("/iter2/", "/<iter>/")
         old_output_lines = [line for line in retry_prompt.splitlines()
                             if any(path in line for path in
                                    (str(first_path), previous_relative, previous_template))]
         self.assertEqual(len(old_output_lines), 1)
-        self.assertIn("用途：被拒绝的原始决策", old_output_lines[0])
+        self.assertIn("Purpose: Rejected original decision", old_output_lines[0])
         first_request = self.read_json(first_path.parent / "request.json")
         retry_request = self.read_json(retry_path.parent / "request.json")
         for key in ("iteration", "scene", "phase", "fail_reason", "performance_case_ids",
@@ -651,26 +651,26 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         self.assertIn(str(retry_path), knowledge)
         logs = (self.work / "log/workflow.log").read_text(encoding="utf-8")
         rejected = next(line for line in logs.splitlines()
-                        if "===== Stage9 决策校验失败" in line)
+                        if "===== Stage9 decision validation failed" in line)
         correction = next(line for line in logs.splitlines()
-                          if "===== Stage9 同轮修正 =====" in line)
+                          if "===== Stage9 in-round correction =====" in line)
         accepted = next(line for line in logs.splitlines()
-                        if "[Stage9 决策校验通过]" in line and retry_id in line)
+                        if "[Stage9 decision validation passed]" in line and retry_id in line)
         for token in ("iter=2", f"request={first_id}", f"scene={first_request['scene']}", str(first_path),
-                      str(error_path), "下一步=同轮修正1/2次"):
+                      str(error_path), "next step=in-round correction 1/2"):
             self.assertIn(token, rejected)
         for token in ("iter=2", first_id, retry_id, str(error_path), str(first_path),
-                      str(retry_path.parent / "prompt.md"), str(retry_path), "不增加性能迭代次数"):
+                      str(retry_path.parent / "prompt.md"), str(retry_path), "without increasing performance iterations"):
             self.assertIn(token, correction)
-        for token in ("iter=2", f"request={retry_id}", "尝试次数=2/3", "修正次数=1/2", str(retry_path)):
+        for token in ("iter=2", f"request={retry_id}", "attempts=2/3", "corrections=1/2", str(retry_path)):
             self.assertIn(token, accepted)
         self.assertLess(logs.index(rejected), logs.index(correction))
         self.assertLess(logs.index(correction), logs.index(accepted))
-        self.assertNotIn("===== Stage9 修正失败，停止交付 =====", logs)
+        self.assertNotIn("===== Stage9 correction failed; delivery stopped =====", logs)
         state_logs = (self.work / "log/state_transitions.log").read_text(encoding="utf-8")
         self.assertIn(correction, state_logs)
-        self.assertTrue(any("[Stage9 决策校验通过]" in line and f"request={retry_id}" in line
-                            and "iter=2" in line and "修正次数=1/2" in line
+        self.assertTrue(any("[Stage9 decision validation passed]" in line and f"request={retry_id}" in line
+                            and "iter=2" in line and "corrections=1/2" in line
                             for line in state_logs.splitlines()))
 
     def test_third_conflict_stops_without_publishing_advice_or_experience(self):
@@ -714,15 +714,15 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         error = self.read_json(error_path)
         logs = (self.work / "log/workflow.log").read_text(encoding="utf-8")
         rejected = [line for line in logs.splitlines()
-                    if "===== Stage9 决策校验失败" in line]
+                    if "===== Stage9 decision validation failed" in line]
         self.assertEqual(len(rejected), 3)
-        corrections = [line for line in logs.splitlines() if "===== Stage9 同轮修正 =====" in line]
+        corrections = [line for line in logs.splitlines() if "===== Stage9 in-round correction =====" in line]
         self.assertEqual(len(corrections), 2)
         for index, (output, request, line) in enumerate(zip(attempts, requests, rejected)):
-            next_step = f"下一步=同轮修正{index + 1}/2次" if index < 2 else "停止于 Stage9"
+            next_step = f"next step=in-round correction {index + 1}/2" if index < 2 else "stop at Stage9"
             for token in ("iter=2", f"request={request['request_id']}", f"scene={request['scene']}",
-                          str(output.parent / "validation_error.json"), f"尝试次数={index + 1}/3",
-                          f"修正次数={index}/2", next_step):
+                          str(output.parent / "validation_error.json"), f"attempts={index + 1}/3",
+                          f"corrections={index}/2", next_step):
                 self.assertIn(token, line)
             if index == 2:
                 continue
@@ -730,17 +730,17 @@ class Stage9DecisionRetryTests(unittest.TestCase):
             correction = corrections[index]
             for token in ("iter=2", request["request_id"], requests[index + 1]["request_id"], str(output),
                           str(output.parent / "validation_error.json"), str(following.parent / "prompt.md"),
-                          str(following), "不增加性能迭代次数"):
+                          str(following), "without increasing performance iterations"):
                 self.assertIn(token, correction)
             self.assertLess(logs.index(line), logs.index(correction))
             self.assertLess(logs.index(correction), logs.index(rejected[index + 1]))
         stopped = next(line for line in logs.splitlines()
-                       if "===== Stage9 修正失败，停止交付 =====" in line)
+                       if "===== Stage9 correction failed; delivery stopped =====" in line)
         for token in ("iter=2", f"request={retry_id}", str(retry_path), str(error_path),
-                      error["error"], "不进入 Stage3"):
+                      error["error"], "not entering Stage3"):
             self.assertIn(token, stopped)
         self.assertLess(logs.index(rejected[-1]), logs.index(stopped))
-        self.assertFalse(any("[Stage9 决策校验通过]" in line and retry_id in line
+        self.assertFalse(any("[Stage9 decision validation passed]" in line and retry_id in line
                              for line in logs.splitlines()))
         state_logs = (self.work / "log/state_transitions.log").read_text(encoding="utf-8")
         for correction in corrections:
@@ -945,7 +945,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         self.assertTrue(all("inspect_files" in item and "modify_files" in item
                             for item in after["suggest_next"]))
         logs = (self.work / "log/workflow.log").read_text(encoding="utf-8")
-        self.assertIn("[Stage3 交付拦截]", logs)
+        self.assertIn("[Stage3 delivery intercept]", logs)
 
     def local_scope(self, modify_files, readonly_files=None, inspect_files=None):
         return {
@@ -955,7 +955,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
 
     def test_real_directory_cannot_replace_a_concrete_file_target(self):
         decision = self.local_scope(["impl/c3"])
-        with self.assertRaisesRegex(ValueError, "目录"):
+        with self.assertRaisesRegex(ValueError, "directories are not a substitute"):
             orchestrator._validate_stage9_file_targets(str(self.work), decision)
 
     def test_new_file_inside_work_is_allowed_without_creating_it(self):
@@ -976,7 +976,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
 
         decision = self.local_scope([C3], readonly_files=["impl/alias_of_c3.py"])
         with patch.object(Path, "resolve", resolve):
-            with self.assertRaisesRegex(ValueError, "同一文件"):
+            with self.assertRaisesRegex(ValueError, "the same file"):
                 orchestrator._validate_stage9_file_targets(str(self.work), decision)
         self.assertFalse(alias.exists(), "No real symlink or external file is needed")
 
@@ -992,7 +992,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
 
         decision = self.local_scope(["impl/external_alias.py"])
         with patch.object(Path, "resolve", resolve):
-            with self.assertRaisesRegex(ValueError, "工作目录内"):
+            with self.assertRaisesRegex(ValueError, "inside the working directory"):
                 orchestrator._validate_stage9_file_targets(str(self.work), decision)
         self.assertFalse(alias.exists(), "No real symlink or external file is needed")
 

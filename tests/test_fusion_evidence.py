@@ -174,8 +174,8 @@ class FusionEvidenceTests(unittest.TestCase):
         self.assertIn(str(self.work / "fusion/fusion_library.json"), prompt)
         self.assertIn(str(self.develop), prompt)
         self.assertIn(DECISION_FILE, prompt)
-        self.assertIn("probability 必须为 null", prompt)
-        self.assertIn("未运行或失败如实写 false", prompt)
+        self.assertIn("probability must be null", prompt)
+        self.assertIn("Write false honestly for unexecuted or failed items", prompt)
 
     def test_nonfinite_extra_metadata_is_invalid_without_breaking_failure_routes(self):
         self.library["selection"]["untrusted_metric"] = float("nan")
@@ -235,8 +235,8 @@ class FusionEvidenceTests(unittest.TestCase):
         self.write_artifacts()
         self.assertTrue(self.finish()["eligible"])
         self.assertTrue(load_evidence(self.work)["eligible"])
-        self.assertIn("旧任务", development_prompt(self.work, self.develop, 3))
-        self.assertIn("不补调 Jev", development_prompt(self.work, self.develop, 3))
+        self.assertIn("legacy task", development_prompt(self.work, self.develop, 3))
+        self.assertIn("do not call Jev", development_prompt(self.work, self.develop, 3))
         self.library["candidates"][0]["probability"] = 0.8
         self.write_artifacts()
         self.assertFalse(self.finish()["eligible"])

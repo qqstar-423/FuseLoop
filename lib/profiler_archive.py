@@ -13,16 +13,16 @@ def archive_profiler_data(report_path, eval_dir, log_callback=None):
     destination = evaluation / "prof_data"
     # Never replace a link/junction that leads outside this evaluation directory.
     if destination.is_symlink() or destination.resolve().parent != evaluation:
-        raise ValueError(f"prof_data 归档目标超出本轮评测目录：{destination}")
+        raise ValueError(f"prof_data archive destination is outside this round\'s evaluation directory: {destination}")
     source = Path(report_path).resolve().parent / "prof_data" if report_path else None
     if source is None or not source.is_dir():
         if destination.exists():
             shutil.rmtree(destination)
-        emit(f"[profiler] 本次报告没有 prof_data：{source or '无报告'}；"
-             f"本轮不关联 kernel_csv，不复用旧文件；目标={destination}")
+        emit(f"[profiler] This report has no prof_data: {source or 'no report'}; "
+             f"no kernel_csv association this round, old files are not reused; target={destination}")
         return ""
     if source.resolve() == destination.resolve():
-        emit(f"[profiler] 数据已在本轮 work 目录：{destination}")
+        emit(f"[profiler] Data is already in this round\'s work directory: {destination}")
         return str(destination)
     # Finish copying before publishing the new directory; do not expose a partial copy.
     with tempfile.TemporaryDirectory(prefix=".profiler_copy_", dir=evaluation) as temporary:
@@ -31,10 +31,10 @@ def archive_profiler_data(report_path, eval_dir, log_callback=None):
         if destination.exists():
             shutil.rmtree(destination)
         staged.replace(destination)
-    emit(f"[profiler] 本轮数据已保存：source={source} -> work={destination}")
+    emit(f"[profiler] This round\'s data saved: source={source} -> work={destination}")
     if (destination / "_batched").is_dir():
-        emit("[profiler] 已保留批量采集 _batched 数据；没有逐 case 对应证据时，"
-             "不把共享 CSV 当作某个 case 的 kernel_csv")
+        emit("[profiler] Batch-collected _batched data retained; without per-case corresponding evidence, "
+             "a shared CSV is not treated as any case's kernel_csv")
     return str(destination)
 
 

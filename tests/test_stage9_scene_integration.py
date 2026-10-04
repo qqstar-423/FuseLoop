@@ -57,8 +57,8 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
         request, role, prompt = self.artifacts(iteration)
         self.assertEqual(request["scene"], scene)
         self.assertEqual(request["phase"], "decision")
-        self.assertEqual(role.count("## 当前场景："), 1)
-        self.assertIn("## 当前阶段：提交最终决策", role)
+        self.assertEqual(role.count("## Current Scenario:"), 1)
+        self.assertIn("## Current Stage: Submit Final Decision", role)
         keys = {item["key"] for item in request["default_inputs"]}
         self.assertTrue(set(expected_keys) <= keys, keys)
         self.assertFalse(set(forbidden_keys) & keys, keys)
@@ -71,8 +71,8 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
                              f"search/iter{iteration}/FIX_DIRECTIVE.md", f"search/iter{iteration}/SEARCH_REPORT.md"):
                 self.assertNotIn(str(self.work / relative), prompt)
         if scene in {"compile", "precision", "evaluation_error"}:
-            self.assertNotIn("## 条件任务：详细记录本轮性能经验", role)
-            self.assertNotIn("## 性能证据口径", role)
+            self.assertNotIn("## Conditional Task: Record This Round's Performance Experience in Detail", role)
+            self.assertNotIn("## Performance Evidence Basis", role)
             self.assertEqual(request["perf_diff"], {})
         return request, role, prompt
 
@@ -99,25 +99,25 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
         self.flow.run_workflow(max_iterations=1)
         _, _, prompt = self.assert_scene("evaluation_error", expected_keys={"perf_result", "profiler"},
                                         forbidden_keys={"bottleneck", "fix_directive", "search_report"})
-        self.assertIn("缺报告或零分本身不能证明违规", prompt)
-        self.assertNotIn("反作弊触发！你的首要任务", prompt)
+        self.assertIn("A missing report or zero score alone does not prove a violation", prompt)
+        self.assertNotIn("Anti-cheating triggered! Your first task", prompt)
 
     def test_normal_optimization_actual_prompt_keeps_stage7_stage8(self):
         self.plant_stale_inputs(1)
         self.flow.run_workflow(max_iterations=1)
         _, role, prompt = self.assert_scene("optimization", expected_keys={"perf_result", "bottleneck", "fix_directive", "search_report"})
-        self.assertNotIn("【场景2停滞", prompt)
-        self.assertNotIn("## 条件任务：详细记录本轮性能经验", role)
+        self.assertNotIn("[Scenario 2 stagnation", prompt)
+        self.assertNotIn("## Conditional Task: Record This Round's Performance Experience in Detail", role)
 
     def test_stagnation_actual_prompt_keeps_trends_candidates_and_window(self):
         self.flow.run_workflow(max_iterations=3, file_logs=True)
         request, role, prompt = self.assert_scene("stagnation", iteration=3,
                                                 expected_keys={"perf_result", "bottleneck", "fix_directive", "fusion_library"})
-        self.assertIn("【场景2停滞", prompt)
+        self.assertIn("[Scenario 2 stagnation", prompt)
         self.assertIn('"case_trends"', prompt)
-        self.assertIn("慢 case 持续接近 1", role)
+        self.assertIn("slow cases keep approaching 1", role)
         logs = (self.work / "log/workflow.log").read_text(encoding="utf-8")
-        for token in ("[Stage9 场景]", "scene=stagnation", "phase=decision", request["request_id"],
+        for token in ("[Stage9 scene]", "scene=stagnation", "phase=decision", request["request_id"],
                       request["role_path"], request["prompt_path"]):
             self.assertIn(token, logs)
 
@@ -128,7 +128,7 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
         self.flow.run_workflow(max_iterations=1)
         _, role, _ = self.assert_scene("all_passed", expected_keys={"perf_result", "profiler", "perf_reports"},
                                       forbidden_keys={"bottleneck", "fix_directive", "search_report"})
-        self.assertIn("保留必要瓶颈分析", role)
+        self.assertIn("Keep the necessary bottleneck analysis", role)
         self.assertNotIn("profile/<iter>/bottleneck_analysis.md", role)
 
     def test_failed_stage7_stops_before_search_and_review(self):
@@ -157,7 +157,7 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
         self.assertTrue({"fix_directive", "search_report"} <=
                         {item["key"] for item in request["missing_inputs"]})
         self.assertIn("bottleneck", {item["key"] for item in request["default_inputs"]})
-        self.assertIn("当前场景缺失材料", prompt)
+        self.assertIn("Materials missing for the current scene", prompt)
         self.assertIn("Stage8", prompt + json.dumps(request, ensure_ascii=False))
 
     def test_saved_stagnation_scene_survives_unavailable_live_selection(self):
@@ -175,7 +175,7 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
                                        fail_reason="perf_optimize", perf_diff={})
         request, role, _ = self.artifacts(3)
         self.assertEqual(request["scene"], "stagnation")
-        self.assertIn("当前场景：未全部达标，停滞审查", role)
+        self.assertIn("Current Scenario: Not All Cases Meet Target, Stagnation Review", role)
         self.assertEqual(HumanReview(str(self.work)).state()["stagnation"]["count"], 1)
 
     def test_actual_role_cannot_use_previous_iteration_stagnation(self):
@@ -194,7 +194,7 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
                                        fail_reason="perf_optimize", perf_diff={})
         request, role, _ = self.artifacts(2)
         self.assertEqual(request["scene"], "optimization")
-        self.assertNotIn("当前场景：未全部达标，停滞审查", role)
+        self.assertNotIn("Current Scenario: Not All Cases Meet Target, Stagnation Review", role)
 
     def test_classifier_respects_current_iteration_and_explicit_underperforming_route(self):
         for old in ({"eligible": True, "latest_iteration": 3, "review_fusion": True},

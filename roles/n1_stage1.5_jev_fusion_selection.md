@@ -1,39 +1,39 @@
-# Stage1.5：Jev 融合方案选择
+# Stage1.5: Jev Fusion Scheme Selection
 
-**阶段顺序：[Stage1 需求分析](n1_stage1_requirements_analysis.md) → Stage1.5 融合方案选择 → [Stage2 首版实现](n1_stage2_first_impl.md)。**
+**Stage order: [Stage1 Requirements Analysis](n1_stage1_requirements_analysis.md) → Stage1.5 Fusion Scheme Selection → [Stage2 First Implementation](n1_stage2_first_impl.md).**
 
-当前实现目标为 Triton / triton-ascend（昇腾 NPU）；评分时必须结合该后端的实际表达能力，不把其他框架或 GPU 专用能力视为已具备。
+The current implementation target is Triton / triton-ascend (Ascend NPU); scoring must take into account the actual expressive power of this backend, and must not treat other frameworks or GPU-specific capabilities as already available.
 
-本文件说明本阶段的职责、输入和输出，供人阅读，不直接作为 Jev 请求。实际执行由 `orchestrator.py` 调用 `lib/fusion_selection.py` 完成；发送给 Jev 的内容全部为英文。
+This file describes the responsibilities, inputs, and outputs of this stage for human readers; it is not directly sent to Jev as a request. Actual execution is performed by `orchestrator.py` calling `lib/fusion_selection.py`; everything sent to Jev is in English.
 
-## 输入
+## Inputs
 
-路径基准在表中注明；程序读取文件并组织英文内容，Jev 不直接访问这些本地路径。
+Path bases are noted in the table; the program reads the files and assembles the English content — Jev does not directly access these local paths.
 
-| 相对路径 | 相对目录 | 作用与阅读方式 |
+| Relative path | Relative directory | Purpose and how to read |
 |---|---|---|
-| `knowledge/fusion_method.md` | 项目根 | 融合方法原文；理解各方法的数据流、适用条件及限制。 |
-| `knowledge/fusion_options.json` | 项目根 | 详细候选目录，含 F1–F10 共 10 类、24 个变体；按固定 ID 比较方法及其约束，不把变体当成额外评分项。 |
-| `fusion_requirements.en.json` | `<work>` | Stage1 的融合需求摘要；结合语义、case 特征、精度与实现约束判断适用性。 |
-| `device_info.json` | `<work>` | 当前硬件真实参数；用架构、核数及存储容量核对方法前提。 |
-| `ANALYSIS.md` | `<work>` | 完整需求分析；程序读取其哈希用于输入一致性检查，正文不直接发送给 Jev，评分使用上述需求摘要。 |
+| `knowledge/fusion_method.md` | project root | Original text of fusion methods; understand each method's data flow, applicability conditions, and limitations. |
+| `knowledge/fusion_options.json` | project root | Detailed candidate catalog, containing 10 categories F1–F10 with 24 variants; compare methods and their constraints by fixed ID, and do not treat variants as separate scoring items. |
+| `fusion_requirements.en.json` | `<work>` | Fusion requirements summary from Stage1; judge applicability by combining semantics, case characteristics, precision, and implementation constraints. |
+| `device_info.json` | `<work>` | Real parameters of the current hardware; use architecture, core count, and storage capacity to verify method prerequisites. |
+| `ANALYSIS.md` | `<work>` | Full requirements analysis; the program reads its hash for input consistency checking, the body is not sent directly to Jev, and scoring uses the requirements summary above. |
 
-## 职责
+## Responsibilities
 
-1. 程序复用 Kerminal 将非英文材料翻译为英文，保留方案 ID、数值和 JSON 结构，检查译文与请求大小。
-2. 程序组织 `model / state / questions` 请求；Jev 对每个大类给出独立的 `noul` 适用性概率。24 个变体作为方案详情参与判断，不单独评分。
-3. 程序校验所有方案都有合法概率，按概率降序排列；同分保留目录顺序，取前 n 个组成 **JSON 融合算子库**。
+1. The program reuses Kerminal to translate non-English material into English, preserving scheme IDs, values, and JSON structure, and checks the translation and request size.
+2. The program assembles the `model / state / questions` request; Jev gives an independent `noul` applicability probability for each major category. The 24 variants participate in the judgment as scheme details and are not scored separately.
+3. The program verifies that all schemes have valid probabilities and sorts them in descending order of probability; ties keep the catalog order, and the top n are taken to form the **JSON fusion operator library**.
 
-`n` 由 `config.yaml` 的 `fusion_selection.top_n` 配置，默认 3。概率表示“该方向可行且值得探索”的初始判断，不要求总和为 1，不代表实测性能或唯一最优方案。此阶段不生成算子代码或自测报告。
+`n` is configured by `fusion_selection.top_n` in `config.yaml`, default 3. The probability expresses an initial judgment that "this direction is feasible and worth exploring"; it is not required to sum to 1, and does not represent measured performance or a unique optimal scheme. This stage does not generate operator code or self-test reports.
 
-## 输出与路由
+## Outputs and Routing
 
-| 输出 | 内容与用途 |
+| Output | Content and purpose |
 |---|---|
-| `<work>/fusion/jev_request.json`、`jev_response.json` | 完整英文请求和 Jev 原始响应，供追溯 |
-| `<work>/fusion/ranking.json` | 全部 10 个大类的概率与排序 |
-| `<work>/fusion/fusion_library.json` | 前 n 个完整候选，每项包含 `rank`、`probability`、`method`，传给 Stage2、3、7、8、9 |
+| `<work>/fusion/jev_request.json`, `jev_response.json` | Full English request and Jev's raw response, for traceability |
+| `<work>/fusion/ranking.json` | Probabilities and ranking of all 10 major categories |
+| `<work>/fusion/fusion_library.json` | The top n complete candidates, each containing `rank`, `probability`, `method`, passed to Stage2, 3, 7, 8, 9 |
 
-Stage1.5 成功后进入 Stage2，以概率最高的可实现方案作为首版方向；Stage3、7、8、9 结合各自职责和实际评测证据参考方案库。输出库保留原目录的方案详情，翻译仅用于 Jev 输入。
+After Stage1.5 succeeds, proceed to Stage2, using the highest-probability implementable scheme as the direction for the first version; Stage3, 7, 8, 9 refer to the scheme library combined with their own responsibilities and actual evaluation evidence. The output library retains the scheme details from the original catalog; translation is only used for Jev input.
 
-翻译、请求校验或评分失败时停止，不进入 Stage2；输入一致时可复用已校验的结果，只修改 n 时直接重选。本阶段沿用既有后续路由、P0/P1/P2 和退出逻辑。
+Stop on translation, request validation, or scoring failure — do not enter Stage2; when inputs are consistent, validated results can be reused, and if only n changes, reselect directly. This stage reuses the existing downstream routing, P0/P1/P2, and exit logic.

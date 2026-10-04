@@ -1,9 +1,9 @@
-## 当前场景：未全部达标，普通性能优化
+## Current Scenario: Not All Cases Meet Target, Ordinary Performance Optimization
 
-优先读 `profile/<iter>/bottleneck_analysis.md`（Stage7 瓶颈结论）与 `search/<iter>/FIX_DIRECTIVE.md`（Stage8 改法及依据），再对照实际方案、上轮建议和相关历史。具体归因有疑点时才回查 `eval/<iter>/prof_data/` 的原始数据，不重复整套 profiling 分析。
+First read `profile/<iter>/bottleneck_analysis.md` (Stage7's bottleneck conclusions) and `search/<iter>/FIX_DIRECTIVE.md` (Stage8's changes and their basis), then check against the actual scheme, last round's suggestions, and relevant history. Only when a specific attribution is in doubt should you check the raw data in `eval/<iter>/prof_data/`; do not redo the whole profiling analysis.
 
-用 `eval/<iter>/perf_result.json` 核对均值、HAP 和实际列出的最多 6 个最慢有效 case，结合 `selection/state.json` 的窗口、case 趋势及 `selection/best.json` 的版本清单，看哪些改动有效。最佳快照在 `selection/records/<iter>-<指纹>/manifest.json`，按清单读取代码和报告，避免混用版本。
+Use `eval/<iter>/perf_result.json` to check the average, HAP, and the at most 6 slowest valid cases actually listed, combined with the window and case trends in `selection/state.json` and the version manifest in `selection/best.json`, to see which changes were effective. The best snapshot is in `selection/records/<iter>-<fingerprint>/manifest.json`; read code and reports per the manifest to avoid mixing versions.
 
-少数慢 case 先看 shape 分块、尾块和固定开销等局部原因；有结构性瓶颈证据时再比较 `fusion/fusion_library.json` 的候选条件及概率。决定下一轮保留、局部优化或更换方向，说明目标 case 和验证方法。不能仅因非单 kernel 强制更换融合方案。
+For the few slow cases, first look at local causes such as shape tiling, tail blocks, and fixed overhead; only with evidence of a structural bottleneck should you compare the candidate conditions and probabilities in `fusion/fusion_library.json`. Decide whether to keep, locally optimize, or change direction next round, stating the target cases and verification method. Do not force a change of fusion scheme merely because it is not a single kernel.
 
-维护本轮实际融合尝试与跨轮结论；按程序给出的单轮涨跌条件记录经验。本场景不主动求助，但须处理传入的人工意见。
+Maintain this round's actual fusion attempts and cross-round conclusions; record experience per the program's single-round up/down conditions. This scenario does not proactively ask for help, but incoming human opinions must be handled.

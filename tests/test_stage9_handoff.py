@@ -283,7 +283,7 @@ class Stage9HandoffTests(unittest.TestCase):
         self.assertIn(str(question), self.fixture.prompts["stage9"])
         text = question.read_text(encoding="utf-8")
         self.assertTrue(text.startswith(original))
-        self.assertEqual(text.count("## tech_lead 裁定"), 1)
+        self.assertEqual(text.count("## tech_lead adjudication"), 1)
         self.assertIn(pitfall["root_cause"], text)
         self.assertIn(pitfall["correct_approach"], text)
         book = self.work / "knowledge/tech_lead_pitfalls.md"

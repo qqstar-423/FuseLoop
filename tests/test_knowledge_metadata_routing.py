@@ -41,13 +41,13 @@ class KnowledgeMetadataRoutingTests(unittest.TestCase):
         for log_name in ("workflow.log", "state_transitions.log"):
             text = (self.work / "log" / log_name).read_text(encoding="utf-8")
             lines = [line for line in text.splitlines()
-                     if f"[知识积累] {label}已保存；iter={iteration}；" in line]
+                     if f"[knowledge accumulation] {label} saved; iter={iteration}; " in line]
             self.assertEqual(len(lines), 1, (log_name, label, lines))
             line = lines[0]
-            for token in ("框架=Triton", "芯片=offline_test", "SoC=offline_test",
-                          f"输出目录={self.work / 'knowledge'}",
-                          f"文件={self.work / 'knowledge' / filename}",
-                          f"原始决策={decision_path}", *detail):
+            for token in ("framework=Triton", "chip=offline_test", "SoC=offline_test",
+                          f"output directory={self.work / 'knowledge'}",
+                          f"file={self.work / 'knowledge' / filename}",
+                          f"original decision={decision_path}", *detail):
                 self.assertIn(token, line)
             matches.append(line)
         self.assertEqual(matches[0], matches[1], "Both audit logs must identify the same write")
@@ -57,8 +57,8 @@ class KnowledgeMetadataRoutingTests(unittest.TestCase):
         self.routing.run_workflow(max_iterations=3, file_logs=True)
 
         for iteration, loader, filename, label, delta in (
-            (2, load_regression_patterns, "regression_patterns.md", "退步教训", -10.0),
-            (3, load_proven_patterns, "proven_patterns.md", "成功经验", 16.7),
+            (2, load_regression_patterns, "regression_patterns.md", "regression lesson", -10.0),
+            (3, load_proven_patterns, "proven_patterns.md", "success experience", 16.7),
         ):
             with self.subTest(label=label):
                 records = loader(str(self.work))
@@ -75,9 +75,9 @@ class KnowledgeMetadataRoutingTests(unittest.TestCase):
                 self.assert_write_logged(
                     label=label, filename=filename, iteration=iteration,
                     decision_path=record["decision_path"],
-                    detail=(f"变化={delta}%", "avg_speedup=", str(report)))
+                    detail=(f"change={delta}%", "avg_speedup=", str(report)))
                 self.assert_write_logged(
-                    label="历史账本", filename="history.json", iteration=iteration,
+                    label="history ledger", filename="history.json", iteration=iteration,
                     decision_path=record["decision_path"])
 
     def test_model_environment_and_changed_device_file_cannot_relabel_measured_gain(self):
@@ -114,7 +114,7 @@ class KnowledgeMetadataRoutingTests(unittest.TestCase):
         text = (self.work / "knowledge/proven_patterns.md").read_text(encoding="utf-8")
         for invalid in ("MODEL_FAKE", "LIVE_CHANGED"):
             self.assertNotIn(invalid, text)
-        self.assert_write_logged(label="成功经验", filename="proven_patterns.md",
+        self.assert_write_logged(label="success experience", filename="proven_patterns.md",
                                  iteration=2, decision_path=record["decision_path"])
 
     def test_compile_ruling_records_environment_paths_without_a_performance_report(self):
@@ -148,10 +148,10 @@ class KnowledgeMetadataRoutingTests(unittest.TestCase):
         self.assertEqual(entry["environment"], record["environment"])
         self.assertEqual(record["decision_path"], entry["stage9_decision_path"])
         self.assertEqual(Path(record["question_path"]), question)
-        self.assert_write_logged(label="错题本", filename="tech_lead_pitfalls.md",
+        self.assert_write_logged(label="pitfall log", filename="tech_lead_pitfalls.md",
                                  iteration=1, decision_path=record["decision_path"],
-                                 detail=("裁定=confirmed", str(question)))
-        self.assert_write_logged(label="历史账本", filename="history.json",
+                                 detail=("verdict=confirmed", str(question)))
+        self.assert_write_logged(label="history ledger", filename="history.json",
                                  iteration=1, decision_path=record["decision_path"])
 
 

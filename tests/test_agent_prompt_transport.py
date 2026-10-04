@@ -21,7 +21,7 @@ class AgentPromptTransportTests(unittest.TestCase):
         self.work = Path(temporary.name) / "work 中文 with spaces"
         self.work.mkdir()
         self.role = self.work / "stage3_modify.md"
-        self.role.write_text("你是算子开发节点。\n保留所有 P0。", encoding="utf-8")
+        self.role.write_text("You are the operator development node.\nKeep all P0s.", encoding="utf-8")
         self.config = {"cli": "synthetic-cannbot", "cwd": str(self.work / "different cwd")}
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
@@ -39,7 +39,7 @@ class AgentPromptTransportTests(unittest.TestCase):
         return proc
 
     def test_large_chinese_prompt_is_exact_stdin_not_an_argument(self):
-        prompt = "逐 case 分析；文件 /tmp/a b；字面量 $(never-run) `never-run`\r\n" * 40000
+        prompt = "Per-case analysis; file /tmp/a b; literal $(never-run) `never-run`\r\n" * 40000
         expected = (self.role.read_text(encoding="utf-8") + "\n\n---\n\n"
                     + prompt + runner.GLOBAL_CONSTRAINT).encode("utf-8")
         observed = {}
@@ -71,7 +71,7 @@ class AgentPromptTransportTests(unittest.TestCase):
             self.assertEqual(observed["path"].stat().st_mode & 0o777, 0o600)
         logged = "\n".join(logs.output)
         self.assertIn(str(observed["path"]), logged)
-        self.assertIn(f"UTF-8字节数={len(expected)}", logged)
+        self.assertIn(f"UTF-8 bytes={len(expected)}", logged)
         self.assertNotIn("never-run", logged)
         self.assertNotIn("do-not-log-this-value", logged)
         self.assertTrue(any(str(observed["path"]) in item.args[0]
@@ -79,12 +79,12 @@ class AgentPromptTransportTests(unittest.TestCase):
 
     def test_repeated_stage_calls_preserve_separate_inputs(self):
         with patch.object(runner.subprocess, "Popen", side_effect=lambda *a, **kw: self.completed_process()):
-            for prompt in ("首次任务", "同轮修正任务"):
+            for prompt in ("first task", "same-round correction task"):
                 self.assertTrue(runner.run_cannbot(str(self.role), str(self.work), prompt, self.config))
         paths = list((self.work / "log/prompts").glob("*.txt"))
         self.assertEqual(len(paths), 2)
         suffixes = {path.read_text(encoding="utf-8").split("\n\n---\n\n")[-1] for path in paths}
-        self.assertEqual(suffixes, {"首次任务", "同轮修正任务"})
+        self.assertEqual(suffixes, {"first task", "same-round correction task"})
 
     def test_failed_launch_closes_input_logs_sizes_and_propagates_error(self):
         opened = []
@@ -97,22 +97,22 @@ class AgentPromptTransportTests(unittest.TestCase):
         with patch.object(runner.subprocess, "Popen", side_effect=launch) as popen, \
                 self.assertLogs(runner.log, level="INFO") as logs, \
                 self.assertRaises(OSError) as caught:
-            runner.run_cannbot(str(self.role), str(self.work), "合成任务", self.config)
+            runner.run_cannbot(str(self.role), str(self.work), "synthetic task", self.config)
         self.assertIs(caught.exception, failure)
         popen.assert_called_once()
         self.assertTrue(opened[0].closed)
         self.assertTrue(Path(opened[0].name).exists())
         logged = "\n".join(logs.output)
-        self.assertIn("进程尚未启动", logged)
-        self.assertIn("argv字节数=", logged)
-        self.assertIn("env字节数=", logged)
+        self.assertIn("process never started", logged)
+        self.assertIn("argv bytes=", logged)
+        self.assertIn("env bytes=", logged)
         self.assertNotIn("do-not-log-this-value", logged)
 
     def test_missing_executable_error_is_not_swallowed_or_retried(self):
         failure = FileNotFoundError(errno.ENOENT, "synthetic missing executable")
         with patch.object(runner.subprocess, "Popen", side_effect=failure) as popen, \
                 self.assertRaises(FileNotFoundError) as caught:
-            runner.run_cannbot(str(self.role), str(self.work), "任务", self.config)
+            runner.run_cannbot(str(self.role), str(self.work), "task", self.config)
         self.assertIs(caught.exception, failure)
         popen.assert_called_once()
 
@@ -120,12 +120,12 @@ class AgentPromptTransportTests(unittest.TestCase):
         proc = self.completed_process(returncode=1, stderr="Prompt exceeds max length")
         with patch.object(runner.subprocess, "Popen", return_value=proc), \
                 self.assertLogs(runner.log, level="ERROR") as logs:
-            self.assertFalse(runner.run_cannbot(str(self.role), str(self.work), "任务", self.config))
-        self.assertIn("模型上下文超过限制", "\n".join(logs.output))
+            self.assertFalse(runner.run_cannbot(str(self.role), str(self.work), "task", self.config))
+        self.assertIn("model context limit exceeded", "\n".join(logs.output))
 
     def test_stdin_does_not_replace_stdout_streaming(self):
         path = self.work / "input.txt"
-        path.write_bytes("完整任务".encode("utf-8"))
+        path.write_bytes("complete task".encode("utf-8"))
         proc = self.completed_process(
             stdout='{"type":"text","part":{"text":"synthetic response"}}\ntail',
             stderr="separate error stream")
@@ -160,8 +160,8 @@ class AgentPromptTransportTests(unittest.TestCase):
         self.assertEqual(close.call_args_list, [call(101), call(102)])
 
     def test_missing_cli_fails_before_writing_prompt(self):
-        with self.assertRaisesRegex(ValueError, "cli 路径未配置"):
-            runner.run_cannbot(str(self.role), str(self.work), "任务", config={})
+        with self.assertRaisesRegex(ValueError, "cli path is not configured"):
+            runner.run_cannbot(str(self.role), str(self.work), "task", config={})
         self.assertFalse((self.work / "log/prompts").exists())
 
     def hermes_cli(self):
@@ -173,7 +173,7 @@ class AgentPromptTransportTests(unittest.TestCase):
         return str(path)
 
     def test_kerminal_multi_megabyte_prompt_uses_exec_stdin_without_pty(self):
-        prompt = "大量历史与人工P0；所有文本必须保留。\r\n" * 80000
+        prompt = "Plenty of history and human P0s; all text must be preserved.\r\n" * 80000
         expected = (self.role.read_text(encoding="utf-8") + "\n\n---\n\n"
                     + prompt + runner.GLOBAL_CONSTRAINT).encode("utf-8")
         self.assertGreater(len(expected), 2 * 1024 * 1024)
@@ -197,7 +197,7 @@ class AgentPromptTransportTests(unittest.TestCase):
         self.assertTrue(Path(opened[0].name).name.startswith("kerminal_stage3_modify_"))
 
     def test_hermes_multi_megabyte_prompt_never_enters_launch_arguments(self):
-        prompt = "大量历史与搜索方向；保留换行。\r\n" * 90000
+        prompt = "Plenty of history and search directions; keep newlines.\r\n" * 90000
         expected = (self.role.read_text(encoding="utf-8") + "\n\n---\n\n"
                     + prompt + runner.GLOBAL_CONSTRAINT).encode("utf-8")
         self.assertGreater(len(expected), 2 * 1024 * 1024)
@@ -231,7 +231,7 @@ class AgentPromptTransportTests(unittest.TestCase):
             with self.subTest(agent=name):
                 config = {**self.config, "cli": self.hermes_cli() if name == "hermes" else "synthetic-kerminal"}
                 with patch.object(runner.subprocess, "Popen", return_value=self.completed_process(returncode=2)):
-                    self.assertFalse(runner.run_agent(name, str(self.role), str(self.work), "任务", config=config))
+                    self.assertFalse(runner.run_agent(name, str(self.role), str(self.work), "task", config=config))
 
     def test_kerminal_launch_error_keeps_prompt_and_propagates(self):
         opened = []
@@ -241,7 +241,7 @@ class AgentPromptTransportTests(unittest.TestCase):
             raise OSError(errno.E2BIG, "synthetic environment exceeds limit")
 
         with patch.object(runner.subprocess, "Popen", side_effect=launch), self.assertRaises(OSError):
-            runner.run_kerminal(str(self.role), str(self.work), "合成任务", {"cli": "synthetic-kerminal"})
+            runner.run_kerminal(str(self.role), str(self.work), "synthetic task", {"cli": "synthetic-kerminal"})
         self.assertTrue(opened[0].closed)
         self.assertTrue(Path(opened[0].name).exists())
 

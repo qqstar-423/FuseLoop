@@ -18,8 +18,8 @@ class LongTextCLIInputsTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.text = "开始：完整保留。\n" + ("中文方向及 case1 精度要求，保留所有步骤。\n" * 7000) + "结束：不要截断。\n"
-        self.text_file = self.root / "有 空格的方向说明.md"
+        self.text = "Start: keep everything.\n" + ("Chinese direction and case1 precision requirements, keep every step.\n" * 7000) + "End: do not truncate.\n"
+        self.text_file = self.root / "direction notes with spaces.md"
         self.text_file.write_text(self.text, encoding="utf-8-sig")
 
     def routing(self):
@@ -61,7 +61,7 @@ class LongTextCLIInputsTests(unittest.TestCase):
     def test_existing_inline_hint_semantics_are_preserved(self):
         fixture = self.routing()
         fixture.stop_at = "stage4"
-        hint = "短方向：保持当前融合方法"
+        hint = "short direction: keep the current fusion method"
         with fixture.patches(), patch("sys.argv", [
                 "orchestrator.py", "--task-dir", str(fixture.source / "task"),
                 "--init-impl", str(fixture.source / "impl"), "--optimize-hint", hint]), \
@@ -88,14 +88,14 @@ class LongTextCLIInputsTests(unittest.TestCase):
         self.assertLess(len(message), 2000)
 
     def test_missing_hint_file_fails_before_loading_config(self):
-        missing = self.root / "不存在 的文件.md"
+        missing = self.root / "does not exist.md"
         message = self.parse_failure(["--optimize-hint-file", str(missing)])
-        self.assertIn("无法读取 UTF-8 文件", message)
+        self.assertIn("cannot read UTF-8 file", message)
         self.assertIn("FileNotFoundError", message)
         self.assertIn(str(missing), message)
 
     def test_invalid_utf8_hint_file_reports_type_without_contents(self):
-        bad = self.root / "非 UTF8.bin"
+        bad = self.root / "not-utf8.bin"
         bad.write_bytes(b"\xff\xff PRIVATE_LONG_TEXT")
         message = self.parse_failure(["--optimize-hint-file", str(bad)])
         self.assertIn("UnicodeDecodeError", message)
@@ -103,7 +103,7 @@ class LongTextCLIInputsTests(unittest.TestCase):
 
     def test_directory_is_not_accepted_as_hint_file(self):
         message = self.parse_failure(["--optimize-hint-file", str(self.root)])
-        self.assertIn("无法读取 UTF-8 文件", message)
+        self.assertIn("cannot read UTF-8 file", message)
 
     def test_existing_human_file_input_delivers_all_text(self):
         output = io.StringIO()
@@ -118,7 +118,7 @@ class LongTextCLIInputsTests(unittest.TestCase):
         with redirect_stdout(output), self.assertRaises(SystemExit) as stopped:
             human_review.main(["--help"])
         self.assertEqual(stopped.exception.code, 0)
-        self.assertIn("长意见请用 --file", output.getvalue())
+        self.assertIn("use --file for long", output.getvalue())
 
     def test_human_inline_and_file_inputs_remain_mutually_exclusive(self):
         stderr = io.StringIO()

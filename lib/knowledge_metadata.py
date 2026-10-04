@@ -68,24 +68,24 @@ def build_knowledge_environment(work_dir, *, comparison_context=None, performanc
 def environment_summary(environment):
     """Keep historical unknowns explicit; never fill them from today's device."""
     if not isinstance(environment, dict) or not environment:
-        return "框架与芯片：未记录（旧经验需回查原始证据）"
+        return "framework and chip: not recorded (old experience requires checking the original evidence)"
 
     def value(key):
         item = environment.get(key)
         if not isinstance(item, str) or not item.strip() or item.strip().lower() == "unknown":
-            return "未记录"
+            return "not recorded"
         return " ".join(item.splitlines())
 
-    return (f"框架={value('framework')}；后端={value('backend')}；芯片={value('chip_model')}；"
-            f"SoC={value('soc_version')}；编程模型={value('programming_model')}")
+    return (f"framework={value('framework')}; backend={value('backend')}; chip={value('chip_model')}; "
+            f"SoC={value('soc_version')}; programming model={value('programming_model')}")
 
 
 def log_knowledge_write(log, state_log, *, label, path, iteration, environment,
                         decision_path, detail=""):
     """Log only after a successful write, once per distinct logger."""
     output = Path(path).resolve()
-    message = ("[知识积累] %s已保存；iter=%s；%s；%s；输出目录=%s；文件=%s；"
-               "原始决策=%s；环境来源=%s (%s)")
+    message = ("[knowledge accumulation] %s saved; iter=%s; %s; %s; output directory=%s; file=%s; "
+               "original decision=%s; environment source=%s (%s)")
     args = (label, iteration, detail, environment_summary(environment), output.parent,
             output, decision_path, environment.get("source_path"), environment.get("source_kind"))
     for logger in (log, state_log if state_log is not log else None):

@@ -43,10 +43,10 @@ class AgentOutputStreamsTests(unittest.TestCase):
 
     def test_utf8_survives_split_writes_and_8192_byte_boundary(self):
         stdout = "a" * 8190 + "夜间输出：完整中文\n"
-        stderr = "诊断信息：同样保留中文\n"
+        stderr = "diagnostic info: Chinese retained as well\n"
         out_bytes = stdout.encode("utf-8")
         err_bytes = stderr.encode("utf-8")
-        # The third byte of 夜 is 0x9c, just beyond an 8192-byte read.
+        # The third byte of the first Chinese character is 0x9c, just beyond an 8192-byte read.
         self.assertEqual(out_bytes[8192], 0x9C)
         result = self.run_script(f"""
             out = {out_bytes!r}
@@ -118,8 +118,8 @@ class AgentOutputStreamsTests(unittest.TestCase):
         self.assertTrue(result.stdout.startswith("ongoing stdout "))
         self.assertTrue(result.stderr.startswith("ongoing stderr "))
         logged = "\n".join(logs.output)
-        self.assertIn("仍在运行", logged)
-        self.assertIn("超时", logged)
+        self.assertIn("still running", logged)
+        self.assertIn("timed out", logged)
 
     def test_closed_output_streams_still_wait_for_process_and_enforce_timeout(self):
         start = time.monotonic()
@@ -135,8 +135,8 @@ class AgentOutputStreamsTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
         logged = "\n".join(logs.output)
-        self.assertIn("仍在运行", logged)
-        self.assertIn("超时", logged)
+        self.assertIn("still running", logged)
+        self.assertIn("timed out", logged)
 
     @staticmethod
     def api_error_line():
@@ -153,8 +153,8 @@ class AgentOutputStreamsTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, errors)
         self.assertEqual(result.stderr, "")
-        self.assertIn("连续5次API错误", "\n".join(logs.output))
-        self.assertNotIn("超时", "\n".join(logs.output))
+        self.assertIn("5 consecutive API errors", "\n".join(logs.output))
+        self.assertNotIn("timed out", "\n".join(logs.output))
 
     def test_normal_json_output_resets_consecutive_api_error_count(self):
         normal = json.dumps({"type": "text", "part": {"text": "synthetic recovery"}},
@@ -169,7 +169,7 @@ class AgentOutputStreamsTests(unittest.TestCase):
         self.assertEqual(result.stdout, output)
         self.assertEqual(result.stderr, "")
         self.assertIn("synthetic recovery", "\n".join(logs.output))
-        self.assertNotIn("主动终止", "\n".join(logs.output))
+        self.assertNotIn("terminating the process", "\n".join(logs.output))
 
 
 if __name__ == "__main__":

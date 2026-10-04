@@ -1,7 +1,7 @@
-# FusedAddRelu 教学任务
+# FusedAddRelu Teaching Task
 
-输入 x、y 必须形状、dtype、NPU device 一致，不支持广播。输入为有限数值。
-结果为 `max(float32(x) + float32(y), 0)`，最后转回输入 dtype。
+Inputs x and y must match in shape, dtype and NPU device; broadcasting is not supported. Inputs are finite values.
+The result is `max(float32(x) + float32(y), 0)`, finally cast back to the input dtype.
 
-这份任务用于接口与精度检查，没有预填性能基准或虚构的加速比。
-实际使用时，任务文件保持只读；修改范围仅为提交实现。
+This task is for interface and precision checking; no performance baseline or fabricated speedups are pre-filled.
+In actual use, the task files stay read-only; the scope of modification is only the submitted implementation.

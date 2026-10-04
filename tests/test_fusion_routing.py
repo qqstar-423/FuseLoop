@@ -1,4 +1,4 @@
-"""Offline integration checks for Stage1.5 and downstream library handoffs.
+﻿"""Offline integration checks for Stage1.5 and downstream library handoffs.
 
 The Jev runner and prompt formatter are boundary doubles: probability validation
 and formatter content are covered by the fusion-selection unit tests. Actual
@@ -39,8 +39,8 @@ def stage9_request(prompt):
             raise AssertionError(f"Expected one {label} line, got {lines!r}")
         return lines[0]
 
-    output = Path(field("Stage9 输出文件："))
-    request_id = field("Stage9 请求编号：")
+    output = Path(field("Stage9 output file:"))
+    request_id = field("Stage9 request ID:")
     if not output.is_absolute():
         raise AssertionError("Stage9 output path must be absolute")
     UUID(request_id)
@@ -172,7 +172,7 @@ class FusionRoutingTests(unittest.TestCase):
         }
         self.write_json(directory / "fusion_library.json", library)
         (directory / "design_rationale.md").write_text("Tiled sigmoid design", encoding="utf-8")
-        (directory / "融合方案选择决策依据.md").write_text(
+        (directory / "fusion_scheme_rationale.md").write_text(  # program-owned decision document filename
             f"F2 selected; target all cases; local tile tuning in iteration {iteration}.", encoding="utf-8")
         (directory / "self_test_report.md").write_text(
             "Given cases pass. Same-shape repeated calls with new input pass.", encoding="utf-8")
@@ -349,12 +349,12 @@ class FusionRoutingTests(unittest.TestCase):
         for stage, relative in input_paths.items():
             with self.subTest(file_stage=stage):
                 lines = self.prompts[stage].splitlines()
-                description = next(line for line in lines if f"相对工作目录：`{relative}`" in line)
-                self.assertIn("用途：", description)
-                self.assertIn("怎么看：", description)
+                description = next(line for line in lines if f"relative to working directory: `{relative}`" in line)
+                self.assertIn("Purpose:", description)
+                self.assertIn("how to read:", description)
                 if "iter1" in relative:
                     self.assertIn(relative.replace("iter1", "<iter>"), description)
-        self.assertIn("相对项目根目录：`knowledge/anti_cheat_reference.md`", self.prompts["stage9"])
+        self.assertIn("relative to project root: `knowledge/anti_cheat_reference.md`", self.prompts["stage9"])
         self.assertEqual(self.read_state()["stopped_by"], "max_iterations")
 
     def test_stage_numbers_are_exact_not_prefix_matches(self):

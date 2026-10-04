@@ -48,9 +48,9 @@ class RegressionRestoreTests(unittest.TestCase):
         saved = json.loads((Path(record["record_path"]).parent / "failed_binding.json").read_text(encoding="utf-8"))
         self.assertEqual(saved["original"], "binding")
         prompt = regression_action_prompt(self.work, 2)
-        self.assertIn("工作 impl 已恢复最佳基线", prompt)
-        self.assertIn("本轮退步报告属于恢复前代码", prompt)
-        self.assertIn("迭代模板", prompt)
+        self.assertIn("The working impl has been restored to the best baseline", prompt)
+        self.assertIn("belongs to the pre-restore code", prompt)
+        self.assertIn("iteration template", prompt)
 
     def test_resume_after_either_directory_rename_finishes_once(self):
         # Each subtest uses fresh files; the failure occurs after the actual rename.
@@ -85,23 +85,23 @@ class RegressionRestoreTests(unittest.TestCase):
         self.prepare()
         archived = Path(self.status["best"]["implementation_dir"]) / "nested/kernel.py"
         archived.write_text("# corrupted archive", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "快照失效"):
+        with self.assertRaisesRegex(ValueError, "snapshot is invalid"):
             self.apply()
         self.assertEqual(self.code.read_text(encoding="utf-8"), "# regressed\n")
 
     def test_uncommitted_stage9_and_changed_context_refuse_restore(self):
         self.prepare()
-        with self.assertRaisesRegex(ValueError, "口径已变化"):
+        with self.assertRaisesRegex(ValueError, "protocol changed"):
             self.apply(comparison_context={"different": "hardware"})
         self.fx.write(self.decision.parent / "commit.json", {"committed": False, "iteration": 2})
-        with self.assertRaisesRegex(ValueError, "先由 Stage9"):
+        with self.assertRaisesRegex(ValueError, "Stage9 must first commit"):
             self.apply()
         self.assertEqual(self.code.read_text(encoding="utf-8"), "# regressed\n")
 
     def test_new_source_change_between_review_and_restore_is_not_overwritten(self):
         self.prepare()
         self.code.write_text("# unsaved development", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "拒绝覆盖开发修改"):
+        with self.assertRaisesRegex(ValueError, "refusing to overwrite development changes"):
             self.apply()
         self.assertEqual(self.code.read_text(encoding="utf-8"), "# unsaved development")
 
@@ -117,7 +117,7 @@ class RegressionRestoreTests(unittest.TestCase):
         record = self.prepare()
         record["failed_implementation_dir"] = str(self.work.parent / "outside-impl")
         self.fx.write(Path(record["record_path"]), record)
-        with self.assertRaisesRegex(ValueError, "工作目录内"):
+        with self.assertRaisesRegex(ValueError, "inside the working directory"):
             self.apply()
         self.assertEqual(self.code.read_text(encoding="utf-8"), "# regressed\n")
 

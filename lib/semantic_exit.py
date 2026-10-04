@@ -261,7 +261,7 @@ def _snapshot(work: Path, iteration: int, perf: dict, precision: dict, evidence:
         if temporary.resolve().parent != root.resolve() or destination.resolve().parent != root.resolve():
             raise ValueError("Snapshot directories escaped the selection archive")
         os.replace(temporary, destination)
-        log.debug("语义退出：已创建 iter%s 评测快照，目录=%s", iteration, destination)
+        log.debug("semantic exit: created the iter%s evaluation snapshot, directory=%s", iteration, destination)
         return manifest
     finally:
         # This temporary directory is created above, exclusively inside selection/records.
@@ -398,7 +398,7 @@ def record_evaluation(work_dir, iteration, *, perf, precision, evidence,
     state_path = work / "selection" / "state.json"
 
     def rejected(reason: str) -> dict:
-        log.debug("语义退出：iter%s 未入库，原因=%s", iteration, reason)
+        log.debug("semantic exit: iter%s not recorded, reason=%s", iteration, reason)
         result = load_selection_status(work, comparison_context, config)
         result.update(eligible=False, reason=reason, should_exit=False, review_fusion=False)
         if state_path.is_file():
@@ -454,7 +454,7 @@ def record_evaluation(work_dir, iteration, *, perf, precision, evidence,
         except (OSError, ValueError) as exc:
             return rejected(f"Unable to archive measured implementation: {exc}")
     else:
-        log.debug("语义退出：iter%s 复用已有评测快照，清单=%s", iteration, manifest_path)
+        log.debug("semantic exit: iter%s reused the existing evaluation snapshot, manifest=%s", iteration, manifest_path)
     group["records"] = [entry for entry in group["records"] if entry["record_id"] != record_id]
     group["records"].append({"iteration": iteration, "record_id": record_id,
                              "manifest_sha256": _file_hash(manifest_path)})
@@ -489,26 +489,26 @@ def format_selection_for_prompt(work_dir, comparison_context=None) -> str:
                          "fusion_scheme")},
                "window": status["window"], "case_trends": status["case_trends"]}
     descriptions = {
-        "implementation_dir": ("最佳已验证实现的独立代码快照目录", "读取该目录的实现，勿把当前工作代码当作历史最佳版本"),
-        "manifest_path": ("最佳实现快照清单", "核对 iteration、融合方案、avg_speedup、hap 及代码和评测证据路径"),
-        "performance_report": ("最佳实现对应的原始性能报告", "按 case 看 speedup、耗时和 HAP，确认使用同一评测口径"),
-        "performance_result": ("最佳实现的结构化性能结果", "看 avg_speedup、cases 和最慢用例，配合窗口和趋势判断"),
-        "precision_report": ("最佳实现对应的精度结果", "核对 precision_overall、通过数量和原始精度报告定位"),
+        "implementation_dir": ("Standalone code snapshot directory of the best verified implementation", "Read the implementation in that directory; do not treat the current working code as the historical best version"),
+        "manifest_path": ("Best implementation snapshot manifest", "Verify iteration, fusion scheme, avg_speedup, hap and the code and evaluation evidence paths"),
+        "performance_report": ("Raw performance report for the best implementation", "Check speedup, elapsed time and HAP per case to confirm the same evaluation protocol"),
+        "performance_result": ("Structured performance result of the best implementation", "Look at avg_speedup, cases and the slowest cases together with the window and trends"),
+        "precision_report": ("Precision result for the best implementation", "Verify precision_overall, pass counts and the raw precision report for locating issues"),
     }
-    hints = file_hint(work_dir, Path(work_dir) / "selection/state.json", "有效评测索引与语义窗口配置",
-                      "以下 window 和 case_trends 由程序按同口径历史快照计算，不将失败轮计入窗口")
+    hints = file_hint(work_dir, Path(work_dir) / "selection/state.json", "Valid evaluation index and semantic window configuration",
+                      "The window and case_trends below are computed by the program from same-protocol historical snapshots; failed rounds are not counted into the window")
     hints += "".join(file_hint(work_dir, best[key], purpose, read_hint)
                     for key, (purpose, read_hint) in descriptions.items() if best.get(key))
     evidence_descriptions = {
-        "decision_rationale": ("最佳实现的融合选择依据快照", "看当时的选择理由，与当前方案区别及实测结果核对"),
-        "fusion_library": ("最佳实现的当轮融合方案库快照", "看 selection 中实际方法和实现方案，不把初始概率当性能"),
-        "self_test_report": ("最佳实现的自测报告快照", "核对给定 case 及连续调用的执行范围与结果"),
-        "self_test_result": ("最佳实现的自测资格 JSON 快照", "核对两类自测状态；其中历史日志路径以本清单中的归档日志为准"),
-        "selftest_log_provided": ("最佳实现的给定 case 原始自测日志快照", "核对原始执行输出是否支持报告结论"),
-        "selftest_log_continuous": ("最佳实现的连续调用原始日志快照", "核对同 shape 更换参数后逐次比较参考实现的结果"),
+        "decision_rationale": ("Snapshot of the best implementation's fusion selection rationale", "Look at the selection reasons of the time and compare differences from the current scheme with measured results"),
+        "fusion_library": ("Snapshot of the best implementation's round fusion scheme library", "Look at the actual methods and implementation scheme in selection; do not treat initial probabilities as performance"),
+        "self_test_report": ("Snapshot of the best implementation's self-test report", "Verify the execution scope and results for the given cases and repeated calls"),
+        "self_test_result": ("Snapshot of the best implementation's self-test eligibility JSON", "Verify both self-test statuses; historical log paths refer to the archived logs in this manifest"),
+        "selftest_log_provided": ("Snapshot of the best implementation's raw given-case self-test log", "Verify whether the raw execution output supports the report conclusions"),
+        "selftest_log_continuous": ("Snapshot of the best implementation's raw repeated-call log", "Verify per-call comparisons against the reference implementation for the same shape with changed parameters"),
     }
     hints += "".join(file_hint(work_dir, path, *evidence_descriptions.get(
-        key, ("最佳实现的补充证据快照", "与快照清单及性能结果交叉核对")))
+        key, ("Additional evidence snapshot of the best implementation", "Cross-check against the snapshot manifest and performance results")))
         for key, path in best.get("evidence_paths", {}).items())
     return ("Measured implementation selection (Jev probabilities are advisory; measured evidence takes priority).\n"
             "Underperforming stagnation requests review, never mandatory fusion replacement.\n"

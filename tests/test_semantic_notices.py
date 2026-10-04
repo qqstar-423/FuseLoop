@@ -37,19 +37,19 @@ class SemanticNoticesTests(unittest.TestCase):
             self.assertEqual(event["entry_count"], 1)
             self.assertFalse(event["reused"])
             notice = self.log.warning.call_args.args[0]
-            self.assertIn("===== 场景", notice)
-            self.assertIn("第1次进入本场景", notice)
+            self.assertIn("===== Scenario", notice)
+            self.assertIn("entry 1 into this scene", notice)
             config_key, symbol, required = ("passed_window", "x", 2) if passed else ("underperforming_window", "y", 3)
             self.assertIn(f"workflow.semantic_exit.{config_key}={required}", notice)
-            self.assertIn(f"连续 {symbol}={required} 次有效性能迭代，最佳 avg_speedup 累计提升不足 5%", notice)
-            self.assertIn(f"1 个基线样本 + {required} 次有效性能迭代（共 {required + 1} 个样本）", notice)
-            self.assertIn("无效轮不计数", notice)
-            self.assertIn("与人工咨询计数独立，断点恢复不重复计数", notice)
+            self.assertIn(f"{symbol}={required} consecutive valid performance iterations", notice)
+            self.assertIn(f"1 baseline sample plus {required} valid performance iterations within the same scene ({required + 1} samples in total)", notice)
+            self.assertIn("invalid rounds do not count", notice)
+            self.assertIn("independent of the human consultation counter, and checkpoint resume does not double count", notice)
             self.assertIn("iter1→iter4", notice)
             self.assertIn("avg_speedup 2→2.04", notice)
             self.assertIn("2.00% < 5.00%", notice)
-            self.assertIn("场景1：每个 case 的 speedup 都 >= 1" if passed else
-                          "场景2：并非每个 case 的 speedup 都 >= 1（至少一个 case < 1）", notice)
+            self.assertIn("scenario 1: every case's speedup is >= 1" if passed else
+                          "scenario 2: not every case's speedup is >= 1 (at least one case < 1)", notice)
             self.state_log.warning.assert_called_with(notice)
             self.assertTrue(Path(event["state_path"]).is_file())
 
@@ -66,10 +66,10 @@ class SemanticNoticesTests(unittest.TestCase):
 
     def test_lifetime_counts_are_per_scene_across_groups_and_human_reset(self):
         first = self.emit(human_counter={"count": 3})
-        self.assertIn("当前人工咨询触发累计=3/3", self.log.warning.call_args.args[0])
+        self.assertIn("Current human consultation trigger count=3/3", self.log.warning.call_args.args[0])
         second = self.emit(5, human_counter={"count": 1})
-        self.assertIn("第2次进入本场景", self.log.warning.call_args.args[0])
-        self.assertIn("当前人工咨询触发累计=1/3", self.log.warning.call_args.args[0])
+        self.assertIn("entry 2 into this scene", self.log.warning.call_args.args[0])
+        self.assertIn("Current human consultation trigger count=1/3", self.log.warning.call_args.args[0])
         third = self.emit(5, status=self.status(5, group="new-hardware"))
         passed = self.emit(6, status=self.status(6, passed=True))
         self.assertEqual([first["entry_count"], second["entry_count"], third["entry_count"]], [1, 2, 3])

@@ -51,7 +51,7 @@ class Stage9RequestContractTests(unittest.TestCase):
                 self.assertIn(f"{field}.{suffix}", str(error.exception))
             with self.assertRaises(Stage9ConditionValidationError) as missing:
                 self.validate({"ledger_entry": {}}, diff={flag: True})
-            self.assertIn(f"必须填写的 {field}", str(missing.exception))
+            self.assertIn(f"required {field}", str(missing.exception))
 
     def test_performance_case_contract_exposes_exact_requested_ids(self):
         schema = build_decision_schema({}, performance_case_ids=["op_7", "op_19"], has_question=False)

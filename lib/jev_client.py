@@ -125,19 +125,19 @@ def check_budget(request, settings):
 def evaluate(request, settings):
     """Return the SDK's native JSON answers/usage; do not decide the next stage."""
     started = perf_counter()
-    phase = "请求预检"
+    phase = "request preflight"
     try:
         budget = check_budget(request, settings)
         assert_english_payload(request)
-        log.debug("[Jev] 开始调用: model=%s, questions=%d, request_bytes=%d",
+        log.debug("[Jev] Starting call: model=%s, questions=%d, request_bytes=%d",
                   settings.model, len(request["questions"]), budget["request_bytes"])
-        phase = "服务调用"
+        phase = "service call"
         with TypeSafeClient(
             api_key=settings.api_key, base_url=settings.base_url, model=settings.model,
             timeout=settings.timeout_seconds, retry=RetryPolicy(max_retries=settings.max_retries),
         ) as client:
             result = client.system_one(state=request["state"], questions=request["questions"])
-        phase = "响应校验"
+        phase = "response validation"
         response = result.model_dump(mode="json", exclude_none=True)
         answers = response.get("answers", {})
         if set(answers) != set(request["questions"]):
@@ -147,9 +147,9 @@ def evaluate(request, settings):
                 raise ValueError("Jev answer type does not match the question.")
     except Exception as exc:
         # SDK exception messages can contain request data or credentials.
-        log.error("[Jev] %s失败: error_type=%s, elapsed=%.2fs",
+        log.error("[Jev] %s failed: error_type=%s, elapsed=%.2fs",
                   phase, type(exc).__name__, perf_counter() - started)
         raise
-    log.info("[Jev] 评分完成: model=%s, questions=%d, elapsed=%.2fs",
+    log.info("[Jev] Scoring completed: model=%s, questions=%d, elapsed=%.2fs",
              settings.model, len(request["questions"]), perf_counter() - started)
     return response

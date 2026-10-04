@@ -12,12 +12,12 @@ import test_human_routing as human_routing
 
 
 SCENE_MARKERS = {
-    "compile": "当前场景：编译失败",
-    "precision": "当前场景：精度失败",
-    "evaluation_error": "当前场景：零分或评测异常",
-    "optimization": "当前场景：未全部达标，普通性能优化",
-    "stagnation": "当前场景：未全部达标，停滞审查",
-    "all_passed": "当前场景：全部 case 达标，继续优化或收尾",
+    "compile": "Current Scenario: Build Failure",
+    "precision": "Current Scenario: Precision Failure",
+    "evaluation_error": "Current Scenario: Zero Score or Evaluation Anomaly",
+    "optimization": "Current Scenario: Not All Cases Meet Target, Ordinary Performance Optimization",
+    "stagnation": "Current Scenario: Not All Cases Meet Target, Stagnation Review",
+    "all_passed": "Current Scenario: All Cases Meet Target, Continue Optimizing or Wrap Up",
 }
 
 
@@ -58,7 +58,7 @@ class HumanSceneMatrixTests(unittest.TestCase):
 
         def arriving(stage, iteration, _prompt):
             if stage == "stage4" and iteration == target and not sent:
-                sent.append(flow.submit("先保持当前融合方向，按实际失败原因修复"))
+                sent.append(flow.submit("keep the current fusion direction first; fix the actual failure cause"))
 
         flow.on_stage = arriving
         flow.run_flow(target)
@@ -70,9 +70,9 @@ class HumanSceneMatrixTests(unittest.TestCase):
         self.assertEqual(request["scene"], scene)
         self.assertEqual(request["phase"], "feedback")
         self.assert_single_scene(scene, role)
-        self.assertIn("人工意见处理：显著关联", role)
+        self.assertIn("Human Opinion Handling: Significant Relevance", role)
         self.assertIn(message_id, prompt)
-        self.assertIn("P0（人工建议）", flow.fixture.prompts["stage3"])
+        self.assertIn("P0 (human suggestion)", flow.fixture.prompts["stage3"])
         self.assertEqual(flow.human.all_messages()[0]["status"], "executed")
         payload = json.loads(Path(request["decision_path"]).read_text(encoding="utf-8"))
         self.assertTrue(any(item.get("priority") == "P0" and item.get("source") == "human"
@@ -81,8 +81,8 @@ class HumanSceneMatrixTests(unittest.TestCase):
         inputs = {item["key"] for item in request["default_inputs"] + request["missing_inputs"]}
         if scene in {"compile", "precision"}:
             self.assertFalse(inputs & {"perf_result", "profiler", "bottleneck", "fix_directive"})
-            self.assertNotIn("条件任务：详细记录本轮性能经验", role)
-            self.assertNotIn("性能证据口径", role)
+            self.assertNotIn("## Conditional Task: Record This Round's Performance Experience in Detail", role)
+            self.assertNotIn("Performance Evidence Basis", role)
         elif scene in {"evaluation_error", "all_passed"}:
             self.assertFalse(inputs & {"bottleneck", "fix_directive", "search_report"})
             self.assertIn("perf_result", inputs)
@@ -121,25 +121,25 @@ class HumanSceneMatrixTests(unittest.TestCase):
 
         def arriving(stage, iteration, _prompt):
             if stage == "stage4" and iteration == 4:
-                question.write_text("# 开发异议\n强制扩大分块使尾块开销增加。\n", encoding="utf-8")
+                question.write_text("# Development objection\nforcibly enlarging the tiling increased tail-block overhead.\n", encoding="utf-8")
 
         flow.on_stage = arriving
 
         def final_decision(_output, payload, iteration, _prompt):
             if iteration == 4:
-                self.assertNotIn("## tech_lead 裁定", question.read_text(encoding="utf-8"))
+                self.assertNotIn("## tech_lead adjudication", question.read_text(encoding="utf-8"))
                 self.assertNotIn("stage9_decision_path", load_history(str(self.work))["ledger"][-1])
                 payload["pitfall"] = {
-                    "verdict": "confirmed", "topic": "尾块分块",
-                    "target_advice": "强制扩大分块", "feedback": "尾块填充开销增加",
-                    "root_cause": "未考虑尾块比例", "correct_approach": "按 shape 验证分块大小",
+                    "verdict": "confirmed", "topic": "tail-block tiling",
+                    "target_advice": "forcibly enlarge the tiling", "feedback": "tail-block padding overhead increased",
+                    "root_cause": "tail-block proportion was not considered", "correct_approach": "verify the tiling size per shape",
                 }
 
         flow.on_decision = final_decision
 
         def reply():
             flow.sleep_hook = None
-            flow.submit("选 A，保留方案并修复慢 case 的分块")
+            flow.submit("choose A; keep the scheme and fix the slow cases' tiling")
 
         flow.sleep_hook = reply
         flow.run_flow(4)
@@ -152,17 +152,17 @@ class HumanSceneMatrixTests(unittest.TestCase):
             self.assert_single_scene("stagnation", role)
         consulting, consult_role, consult_prompt = by_phase["consultation"]
         self.assertFalse(Path(consulting["decision_path"]).exists())
-        for excluded in ("当前阶段：提交最终决策", "条件任务：详细记录本轮性能经验",
-                         "条件任务：裁定开发节点"):
+        for excluded in ("## Current Stage: Submit Final Decision", "## Conditional Task: Record This Round's Performance Experience in Detail",
+                         "## Conditional Task: Adjudicate the Developer Node"):
             self.assertNotIn(excluded, consult_role)
-        self.assertNotIn("仅向本次 decision 提交当前轮账本", consult_prompt)
+        self.assertNotIn("submit only the current round's ledger with this decision", consult_prompt)
         feedback, feedback_role, _prompt = by_phase["feedback"]
-        for required in ("当前阶段：提交最终决策", "条件任务：详细记录本轮性能经验",
-                         "条件任务：裁定开发节点", "人工意见处理：显著关联"):
+        for required in ("## Current Stage: Submit Final Decision", "## Conditional Task: Record This Round's Performance Experience in Detail",
+                         "## Conditional Task: Adjudicate the Developer Node", "Human Opinion Handling: Significant Relevance"):
             self.assertIn(required, feedback_role)
         self.assertTrue(feedback["perf_diff"]["has_improvement"])
         self.assertEqual(feedback["question_path"], str(question))
-        self.assertIn("## tech_lead 裁定", question.read_text(encoding="utf-8"))
+        self.assertIn("## tech_lead adjudication", question.read_text(encoding="utf-8"))
         self.assertIn("## iter4:", (self.work / "knowledge/proven_patterns.md").read_text(encoding="utf-8"))
         self.assertTrue((self.work / "knowledge/tech_lead_pitfalls.md").is_file())
         self.assertEqual(len(load_history(str(self.work))["rounds"]), 4)
@@ -181,7 +181,7 @@ class HumanSceneMatrixTests(unittest.TestCase):
             flow.run_flow(4)
         active = flow.human.active_consultation()
         self.assertEqual(flow.fixture.read_state()["stage9_context"]["scene"], "stagnation")
-        flow.submit("选 A，先继续局部优化")
+        flow.submit("choose A; continue local optimization first")
         unavailable = deepcopy(flow.routing.selection_status())
         unavailable.update(eligible=False, review_fusion=False, should_exit=False,
                            reason="Synthetic temporarily unavailable selection evidence")
@@ -209,7 +209,7 @@ class HumanSceneMatrixTests(unittest.TestCase):
         self.assertTrue(saved["perf_diff"]["has_regression"])
         (self.work / "eval/iter2/perf_result.json").unlink()
         flow.routing.interrupt_stage9_iteration = None
-        flow.submit("保留达标方案，检查本轮退步原因")
+        flow.submit("keep the passing scheme; check this round's regression cause")
         flow.run_flow()
         final = flow.decisions[-1][2]
         request, role, prompt = self.read_request(
@@ -223,12 +223,12 @@ class HumanSceneMatrixTests(unittest.TestCase):
         self.assertEqual(comparison["current_report_source"], "verified_selection_archive")
         self.assertIn("selection/records/", comparison["current_report"].replace("\\", "/"))
         self.assertFalse((self.work / "eval/iter2/perf_result.json").exists())
-        self.assertIn("已验证性能归档", prompt)
+        self.assertIn("verified performance archive", prompt)
         self.assert_single_scene("all_passed", role)
-        self.assertIn("保留必要瓶颈分析", role)
-        self.assertIn("条件任务：详细记录本轮性能经验", role)
+        self.assertIn("Keep the necessary bottleneck analysis", role)
+        self.assertIn("## Conditional Task: Record This Round's Performance Experience in Detail", role)
         self.assertIn("perf_result", {item["key"] for item in request["missing_inputs"]})
-        self.assertIn("缺失", prompt)
+        self.assertIn("(missing)", prompt)
         self.assertIn("## iter2:", (self.work / "knowledge/regression_patterns.md").read_text(encoding="utf-8"))
         self.assertEqual(flow.fixture.events.count("stage6"), 2)
         self.assertNotIn("stage7", flow.fixture.events)

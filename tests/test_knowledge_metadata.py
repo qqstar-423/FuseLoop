@@ -64,24 +64,24 @@ class KnowledgeMetadataTests(unittest.TestCase):
 
     def test_summary_exposes_legacy_unknowns_and_does_not_infer_a_framework(self):
         for value in (None, {}, "malformed"):
-            self.assertIn("未记录", environment_summary(value))
+            self.assertIn("not recorded", environment_summary(value))
             self.assertNotIn("PyPTO", environment_summary(value))
-        self.assertIn("芯片=未记录", environment_summary({"framework": "Triton", "chip_model": "unknown"}))
+        self.assertIn("chip=not recorded", environment_summary({"framework": "Triton", "chip_model": "unknown"}))
 
     def test_both_logs_include_environment_output_and_provenance_once(self):
         log, state_log = Mock(), Mock()
         environment = build_knowledge_environment(self.work)
         output = self.work / "knowledge/proven_patterns.md"
         decision = self.work / "knowledge/stage9/iter2/req/decision.json"
-        kwargs = dict(label="成功经验", path=output, iteration=2, environment=environment,
-                      decision_path=decision, detail="avg_speedup=1.0→1.1；变化=10%")
+        kwargs = dict(label="success experience", path=output, iteration=2, environment=environment,
+                      decision_path=decision, detail="avg_speedup=1.0→1.1; change=10%")
         log_knowledge_write(log, state_log, **kwargs)
         for logger in (log, state_log):
             logger.info.assert_called_once()
             args = logger.info.call_args.args
             rendered = args[0] % args[1:]
             for value in ("Triton", "LiveChip", "LiveSoC", str(output.resolve()),
-                          str(output.parent.resolve()), str(decision), "变化=10%"):
+                          str(output.parent.resolve()), str(decision), "change=10%"):
                 self.assertIn(value, rendered)
         log.reset_mock()
         log_knowledge_write(log, log, **kwargs)

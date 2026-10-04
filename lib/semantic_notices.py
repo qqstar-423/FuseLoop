@@ -78,26 +78,26 @@ the same evaluation is loaded repeatedly. Both files receive the same message.
     atomic_write_json(str(path), state)
 
     scene_number = 1 if scene == "passed" else 2
-    condition = ("每个 case 的 speedup 都 >= 1" if scene == "passed" else
-                 "并非每个 case 的 speedup 都 >= 1（至少一个 case < 1）")
+    condition = ("every case's speedup is >= 1" if scene == "passed" else
+                 "not every case's speedup is >= 1 (at least one case < 1)")
     config_key = "passed_window" if scene == "passed" else "underperforming_window"
     window_symbol = "x" if scene == "passed" else "y"
     required = window["required_improvements"]
-    action = ("达到语义退出条件，交付最佳已验证达标实现。" if scene == "passed" else
-              "进入 Stage7→8→9 审查慢 case 趋势和融合方案；不强制换方案。")
-    lines = [f"===== 场景{scene_number}停滞触发：第{count}次进入本场景 =====",
-             f"iter{iteration}；场景{scene_number}：{condition}。",
-             f"连续 {window_symbol}={required} 次有效性能迭代，最佳 avg_speedup 累计提升不足 {window['threshold']:.0%}；"
-             f"配置 workflow.semantic_exit.{config_key}={required}。",
-             f"窗口为同一场景的 1 个基线样本 + {required} 次有效性能迭代（共 {required + 1} 个样本）；无效轮不计数。",
-             f"窗口 iter{window['start_iteration']}→iter{window['end_iteration']}；"
-             f"最佳 avg_speedup {window['start_best_avg_speedup']:.6g}→{window['end_best_avg_speedup']:.6g}；"
-             f"累计提升={window['cumulative_improvement']:.2%} < {window['threshold']:.2%}。",
+    action = ("Semantic exit condition met; deliver the best verified passing implementation." if scene == "passed" else
+              "Enter Stage7→8→9 to review slow case trends and the fusion scheme; no forced scheme replacement.")
+    lines = [f"===== Scenario {scene_number} stagnation trigger: entry {count} into this scene =====",
+             f"iter{iteration}; scenario {scene_number}: {condition}.",
+             f"{window_symbol}={required} consecutive valid performance iterations with the best avg_speedup's cumulative improvement under {window['threshold']:.0%}; "
+             f"configured workflow.semantic_exit.{config_key}={required}.",
+             f"The window is 1 baseline sample plus {required} valid performance iterations within the same scene ({required + 1} samples in total); invalid rounds do not count.",
+             f"window iter{window['start_iteration']}→iter{window['end_iteration']}; "
+             f"best avg_speedup {window['start_best_avg_speedup']:.6g}→{window['end_best_avg_speedup']:.6g}; "
+             f"cumulative improvement={window['cumulative_improvement']:.2%} < {window['threshold']:.2%}.",
              action,
-             "本场景进入次数为终身累计；与人工咨询计数独立，断点恢复不重复计数。"]
+             "Entries into this scene are counted over the workflow\'s lifetime; independent of the human consultation counter, and checkpoint resume does not double count."]
     if "human_consultation_count" in event:
-        lines.append(f"当前人工咨询触发累计={human_count}/3。")
-    lines.extend([f"事件={event_key}；可追溯记录={path}", "===== 语义窗口触发记录结束 ====="])
+        lines.append(f"Current human consultation trigger count={human_count}/3.")
+    lines.extend([f"event={event_key}; auditable record={path}", "===== end of semantic window trigger record ====="])
     notice = "\n".join(lines)
     log.warning(notice)
     if state_log is not None and state_log is not log:
