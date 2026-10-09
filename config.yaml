@@ -24,8 +24,6 @@ workflow:
 # Number of fusion plans selected by Jev probability in stage1.5 (1–10).
 fusion_selection:
   top_n: 3
-  # stage1.5 reuses agents.kerminal.cli, translating all non-English material before submitting to Jev.
-  translation_timeout_seconds: 240
 
 # Jev invocation configuration; used by stage1.5 and reused by standalone invocation tools as well.
 jev:

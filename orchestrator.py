@@ -627,7 +627,7 @@ def main():
                   "for stage1.5 Jev to score against real hardware and fusion methods."
                   f"The program estimates a requirements ceiling of {requirements_budget} UTF-8 JSON bytes from this round's method text, options and hardware; "
                   "organize the summary within this ceiling (including the JSON structure) and do not drop constraints that affect fusion selection."
-                  "stage1.5 will translate everything to English first, then check the actual request size.") + CANNBOT_CONSTRAINT
+                  "Stage1.5 validates the English inputs and checks the actual request size.") + CANNBOT_CONSTRAINT
         ok = run_agent("cannbot", role, work_dir, prompt, node_log=node_logs["N1"])
         if not ok:
             log.error(f"[{stage}] cannbot failed")
@@ -1156,14 +1156,16 @@ def main():
                 else:
                     prev_design_path = os.path.join(work_dir, "develop", "iter0", "design_rationale.md")
 
-            profiling_skill_path = os.path.join(os.path.dirname(roles_dir), "skills", "triton-profiling-analysis", "SKILL.md")
-            profiling_skill_hint = (
-                "\n" + file_hint(work_dir, profiling_skill_path, "Profiling analysis guide",
-                                  "Read the five-file analysis process and metric weights first, then explain the bottleneck evidence",
+            profiling_guide_path = os.path.join(os.path.dirname(roles_dir), "knowledge", "profiling_guide.md")
+            profiling_guide_hint = (
+                "\n" + file_hint(work_dir, profiling_guide_path, "Profiling analysis guide",
+                                  "Read the five-file analysis process and attention weights first, then explain the bottleneck evidence",
                                   base_dir=Path(__file__).parent, base_label="project root") +
-                f"Please load the skill file above and run a structured analysis of each case's profiler data using its five-file analysis process (kernel_details→op_statistic→step_trace_time→api_statistic→trace_view) "
-                f"and weight allocation (50%/20%/15%/10%/5%).\n"
-            ) if os.path.exists(profiling_skill_path) else ""
+                "Read the guide above and analyze each case's profiler evidence in the order "
+                "kernel_details→op_statistic→step_trace_time→api_statistic→trace_view. "
+                "Allocate analysis attention at 50%/20%/15%/10%/5%; these weights guide the analysis, not official performance scoring. "
+                "Use the original report for official metrics; state missing evidence and verify attribution against the evaluated code.\n"
+            ) if os.path.exists(profiling_guide_path) else ""
 
             prompt = (
                 f"Working directory: {work_dir}\nOperator: {op_name}\n"
@@ -1178,7 +1180,7 @@ def main():
                 f"{format_proven_patterns_for_prompt(work_dir)}"
                 f"{format_regression_patterns_for_prompt(work_dir)}"
                 f"{format_pitfalls_for_prompt(work_dir)}\n"
-                f"{profiling_skill_hint}"
+                f"{profiling_guide_hint}"
                 f"Write output to {iter_dirs['profile']}/bottleneck_analysis.md"
             )
             prompt += format_fusion_library_for_prompt(work_dir, "stage7")
@@ -2179,14 +2181,16 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
             question_hint = file_hint(work_dir, question_path_found, "Development objection awaiting adjudication (consultation background)",
                                       "Used only as question background this time; the adjudication is formed in the final re-review phase")
 
-    profiling_skill_path_9 = os.path.join(os.path.dirname(roles_dir), "skills", "triton-profiling-analysis", "SKILL.md")
-    profiling_skill_hint_9 = (
-        "\n" + file_hint(work_dir, profiling_skill_path_9, "Profiling analysis guide",
-                          "Use the five-file analysis process and weights to verify bottleneck conclusions",
+    profiling_guide_path_9 = os.path.join(os.path.dirname(roles_dir), "knowledge", "profiling_guide.md")
+    profiling_guide_hint_9 = (
+        "\n" + file_hint(work_dir, profiling_guide_path_9, "Profiling analysis guide",
+                          "Use the five-file analysis process and attention weights to verify bottleneck conclusions",
                           base_dir=Path(__file__).parent, base_label="project root") +
-        f"When analyzing profiler data, load the skill file above and interpret it in a structured way following the five-file analysis process and weight allocation, "
-        f"paying special attention to kernel_details.csv (weight 50%) for redundant kernels, saturated cores and compilation downgrades.\n"
-    ) if scene == "all_passed" and os.path.exists(profiling_skill_path_9) else ""
+        "Read the guide above when interpreting profiler data. Follow its 50%/20%/15%/10%/5% analysis attention allocation, "
+        "with kernel_details.csv receiving 50% for redundant kernels, saturated cores and compilation downgrades. "
+        "Then use operator statistics, compute/idle records, API calls and the timeline to verify "
+        "kernel attribution, resource use and dependencies against the evaluated code.\n"
+    ) if scene == "all_passed" and os.path.exists(profiling_guide_path_9) else ""
 
     decision_output_hint = file_hint(
         work_dir, decision_path, "This round's Stage9 decision output (to be generated by you)",
@@ -2214,7 +2218,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
             file_hint(work_dir, item["path"], item["purpose"] + " (missing)", "Not generated or unavailable; state clearly that evidence is insufficient and do not substitute old conclusions")
             for item in missing_inputs if item["key"] != "self_test") if missing_inputs else "")
         + design_hint
-        + profiling_skill_hint_9
+        + profiling_guide_hint_9
         + ("Analyze this round's results and review previous rounds' design rationale;" if performance_scene
            else "Locate this round's failure and review the design and previous-round suggestions related to this question;")
         + f"read {history_path} read-only; do not overwrite it.\n"
@@ -2266,7 +2270,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
             ("Current code and evidence binding", f"{work_dir}/selection/current_implementation.json"),
             ("Semantic window and history index", f"{work_dir}/selection/state.json"),
             ("Historical evaluation snapshots and case trend source", f"{work_dir}/selection/records"),
-            ("Profiling guide", profiling_skill_path_9),
+            ("Profiling guide", profiling_guide_path_9),
         ]
         sources += [(f"current implementation evidence/{name}", path)
                     for name, path in evidence.get("evidence_paths", {}).items()]

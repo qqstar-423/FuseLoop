@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from lib.fusion_selection import (
-    ROOT, _build_request, _rank_response, _validate_requirements, format_fusion_library_for_prompt,
+    ROOT, PROTOCOL, LEGACY_PROTOCOL, _build_request, _rank_response, _validate_requirements, format_fusion_library_for_prompt,
     fusion_library_path, fusion_requirements_byte_budget, run_fusion_selection,
 )
 from lib.jev_client import JevSettings, check_budget
@@ -21,7 +21,7 @@ class FusionSelectionTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.work = Path(self.temp.name)
         self.methods_path = self.work / "methods.md"
-        self.methods_path.write_text("# 融合方法\nUse complete source, never a path only.", encoding="utf-8")
+        self.methods_path.write_text("# Fusion methods\nUse complete source, never a path only.", encoding="utf-8")
         self.options_path = self.work / "options.json"
         self.catalog = {"schema_version": 1, "caveats": ["Do not equate L2 and DSM."], "methods": [
             {"id": "F1", "name": "Fission", "requirements": ["Allow HBM intermediate"]},
@@ -41,19 +41,6 @@ class FusionSelectionTests(unittest.TestCase):
         self.hardware = {"chip_model": "synthetic Ascend", "ub_size_kb": 248, "device_id": 0}
         self.write_json(self.work / "device_info.json", self.hardware)
         self.settings = JevSettings(api_key="synthetic-key")
-        self.translations = {
-            "融合方法": "Fusion methods",
-            "卷积后接 sigmoid。": "Convolution followed by sigmoid.",
-            "保持精度": "Preserve accuracy",
-            "设备探测成功": "Device detection succeeded",
-            "不要把 L2 等同于 DSM。": "Do not equate L2 and DSM.",
-            "垂直融合": "Vertical fusion",
-            "允许 HBM 中间结果": "Allow HBM intermediates",
-            "行优先": "Row major",
-        }
-        translation = patch("lib.kerminal_rpc.translate_fields", side_effect=self.translate_fields)
-        self.translate = translation.start()
-        self.addCleanup(translation.stop)
         settings_patch = patch("lib.jev_client.load_settings", return_value=self.settings)
         self.load_settings = settings_patch.start()
         self.addCleanup(settings_patch.stop)
@@ -70,19 +57,10 @@ class FusionSelectionTests(unittest.TestCase):
             for method, value in zip(self.catalog["methods"], values)
         }, "usage": {"input_tokens": 321, "output_tokens": 3}}
 
-    def translate_fields(self, cli, text_fields, run_dir, timeout=240):
-        self.assertEqual(cli, "synthetic-kerminal")
-        translated = {}
-        for key, value in text_fields.items():
-            for original, english in self.translations.items():
-                value = value.replace(original, english)
-            translated[key] = value
-        return translated
-
     def run_selection(self, top_n=2, **kwargs):
         return run_fusion_selection(
             self.work, top_n=top_n, methods_path=self.methods_path,
-            options_path=self.options_path, translation_cli="synthetic-kerminal", **kwargs,
+            options_path=self.options_path, **kwargs,
         )
 
     def read_artifact(self, name):
@@ -92,11 +70,10 @@ class FusionSelectionTests(unittest.TestCase):
         library = self.run_selection()
         request = self.evaluate.call_args.args[0]
         self.assertEqual(request["state"]["fusion_methods_source"],
-                         self.methods_path.read_bytes().decode("utf-8").replace("融合方法", "Fusion methods"))
+                         self.methods_path.read_bytes().decode("utf-8"))
         self.assertEqual(request["state"]["operator_requirements"], self.requirements)
         self.assertEqual(request["state"]["hardware"], self.hardware)
         self.assertEqual(request["state"]["language"], "en")
-        self.translate.assert_called_once()
         self.assertEqual(request["state"]["catalog_context"]["caveats"], self.catalog["caveats"])
         self.assertEqual(set(request["questions"]), {"F1", "F2", "F3"})
         for method in self.catalog["methods"]:
@@ -117,73 +94,82 @@ class FusionSelectionTests(unittest.TestCase):
         self.assertEqual(self.read_artifact("fusion_library.json"), library)
         self.assertFalse(library["cache_reused"])
 
-    def test_nested_chinese_values_are_translated_but_library_keeps_original_methods(self):
-        self.catalog["caveats"] = ["不要把 L2 等同于 DSM。"]
-        self.catalog["methods"][1].update({
-            "name": "垂直融合",
-            "requirements": ["允许 HBM 中间结果"],
-            "variants": [{"id": "F2_v1", "layout": {"description": "行优先", "tile": [16, 32]}}],
-        })
-        self.requirements["operator_summary"] = "卷积后接 sigmoid。"
-        self.requirements["case_groups"][0]["notes"] = ["保持精度"]
-        self.hardware["probe"] = {"notes": ["设备探测成功"], "supported": True}
+    def test_nested_english_inputs_are_archived_without_rewriting_values(self):
+        self.catalog["methods"][1]["variants"] = [
+            {"id": "F2_v1", "layout": {"description": "Row major", "tile": [16, 32],
+                                       "offset": -1, "tolerance": 1e-5}}]
+        self.hardware["probe"] = {"notes": ["Device detection succeeded"], "supported": True}
         self.write_json(self.options_path, self.catalog)
-        self.write_json(self.work / "fusion_requirements.en.json", self.requirements)
         self.write_json(self.work / "device_info.json", self.hardware)
-
         library = self.run_selection()
-        request = self.evaluate.call_args.args[0]
-        self.assertNotRegex(json.dumps(request, ensure_ascii=False), r"[\u3400-\u9fff]")
-        self.assertEqual(request["state"]["language"], "en")
-        self.assertEqual(request["state"]["operator_requirements"]["operator_summary"],
-                         "Convolution followed by sigmoid.")
-        self.assertEqual(request["state"]["operator_requirements"]["case_groups"][0]["shape"], [1, 32, 64, 64])
-        self.assertEqual(request["state"]["hardware"]["probe"],
-                         {"notes": ["Device detection succeeded"], "supported": True})
-        self.assertEqual(request["state"]["catalog_context"]["caveats"], ["Do not equate L2 and DSM."])
-        method = json.loads(request["questions"]["F2"]["instructions"].split("Method JSON: ")[1])
-        self.assertEqual(method["id"], "F2")
-        self.assertEqual(method["name"], "Vertical fusion")
-        self.assertEqual(method["variants"], [{"id": "F2_v1", "layout": {"description": "Row major", "tile": [16, 32]}}])
+        inputs = self.read_artifact("english_inputs.json")
+        self.assertEqual(inputs, {
+            "fusion_methods_source": self.methods_path.read_bytes().decode("utf-8"),
+            "operator_requirements": self.requirements, "hardware": self.hardware, "catalog": self.catalog})
+        self.assertEqual(library["english_inputs_path"], str((self.work / "fusion/english_inputs.json").resolve()))
+        self.assertEqual(library["protocol"], PROTOCOL)
         self.assertEqual(library["candidates"][0]["method"], self.catalog["methods"][1])
-        self.assertEqual(self.read_artifact("jev_request.json"), request)
-        self.assertIn("融合方法", self.methods_path.read_text(encoding="utf-8"))
+        request = self.read_artifact("jev_request.json")
+        method = json.loads(request["questions"]["F2"]["instructions"].split("Method JSON: ")[1])
+        self.assertEqual(method, self.catalog["methods"][1])
 
-    def test_translation_failure_never_calls_jev_or_publishes_a_library(self):
-        self.translate.side_effect = RuntimeError("synthetic translation failure")
-        with self.assertRaisesRegex(RuntimeError, "translation failure"):
-            self.run_selection()
+    def test_non_english_material_never_reaches_jev_or_publishes_inputs(self):
+        for section in ("source", "catalog", "requirements", "hardware"):
+            with self.subTest(section=section):
+                source = "# Fusion methods"
+                catalog, requirements, hardware = map(deepcopy, (self.catalog, self.requirements, self.hardware))
+                if section == "source":
+                    source = "融合方法"
+                elif section == "catalog":
+                    catalog["methods"][0]["details"] = {"nested": [r"\u878d\u5408"]}
+                elif section == "requirements":
+                    requirements["semantics"] = "卷积后接激活"
+                else:
+                    hardware["probe"] = {"notes": ["设备说明"]}
+                self.methods_path.write_text(source, encoding="utf-8")
+                self.write_json(self.options_path, catalog)
+                self.write_json(self.work / "fusion_requirements.en.json", requirements)
+                self.write_json(self.work / "device_info.json", hardware)
+                with self.assertRaisesRegex(ValueError, "non-English"):
+                    self.run_selection()
+                self.assertFalse(fusion_library_path(self.work).exists())
+                self.assertFalse((self.work / "fusion/english_inputs.json").exists())
         self.evaluate.assert_not_called()
-        self.assertFalse(fusion_library_path(self.work).exists())
-        self.assertFalse((self.work / "fusion/ranking.json").exists())
 
-    def test_remaining_chinese_after_translation_never_reaches_jev(self):
-        self.translate.side_effect = lambda cli, text_fields, run_dir, timeout=240: dict(text_fields)
-        with self.assertRaises(ValueError):
-            self.run_selection()
-        self.evaluate.assert_not_called()
-        self.assertFalse(fusion_library_path(self.work).exists())
-
-    def test_expanded_translation_is_checked_against_final_request_budget(self):
-        def expanded(cli, text_fields, run_dir, timeout=240):
-            translated = self.translate_fields(cli, text_fields, run_dir, timeout)
-            return {key: value + " English explanation" * 2000 for key, value in translated.items()}
-
-        self.translate.side_effect = expanded
+    def test_complete_english_request_is_checked_against_final_budget(self):
+        self.methods_path.write_text("Complete source " * 4000, encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "byte budget"):
             self.run_selection()
         self.evaluate.assert_not_called()
         self.assertFalse(fusion_library_path(self.work).exists())
+        self.assertFalse((self.work / "fusion/english_inputs.json").exists())
 
-    def test_translation_failure_after_a_source_change_removes_previous_library(self):
+    def test_invalid_source_change_removes_previous_library_and_input_snapshot(self):
         self.run_selection()
-        self.methods_path.write_text("# 融合方法\nNew requirements.", encoding="utf-8")
-        self.translate.side_effect = RuntimeError("synthetic translation failure")
-        with self.assertRaisesRegex(RuntimeError, "translation failure"):
+        self.methods_path.write_text("融合方法", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "non-English"):
             self.run_selection()
         self.evaluate.assert_called_once()
         self.assertFalse(fusion_library_path(self.work).exists())
         self.assertFalse((self.work / "fusion/ranking.json").exists())
+        self.assertFalse((self.work / "fusion/english_inputs.json").exists())
+
+    def test_previous_protocol_cannot_reuse_cached_scores(self):
+        self.run_selection()
+        ranking = self.read_artifact("ranking.json")
+        ranking["protocol"] = "unsupported-protocol"
+        self.write_json(self.work / "fusion/ranking.json", ranking)
+        result = self.run_selection()
+        self.assertFalse(result["cache_reused"])
+        self.assertEqual(self.evaluate.call_count, 2)
+
+    def test_snapshot_is_rebuilt_from_sources_even_when_scores_are_reused(self):
+        self.run_selection()
+        self.write_json(self.work / "fusion/english_inputs.json", {"tampered": 256})
+        result = self.run_selection()
+        self.assertTrue(result["cache_reused"])
+        self.evaluate.assert_called_once()
+        self.assertEqual(self.read_artifact("english_inputs.json")["hardware"], self.hardware)
 
     def test_equal_probabilities_keep_catalog_order(self):
         self.evaluate.return_value = self.response((0.8, 0.8, 0.8))
@@ -194,10 +180,35 @@ class FusionSelectionTests(unittest.TestCase):
         original = self.run_selection(1)
         result = self.run_selection(3)
         self.evaluate.assert_called_once()
-        self.translate.assert_called_once()
         self.assertTrue(result["cache_reused"])
         self.assertEqual(result["fingerprint_sha256"], original["fingerprint_sha256"])
         self.assertEqual(len(result["candidates"]), 3)
+
+    def test_previous_protocol_library_is_rejected_before_resume_handoff(self):
+        library = self.run_selection()
+        library["protocol"] = "unsupported-protocol"
+        self.write_json(fusion_library_path(self.work), library)
+        for stage in (2, 3, 7, 8, 9):
+            with self.subTest(stage=stage), self.assertRaisesRegex(ValueError, "scoring protocol is unsupported"):
+                format_fusion_library_for_prompt(self.work, stage)
+
+    def test_legacy_english_candidates_remain_available_to_consumers(self):
+        library = self.run_selection()
+        library["protocol"] = LEGACY_PROTOCOL
+        self.write_json(fusion_library_path(self.work), library)
+        for stage in (2, 3, 7, 8, 9):
+            with self.subTest(stage=stage):
+                self.assertIn("F2", format_fusion_library_for_prompt(self.work, stage))
+        library["candidates"][0]["method"]["name"] = "融合方法"
+        self.write_json(fusion_library_path(self.work), library)
+        with self.assertRaisesRegex(ValueError, "non-English"):
+            format_fusion_library_for_prompt(self.work, 3)
+
+    def test_scoring_preparation_launches_no_external_process(self):
+        with patch("subprocess.Popen") as process:
+            self.run_selection()
+        process.assert_not_called()
+        self.evaluate.assert_called_once()
 
     def test_all_source_inputs_invalidate_cache_including_full_analysis(self):
         self.run_selection()

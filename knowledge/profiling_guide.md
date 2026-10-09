@@ -2,6 +2,10 @@
 
 Analyze cann-bench's Ascend profiler data. The current workflow uses the `kernel_details` protocol; baseline, HAP, speedup and score are read directly from the report. Paths and kernel names in this document are structural illustrations; no measured Triton results are provided.
 
+Read `device_info.json` for the current chip, core counts and backend capabilities. Check `impl/` and its bound `develop/<iter>/` documents for the evaluated kernel, grid, tiling, masks, strides and fusion intent; historical implementations do not establish what the current code executes.
+
+The workflow allocates analysis attention and report coverage across `kernel_details.csv`, `op_statistic.csv`, `step_trace_time.csv`, `api_statistic.csv`, and `trace_view.json` at 50%/20%/15%/10%/5%, respectively. These weights guide the existing analysis process; they are not official performance-score weights. Metrics and scoring remain those in the original evaluation report.
+
 ## 1. Locating Evidence from the Report
 
 `lib/bench_parser.py` calls cann-bench → executes the candidate on the specified NPU → `torch_npu.profiler` collects → cann-bench parses the original report → the workflow writes `eval/<iter>/perf_result.json`.
@@ -57,3 +61,5 @@ Use trace events that correspond to the evaluated Triton Ascend invocation. `tra
 For up to 6 of the slowest cases, each write: **conclusion, evidence file/line or event, next verification step**. Then review the distribution across all cases and slow-case trends, distinguishing mask/stride, tiling, fixed overhead, resource pressure and structural issues of the fusion plan. Where proof is lacking, write hypotheses and validation methods; do not give definitive conclusions.
 
 The current plan and design files must correspond to the evaluated code. Self-tests establish correctness and Jev probabilities guide initial exploration. Performance conclusions require measured Triton Ascend results from the current evaluation protocol.
+
+Use this stage's existing output files and preserve the stage's decision authority. Inputs are read-only: do not change scores, baselines, cases or raw profiler data, and do not independently choose a semantic exit.

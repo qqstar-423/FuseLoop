@@ -18,6 +18,8 @@ MANIFEST = "init_impl_manifest.json"
 _ROOT_FILES = ("ANALYSIS.md", "fusion_requirements.en.json", "device_info.json")
 _REQUIRED = (*_ROOT_FILES, "fusion/fusion_library.json", "fusion/ranking.json",
              "fusion/jev_request.json", "fusion/jev_response.json")
+_FUSION_FILES = {"fusion_library.json", "ranking.json", "jev_request.json", "jev_response.json", "english_inputs.json",
+                 "translation/english_inputs.json"}
 _DEVELOP_REQUIRED = ("fusion_library.json", "self_test_report.md", "self_test_result.json")
 _IGNORED = {".git", "__pycache__", "build", "dist", ".pytest_cache"}
 _EXCLUDED_DEVELOP = {"human_feedback.json", "question.md"}
@@ -102,8 +104,21 @@ def _source_work(source):
     raise ValueError("--init-impl must be inside an existing workflow work directory; Stage1/1.5/2 material was not found.")
 
 
+def _scoring_inputs_relative(work):
+    from lib.fusion_selection import PROTOCOL, LEGACY_PROTOCOL
+    library_path = work / "fusion/fusion_library.json"
+    _safe_path(library_path, work)
+    library = _json(library_path)
+    protocol = library.get("protocol") if isinstance(library, dict) else None
+    if protocol == PROTOCOL:
+        return "fusion/english_inputs.json"
+    if protocol == LEGACY_PROTOCOL:
+        return "fusion/translation/english_inputs.json"
+    raise ValueError("--init-impl scoring protocol is unsupported; provide verified English scoring material.")
+
+
 def _required(work, develop=None):
-    for relative in _REQUIRED:
+    for relative in (*_REQUIRED, _scoring_inputs_relative(work)):
         path = work / relative
         _safe_path(path, work)
         if not path.is_file() or not path.read_bytes().strip():
@@ -129,15 +144,46 @@ def _device_signature(device):
 
 def _validate_fusion(work, original_hashes=None, develop=None):
     """Check native probabilities and their source binding without loading Jev."""
-    from lib.fusion_selection import _validate_requirements
+    from lib.fusion_selection import (PROTOCOL, LEGACY_PROTOCOL, LEGACY_CAVEATS, SUPPORTED_PROTOCOLS,
+                                      _build_request, _validate_catalog, _validate_requirements)
     from lib.fusion_evidence import _validate_library
+    from lib.jev_input import assert_english_payload
 
     requirements = _json(work / "fusion_requirements.en.json")
     _validate_requirements(requirements)
+    assert_english_payload(requirements)
     library, ranking = (_json(work / "fusion" / name) for name in ("fusion_library.json", "ranking.json"))
     response, request = (_json(work / "fusion" / name) for name in ("jev_response.json", "jev_request.json"))
     if not all(isinstance(value, dict) for value in (library, ranking, response, request)):
         raise ValueError("--init-impl fusion scoring material must be JSON objects.")
+    protocol = library.get("protocol")
+    if protocol not in SUPPORTED_PROTOCOLS or ranking.get("protocol") != protocol:
+        raise ValueError("--init-impl scoring protocol is unsupported or inconsistent.")
+    input_relative = _scoring_inputs_relative(work)
+    inputs = _json(work / input_relative)
+    if not isinstance(inputs, dict) or set(inputs) != {
+            "fusion_methods_source", "operator_requirements", "hardware", "catalog"}:
+        raise ValueError("--init-impl English input evidence is incomplete.")
+    assert_english_payload(inputs)
+    assert_english_payload(request)
+    methods = _validate_catalog(inputs["catalog"])
+    expected_request = _build_request(
+        inputs["fusion_methods_source"], inputs["operator_requirements"], inputs["hardware"],
+        methods, request.get("model"),
+        catalog_context={key: value for key, value in inputs["catalog"].items() if key != "methods"})
+    if protocol == LEGACY_PROTOCOL:
+        expected_request["state"]["caveats"] = LEGACY_CAVEATS
+    canonical = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    if canonical(request) != canonical(expected_request):
+        raise ValueError("--init-impl English input evidence disagrees with the Jev request.")
+    input_sha = _sha(json.dumps(inputs, ensure_ascii=False, sort_keys=True, allow_nan=False).encode("utf-8"))
+    for document in (library, ranking):
+        digest = document.get("english_inputs_sha256")
+        if ((protocol == PROTOCOL or digest is not None) and digest != input_sha
+                or not isinstance(document.get("english_inputs_path"), str)
+                or Path(document["english_inputs_path"]).resolve() != (work / input_relative).resolve()):
+            raise ValueError("--init-impl English input evidence path or digest disagrees with scoring.")
+    assert_english_payload(ranking.get("candidates"))
     candidates, top_n = ranking.get("candidates"), library.get("top_n")
     if (ranking.get("schema_version") != 1 or library.get("schema_version") != 1
             or not isinstance(candidates, list) or not candidates or type(top_n) is not int
@@ -294,7 +340,8 @@ def prepare_init_impl(source_impl, work_dir, task_dir, *, optimize_hint="", log=
         files.extend((path, (Path(destination) / path.relative_to(directory)).as_posix())
                      for path in _files(directory, ignore_generated=destination == "impl",
                                         ignored_dirs=_IGNORED - {".pytest_cache"})
-                     if not (destination == "develop/iter0" and path.name in _EXCLUDED_DEVELOP))
+                     if not (destination == "develop/iter0" and path.name in _EXCLUDED_DEVELOP)
+                     and (destination != "fusion" or path.relative_to(directory).as_posix() in _FUSION_FILES))
     if not any(relative.startswith("impl/") for _, relative in files):
         raise ValueError("--init-impl the implementation directory is empty.")
     for _, relative in files:
@@ -321,7 +368,8 @@ def prepare_init_impl(source_impl, work_dir, task_dir, *, optimize_hint="", log=
         original = path.read_bytes()
         data = original
         # Implementation and provider payloads are immutable source evidence.
-        preserve = relative.startswith(("impl/", "fusion/translation/")) or relative in {
+        preserve = relative.startswith("impl/") or relative in {
+            "fusion/english_inputs.json", "fusion/translation/english_inputs.json",
             "fusion/jev_request.json", "fusion/jev_response.json", "device_info.json"}
         if not preserve:
             if path.suffix.lower() == ".json":
@@ -394,7 +442,7 @@ def validate_init_impl_inputs(work_dir, current_device_info, task_dir):
                 or _linked(path) or _sha(path.read_bytes()) != entry.get("sha256")):
             raise ValueError(f"--init-impl imported material is missing or was modified: {relative.as_posix()}")
         original_hashes[relative.as_posix()] = entry.get("source_sha256")
-    if not set(_REQUIRED) <= seen:
+    if not set((*_REQUIRED, _scoring_inputs_relative(work))) <= seen:
         raise ValueError("--init-impl the file manifest lacks required Stage1/1.5/2 material.")
     _required(work, work / "develop/iter0")
     # Immediate copy provenance differs from original Jev inputs after a prior

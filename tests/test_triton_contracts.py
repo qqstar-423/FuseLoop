@@ -35,7 +35,7 @@ class TritonContractTests(unittest.TestCase):
                 text = (ROOT / "roles" / name).read_text(encoding="utf-8")
                 self.assertIn("@triton.jit", text)
                 self.assertIn("triton-ascend", text)
-        profiling = (ROOT / "skills/triton-profiling-analysis/SKILL.md").read_text(encoding="utf-8")
+        profiling = (ROOT / "knowledge/profiling_guide.md").read_text(encoding="utf-8")
         self.assertIn("Triton", profiling)
         self.assertIn("kernel_details.csv", profiling)
         self.assertIn("device_info.json", profiling)

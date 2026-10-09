@@ -11,7 +11,7 @@ from time import perf_counter
 import yaml
 from typesafe_sdk import RetryPolicy, TypeSafeClient
 
-from lib.jev_translation import assert_english_payload
+from lib.jev_input import assert_english_payload
 
 
 ROOT = Path(__file__).resolve().parents[1]

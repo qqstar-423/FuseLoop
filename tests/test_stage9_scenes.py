@@ -76,7 +76,7 @@ class Stage9ScenesTests(unittest.TestCase):
             self.assertNotIn("six slowest", role)
             self.assertNotIn("fusion/fusion_library.json", role)
             self.assertNotIn("## Conditional Task: Record This Round's Performance Experience in Detail", role)
-            self.assertNotIn("skills/triton-profiling-analysis/SKILL.md", role)
+            self.assertNotIn("knowledge/profiling_guide.md", role)
 
     def test_patterns_only_required_by_valid_measured_performance(self):
         for scene in ("optimization", "stagnation", "all_passed"):

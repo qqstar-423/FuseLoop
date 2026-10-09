@@ -20,7 +20,7 @@ Path bases are noted in the table; the program reads the files and assembles the
 
 ## Responsibilities
 
-1. The program reuses Kerminal to translate non-English material into English, preserving scheme IDs, values, and JSON structure, and checks the translation and request size.
+1. The program validates the supplied English material and JSON values without rewriting scheme IDs, numbers, text, or structure, then checks the complete request size. Non-English inputs are rejected before scoring.
 2. The program assembles the `model / state / questions` request; Jev gives an independent `noul` applicability probability for each major category. The 24 variants participate in the judgment as scheme details and are not scored separately.
 3. The program verifies that all schemes have valid probabilities and sorts them in descending order of probability; ties keep the catalog order, and the top n are taken to form the **JSON fusion operator library**.
 
@@ -30,10 +30,11 @@ Path bases are noted in the table; the program reads the files and assembles the
 
 | Output | Content and purpose |
 |---|---|
+| `<work>/fusion/english_inputs.json` | Unchanged English source, catalog, requirements, and hardware used to build the request |
 | `<work>/fusion/jev_request.json`, `jev_response.json` | Full English request and Jev's raw response, for traceability |
 | `<work>/fusion/ranking.json` | Probabilities and ranking of all 10 major categories |
 | `<work>/fusion/fusion_library.json` | The top n complete candidates, each containing `rank`, `probability`, `method`, passed to Stage2, 3, 7, 8, 9 |
 
-After Stage1.5 succeeds, proceed to Stage2, using the highest-probability implementable scheme as the direction for the first version; Stage3, 7, 8, 9 refer to the scheme library combined with their own responsibilities and actual evaluation evidence. The output library retains the scheme details from the original catalog; translation is only used for Jev input.
+After Stage1.5 succeeds, proceed to Stage2, using the highest-probability implementable scheme as the direction for the first version; Stage3, 7, 8, 9 refer to the scheme library combined with their own responsibilities and actual evaluation evidence. The output library retains the scheme details from the supplied English catalog.
 
-Stop on translation, request validation, or scoring failure — do not enter Stage2; when inputs are consistent, validated results can be reused, and if only n changes, reselect directly. This stage reuses the existing downstream routing, P0/P1/P2, and exit logic.
+Stop on input validation, request size, or scoring failure — do not enter Stage2; when inputs and scoring protocol are consistent, validated results can be reused, and if only n changes, reselect directly. A normal scoring run refreshes an older protocol's cache. Import and recovery can retain verified English v2 archives without contacting Jev, after checking the original request, response, and source fingerprints. This stage reuses the existing downstream routing, P0/P1/P2, and exit logic.

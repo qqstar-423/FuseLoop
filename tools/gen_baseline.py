@@ -20,6 +20,18 @@ Usage:
 Methodology: torch.npu.Event device elapsed time (warmup + trials, median).
 t_hw_us = max(baseline_perf_us * 0.1, 1.0).
 Output JSON format matches cann-bench metadata/<hardware>.json schema.
+
+Run from the repository root in an initialized Ascend CANN environment with
+torch, torch_npu and PyYAML installed. The task directory must contain golden.py,
+proto.yaml and cases.yaml. The golden signature must match its declared schema.
+The script writes to the nearest metadata directory, or to --output when given;
+confirm that the detected chip name matches the evaluator's baseline filename.
+Use --merge to preserve other operators in an existing output file.
+
+t_hw_us is a heuristic estimate, not measured hardware-limit latency. Derive a
+chip-specific roofline estimate when needed and record its assumptions. Event
+timing does not by itself establish comparability with the workflow's official
+kernel_details timing protocol; validate the baseline with the target evaluator.
 """
 from __future__ import annotations
 

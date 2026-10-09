@@ -108,6 +108,9 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
         _, role, prompt = self.assert_scene("optimization", expected_keys={"perf_result", "bottleneck", "fix_directive", "search_report"})
         self.assertNotIn("[Scenario 2 stagnation", prompt)
         self.assertNotIn("## Conditional Task: Record This Round's Performance Experience in Detail", role)
+        guide = Path(__file__).resolve().parents[1] / "knowledge/profiling_guide.md"
+        self.assertTrue(guide.is_file())
+        self.assertIn(str(guide), self.fixture.prompts["stage7"])
 
     def test_stagnation_actual_prompt_keeps_trends_candidates_and_window(self):
         self.flow.run_workflow(max_iterations=3, file_logs=True)
@@ -126,10 +129,14 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
         self.produce_fresh_profiler()
         self.flow.perfs[1] = (1.6,)
         self.flow.run_workflow(max_iterations=1)
-        _, role, _ = self.assert_scene("all_passed", expected_keys={"perf_result", "profiler", "perf_reports"},
+        _, role, prompt = self.assert_scene("all_passed", expected_keys={"perf_result", "profiler", "perf_reports"},
                                       forbidden_keys={"bottleneck", "fix_directive", "search_report"})
         self.assertIn("Keep the necessary bottleneck analysis", role)
         self.assertNotIn("profile/<iter>/bottleneck_analysis.md", role)
+        guide = Path(__file__).resolve().parents[1] / "knowledge/profiling_guide.md"
+        self.assertTrue(guide.is_file())
+        self.assertIn(str(guide), prompt)
+        self.assertIn("knowledge/profiling_guide.md", role)
 
     def test_failed_stage7_stops_before_search_and_review(self):
         original = self.fixture.agent

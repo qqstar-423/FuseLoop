@@ -185,7 +185,7 @@ class JevClientTests(unittest.TestCase):
                     build_request(source, evidence, questions)
         self.client_factory.assert_not_called()
 
-    def test_english_marker_cannot_hide_untranslated_request_content(self):
+    def test_english_marker_cannot_hide_non_english_request_content(self):
         for location in ("evidence", "source", "questions"):
             with self.subTest(location=location):
                 source, evidence, questions = self.input_files()
@@ -203,7 +203,7 @@ class JevClientTests(unittest.TestCase):
                     build_request(source, evidence, questions)
         self.client_factory.assert_not_called()
 
-    def test_untranslated_payload_is_rejected_before_sdk_construction(self):
+    def test_non_english_payload_is_rejected_before_sdk_construction(self):
         mutations = {
             "nested_state": lambda request: request["state"].update({
                 "history": [{"observations": [{"reason": "片上空间不足"}]}],

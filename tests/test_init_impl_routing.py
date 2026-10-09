@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 import orchestrator
 from lib.fusion_evidence import implementation_hash, load_evidence
-from test_init_impl import make_source, write_json
+from test_init_impl import make_source, use_legacy_english_scoring, write_json
 
 
 class PauseFixture(RuntimeError):
@@ -46,10 +46,16 @@ class InitImplRoutingTests(unittest.TestCase):
         request = json.loads(path.read_text())
         request["state"]["hardware"] = self.device
         write_json(path, request)
+        input_path = self.source / "fusion/english_inputs.json"
+        inputs = json.loads(input_path.read_text())
+        inputs["hardware"] = self.device
+        write_json(input_path, inputs)
+        inputs_sha = hashlib.sha256(json.dumps(inputs, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()).hexdigest()
         for name in ("fusion_library.json", "ranking.json"):
             path = self.source / "fusion" / name
             document = json.loads(path.read_text())
             document["sources"]["hardware"]["sha256"] = sha
+            document["english_inputs_sha256"] = inputs_sha
             document["fingerprint_sha256"] = hashlib.sha256(json.dumps({
                 "protocol": document["protocol"], "request": request, "jev_config": document["jev_config"],
                 "source_sha256": {key: value["sha256"] for key, value in document["sources"].items()},
@@ -190,6 +196,24 @@ class InitImplRoutingTests(unittest.TestCase):
         self.assertEqual(self.events, ["stage5", "stage6", "stage7"])
         self.jev.assert_not_called()
         self.assertEqual(json.loads((self.work / "selection/best.json").read_text())["iteration"], 1)
+
+    def test_legacy_english_import_and_work_dir_resume_keep_stage4_route(self):
+        use_legacy_english_scoring(self.source)
+        self.stop_at = "stage4"
+        with self.patches(), self.assertRaises(PauseFixture):
+            orchestrator.main()
+        manifest = (self.work / "init_impl_manifest.json").read_bytes()
+        request = (self.work / "fusion/jev_request.json").read_bytes()
+        self.events.clear()
+        self.stop_at = "stage5"
+        with self.patches(resume=True), patch.object(orchestrator, "prepare_init_impl",
+                side_effect=AssertionError("Resume must not copy source again")), self.assertRaises(PauseFixture):
+            orchestrator.main()
+        self.assertEqual(self.events, ["stage4", "stage5"])
+        self.jev.assert_not_called()
+        self.assertEqual((self.work / "init_impl_manifest.json").read_bytes(), manifest)
+        self.assertEqual((self.work / "fusion/jev_request.json").read_bytes(), request)
+        self.assertFalse((self.work / "fusion/english_inputs.json").exists())
 
     def test_resume_after_device_probe_failure_still_skips_initial_stages(self):
         with self.patches(), patch.object(orchestrator, "detect_triton_runtime", side_effect=RuntimeError("offline probe")), \

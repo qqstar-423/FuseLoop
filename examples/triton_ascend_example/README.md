@@ -13,7 +13,7 @@ task/cases.yaml / golden.py       precision cases and independent reference impl
 self_test.py                      real NPU self-test, including consecutive calls
 ```
 
-Inputs must share the same shape, dtype and device; no broadcasting. Supports finite values of float16, bfloat16 and float32; the computation is done in float32 and the output is cast back to the input dtype. The function name, argument order and return type in `task/proto.yaml` match the package exports; this is a self-contained teaching task and is not assumed to be registered in an external cann-bench.
+Inputs must share the same shape, dtype and device; no broadcasting. Supports finite values of float16, bfloat16 and float32; the computation is done in float32 and the output is cast back to the input dtype. The function name, argument order and return type in `task/proto.yaml` match the package exports; this is a self-contained teaching task and is not assumed to be registered in an external evaluation suite.
 
 All kernel load/store operations use boundary masks covering tail blocks of fewer than 1024 elements. The wrapper only checks arguments, arranges the layout, allocates the output and launches the kernel; it does not call PyTorch's built-in add/ReLU to complete the core computation. Each call reads the current inputs and reallocates the output; no cache of weights, inputs or intermediate data is kept. Layout copies for non-contiguous inputs count toward that call's cost. Triton's compilation cache may reuse compiled programs.
 
@@ -31,9 +31,9 @@ python3 self_test.py --device-id 0
 
 `build.sh` only does the packaging; the kernel is JIT-compiled on first execution, so packaging success does not mean compile/run success. The self-test checks that the actual backend is `npu`, and exercises zero elements, scalars, full blocks, tail blocks, non-contiguous layouts, fresh data with the same shape, and consecutive calls after in-place modification of the same input. Numerical checks use an independent PyTorch reference; the reference computation in the tests is not part of the submitted package.
 
-## cann-bench Precision Check
+## Precision Evaluation
 
-Run from an external cann-bench repository, with `EXAMPLE` set to the absolute path of this directory:
+Run from the evaluation suite's repository, with `EXAMPLE` set to the absolute path of this directory:
 
 ```bash
 EXAMPLE=/absolute/path/to/examples/triton_ascend_example
