@@ -19,7 +19,7 @@ python3 -m pip install "typesafe-sdk==0.7.0" "PyYAML==6.0.3"
 
 A task directory provides `desc.md`, `proto.yaml`, `cases.yaml`, and `golden.py`. Preserve these evaluation inputs. The generated implementation exports the task interface through a `cann_bench` package; its `build.sh` produces the wheel installed for evaluation. The first device invocation triggers Triton JIT compilation.
 
-The run's `task/` links to the supplied task directory. Its `example/` links to `examples/triton_ascend_cann_example/` in the evaluator checkout. The repository also provides a [minimal fused operator implementation](../examples/triton_ascend_example/README.md) with build and NPU self-test commands.
+The run's `task/` links to the supplied task directory. Its `example/` links to `examples/triton_ascend_cann_example/` in the evaluator checkout. The repository also provides a [minimal fused operator implementation](../examples/triton_ascend_example/README.md) with build and precision-evaluation commands.
 
 ## Agent integrations
 

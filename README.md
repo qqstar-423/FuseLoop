@@ -122,27 +122,18 @@ python3 orchestrator.py --task-dir /path/to/task \
 
 `--init-impl` creates a new work directory and imports the specified code, requirements, fusion library, and development artifacts. It begins at **Stage4 → Stage5 → Stage6**, evaluating that implementation before any revision. Startup verifies the task, hardware, and evidence and records hashes in `init_impl_manifest.json`. Evaluation history and selection records start fresh. Use `--work-dir` to resume the imported run; the two options are mutually exclusive.
 
-## Artifacts and tests
+## Artifacts
 
 | Location | Contents |
 |---|---|
 | `orchestrator.py`, `lib/` | Execution control, evaluation, evidence validation, and agent integration |
 | `roles/`, `roles/stage9/` | Stage instructions and scenario-specific review rules |
 | `knowledge/` | Fusion catalog, target programming guidance, integrity rules, and profiling procedures |
-| `examples/`, `tools/`, `tests/` | Example implementation, utilities, and regression tests |
+| `examples/`, `tools/` | Example implementation and baseline generation utility |
 | `<work>/fusion/`, `develop/` | Initial ranking, implemented plans, revision rationale, and self-tests |
 | `<work>/build/`, `eval/`, `profile/`, `search/` | Per-iteration build, evaluation, analysis, and research records |
 | `<work>/selection/` | Best-result index, evidence bindings, and independent evaluated snapshots |
 | `<work>/knowledge/` | Iteration history, reusable lessons, and corrected advice |
 | `<work>/log/`, `FINAL_REPORT.md` | Execution logs, prompts, and final results |
-
-Run strict offline checks and local subprocess tests with the setup guide's Python dependencies installed:
-
-```bash
-python3 tools/run_jev_offline_tests.py
-python3 -m unittest discover -s tests -p 'test_agent_output_streams.py' -v
-```
-
-The strict offline suite uses synthetic measurements and mocked services to test routing, fusion selection, evidence binding, comparisons, snapshots, stopping conditions, knowledge records, and recovery. It blocks network access, child processes, and real credential-file reads, and records subprocess tests as skipped. Results and tested source hashes are saved to `output/jev_tests/results.json`. The second command tests output streaming with local Python subprocesses; standard `unittest` discovery includes both groups.
 
 Run the generated implementation's self-tests and formal evaluations on the target NPU to obtain its correctness and performance measurements.
