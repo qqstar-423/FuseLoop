@@ -96,7 +96,6 @@ Edit [config.yaml](../config.yaml) for the target machine:
 | `fusion_selection.top_n` | Candidate count, from 1 to 10; default `3` |
 | `workflow.max_iterations` | Maximum iteration count; default `20` |
 | `workflow.semantic_exit` | Valid-result windows for stopping and fusion-plan review |
-| `workflow.human_review` | Proactive feedback and stagnation consultation controls |
 
 Jev reads `TYPESAFE_API_KEY` first, then `jev.api_key`. Keep credentials in the local environment when sharing configuration. Planning requirements, catalog text, and submitted evidence must be English. New runs archive validated inputs in `fusion/english_inputs.json`. Implementation import verifies the archived inputs against the scoring request and source fingerprints; earlier English archives remain readable after the same consistency checks. Use `--config /path/to/config.yaml` to select a machine-specific configuration.
 
@@ -122,7 +121,7 @@ Run from the repository root after selecting the task and machine configuration:
 python3 orchestrator.py --task-dir /path/to/task --config /path/to/config.yaml
 ```
 
-[Run, resume, implementation import, and human feedback commands](../README.md#run-and-resume) describe the remaining entry points.
+[Run, resume, and implementation import commands](../README.md#run-and-resume) describe the remaining entry points.
 
 The harness requests `--perf-metric-strategy kernel_details`, two warmup calls, and three repeats. It preserves the evaluator's reference time, candidate time, speedups, and HAP values. The paper's timing procedure sums repeated calls to each kernel within a repetition, takes the median across repetitions for each kernel name, and sums those medians. The timing scope covers the device kernels producing the outputs; compilation, initialization, host overhead, and gaps between kernels are outside that metric.
 

@@ -261,14 +261,13 @@ class Stage9PlanTests(unittest.TestCase):
                      worst_cases_tracker={"case7": {"custom": "legacy detail"}},
                      fusion_kernel_strategy=[{"iter": 3, "direction": "Current fusion"}],
                      proven_pattern={"what_changed": "tiling", "evidence": {"custom": "legacy detail"}},
-                     regression_pattern={"what_changed": "other"}, pitfall={"topic": "memory"},
-                     human_responses=[{"message_id": "human-1", "kind": "direction", "answer": "Applied"}])
-        value["suggest_next"][0].update(source="human", human_message_id="human-1", priority="P0")
+                     regression_pattern={"what_changed": "other"}, pitfall={"topic": "memory"})
+        value["suggest_next"][0].update(priority="P0")
         result = normalize_decision_plan(value)
         for field in value:
             if field not in {"ledger_entry", "suggest_next"}:
                 self.assertEqual(result[field], value[field])
-        self.assertEqual(result["suggest_next"][0]["human_message_id"], "human-1")
+        self.assertEqual(result["suggest_next"][0]["priority"], "P0")
 
     def test_valid_current_handoff_is_verified_and_copied(self):
         normalized = normalize_decision_plan(decision())

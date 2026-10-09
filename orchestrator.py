@@ -31,10 +31,7 @@ from lib.tech_lead import (Stage9DecisionValidationError, merge_tech_lead_update
                            validate_stage9_request_conditions)
 from lib.stage9_plan import (build_decision_schema, build_decision_template,
                             validate_current_plan)
-from lib.human_review import HumanReview
 from lib.stage9_scenes import classify_scene, build_scene_role, scene_input_keys, is_performance_scene
-from lib.stage9_human import (evidence_sources, render_question, human_prompt,
-                              development_human_prompt, validate_execution_receipt)
 from lib.prompt_files import file_hint
 from lib.performance_comparison import compare_performance
 from lib.framework_target import (FRAMEWORK, BACKEND, PROGRAMMING_MODEL,
@@ -463,23 +460,9 @@ def main():
             if request.get("iteration") == state.iteration and request.get("fail_reason"):
                 state.stage9_context = {"iteration": state.iteration, "fail_reason": request["fail_reason"],
                                         "scene": request.get("scene"), "perf_diff": request.get("perf_diff", {}),
-                                        "phase": "reviewing", "message_ids": []}
+                                        "phase": "reviewing"}
                 break
-    human_config = config.get("workflow", {}).get("human_review", {})
-    for option in ("proactive_enabled", "consultation_enabled"):
-        if option in human_config and type(human_config[option]) is not bool:
-            raise ValueError(f"workflow.human_review.{option} must be a boolean")
-    # An old custom config without this section retains its unattended behavior.
-    state.human_review_config = {
-        "proactive_enabled": human_config.get("proactive_enabled", False),
-        "consultation_enabled": human_config.get("consultation_enabled", False),
-    }
-    human = HumanReview(work_dir)
-    human.configure(active_enabled=state.human_review_config["proactive_enabled"],
-                    consultation_enabled=state.human_review_config["consultation_enabled"])
     state.flush()
-    if any(state.human_review_config.values()):
-        log.info('[human entry] In another terminal run python tools/human_review.py --work-dir "%s" --message "your direction"; add --kind question for a pure question', work_dir)
     atexit.register(state.flush)
     signal.signal(signal.SIGTERM, lambda s, f: (state.flush(), sys.exit(1)))
     signal.signal(signal.SIGINT, lambda s, f: (state.flush(), sys.exit(1)))
@@ -595,7 +578,7 @@ def main():
             transition(state, "ready_for_iter", state_log,
                        reason="Emergency import complete, skipping Stage1/1.5/2; compiling the specified implementation from Stage4")
         log.info("===== Emergency import: skipping Stage1 requirements analysis, Stage1.5 Jev scoring, Stage2 first implementation =====")
-        log.info("[emergency import] Reusing imported fusion probabilities and Top N; current state=%s; old evaluations, history, best records or human feedback were not inherited",
+        log.info("[emergency import] Reusing imported fusion probabilities and Top N; current state=%s; old evaluations, history and best records were not inherited",
                  state.current_stage)
 
     # ═══════════════════════════════════════════════════════════════
@@ -1262,12 +1245,6 @@ def main():
             "search": os.path.join(work_dir, "search", iter_name),
             "develop": os.path.join(work_dir, "develop", iter_name),
         }
-    _review_pending_humans(log, roles_dir, work_dir, op_name, state, state_log,
-                           node_logs, iter_dirs, DEVICE_INFO_PROMPT, evaluation_context)
-    remaining_human = [item["id"] for item in human.all_messages()
-                       if item.get("kind") == "direction" and item.get("status") == "processed"]
-    if remaining_human:
-        human.mark_unexecuted(remaining_human, state.stopped_by or "workflow_final_report")
     stage = "Stage10-final report"
     role = os.path.join(roles_dir, "n5_stage10_kerminal_report.md")
     evaluation_context = comparison_context(task_dir, device_info, config)
@@ -1335,26 +1312,8 @@ def main():
     else:
         prompt += "\nNo best record yet satisfies the correctness, self-test and unified-protocol requirements. Report this fact explicitly, and do not proclaim the last modification as the best verified implementation.\n"
     prompt += format_selection_for_prompt(work_dir, comparison_context=evaluation_context)
-    if human.all_messages():
-        prompt += file_hint(work_dir, human.root / "state.json", "Human feedback processing and execution status",
-                            "Distinguish item by item: processed, executed but awaiting formal verification, or not executed due to exit conditions; list the reasons")
-        prompt += file_hint(work_dir, human.root / "inbox", "Human verbatim messages and questions", "Associate by message number with Stage9 adjudications; do not write processed as executed")
-    while True:
-        if not run_agent("kerminal", role, work_dir, prompt, node_log=node_logs["N5"]):
-            raise RuntimeError("Stage10 summarization failed; state kept for resume; the human entry is not yet closed")
-        if not human.pending_messages():
-            human.close_workflow(state.stopped_by or "completed")
-            if not human.pending_messages():
-                break
-        _review_pending_humans(log, roles_dir, work_dir, op_name, state, state_log,
-                               node_logs, iter_dirs, DEVICE_INFO_PROMPT, evaluation_context)
-        human.mark_unexecuted([item["id"] for item in human.all_messages()
-                               if item.get("kind") == "direction" and item.get("status") == "processed"],
-                              state.stopped_by or "workflow_final_report")
-        transition(state, "stage10", state_log, reason="Updating the final report after supplementing human feedback processing results")
-        prompt += "\nHuman feedback received during summarization has been re-reviewed by Stage9; re-read human_review/state.json and history, and state the reasons anything was not executed.\n"
-        prompt += file_hint(work_dir, human.root / "state.json", "Final processing status of human feedback", "List the reasons for non-execution by message number; do not treat processed as executed")
-        prompt += file_hint(work_dir, human.root / "inbox", "The human's complete verbatim messages", "Match item by item with human_responses in state and history")
+    if not run_agent("kerminal", role, work_dir, prompt, node_log=node_logs["N5"]):
+        raise RuntimeError("Stage10 summarization failed; state kept for resume")
 
     log.info("=" * 60)
     log.info(f"Done! stopped_by={state.stopped_by}")
@@ -1627,33 +1586,20 @@ def _history_previous_average(work_dir, state, log=None, *, comparison=None):
     return None
 
 
-def _review_pending_humans(log, roles_dir, work_dir, op_name, state, state_log,
-                           node_logs, iter_dirs, device_info_prompt, selection_context):
-    if not HumanReview(work_dir).pending_messages():
-        return
-    context = state.stage9_context
-    reason = context.get("fail_reason") or "score_zero: no valid evaluation yet; only handling human feedback and non-execution reasons"
-    run_tech_lead(log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs,
-                  fail_reason=reason, device_info_prompt=device_info_prompt,
-                  perf_diff=context.get("perf_diff"), selection_context=selection_context)
-
-
 def run_tech_lead(log, roles_dir: str, work_dir: str, op_name: str, state, state_log, node_logs, iter_dirs, fail_reason: str = "", device_info_prompt: str = "", perf_diff: dict = None, selection_context=None):
-    """Persist the scene, consult when due, then deliver a validated final decision."""
+    """Persist the scene and deliver a validated autonomous review decision."""
     restoration = load_regression_action(work_dir, state.iteration)
     if restoration and restoration.get("status") == "prepared":
         # A crash between the directory renames must finish before any agent
         # inspects impl. The already committed Stage9 decision remains the basis.
         apply_regression_action(work_dir, state.iteration, restoration["decision_path"], log, state_log,
                                 comparison_context=selection_context)
-    human = HumanReview(work_dir)
-    settings = getattr(state, "human_review_config", {})
     selection = load_selection_status(work_dir, comparison_context=selection_context)
     scene = classify_scene(fail_reason, selection, iteration=state.iteration)
     previous = getattr(state, "stage9_context", {})
     same = previous.get("iteration") == state.iteration and previous.get("fail_reason") == fail_reason
     if same and previous.get("scene"):
-        scene = previous["scene"]  # Includes consultation recovery: never reinterpret its original task.
+        scene = previous["scene"]  # Resume the original review task.
     if not is_performance_scene(scene):
         perf_diff = {}  # A failed build/precision run has no new performance evidence.
     else:
@@ -1661,8 +1607,13 @@ def run_tech_lead(log, roles_dir: str, work_dir: str, op_name: str, state, state
                                       log=log, state_log=state_log)
     context = copy.deepcopy(previous) if same else {
         "iteration": state.iteration, "fail_reason": fail_reason, "scene": scene,
-        "message_ids": [], "phase": "reviewing",
+        "phase": "reviewing",
     }
+    # Older checkpoints may retain obsolete interaction bookkeeping. It must
+    # not affect an autonomous review or be carried into a new request.
+    for key in ("message_ids", "bundle_path", "consultation_id"):
+        context.pop(key, None)
+    context["phase"] = "reviewing"
     context.update(perf_diff=perf_diff, scene=scene)
     if is_performance_scene(scene):
         event = log_semantic_trigger(work_dir, state.iteration, selection, log, state_log)
@@ -1671,74 +1622,12 @@ def run_tech_lead(log, roles_dir: str, work_dir: str, op_name: str, state, state
         prepare_regression_action(work_dir, state.iteration, perf_diff, selection, log, state_log)
     state.stage9_context = context
     transition(state, "stage9", state_log, reason=f"keeping the original scene {scene}")
-    valid = bool(is_performance_scene(scene) and selection.get("eligible")
-                 and selection.get("latest_iteration") == state.iteration)
-    counter = human.record_evaluation(
-        state.iteration, valid=valid, all_passed=scene == "all_passed",
-        review_fusion=bool(selection.get("review_fusion")),
-        window_gain=(selection.get("window") or {}).get("cumulative_improvement"))
-    consultation = human.active_consultation()
-    if (not consultation and settings.get("consultation_enabled") and valid
-            and scene == "stagnation" and counter["consultation_due"]
-            and not state.stopped_by):
-        consultation = human.create_consultation(
-            state.iteration, scene, fail_reason, evidence_sources(work_dir, iter_dirs),
-            {"selection_status": selection, "perf_diff": perf_diff,
-             "stage9_context": context, "hardware_prompt": device_info_prompt})
-    bundle_path = context.get("bundle_path")
-    if consultation:
-        if consultation["iteration"] != state.iteration or consultation["fail_reason"] != fail_reason:
-            raise RuntimeError("Human consultation does not match the current Stage9 scene; using the old question for a new version is forbidden")
-        context["consultation_id"] = consultation["request_id"]
-        context["phase"] = "consulting"
-        state.flush()
-        if consultation["status"] == "draft":
-            question_path = Path(consultation["question_path"])
-            if not question_path.is_file():
-                _run_tech_lead_decision(
-                    log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs,
-                    fail_reason, device_info_prompt, perf_diff, selection_context,
-                    consultation=consultation, human_messages=human.pending_messages(), scene=scene)
-            log.warning("[human consultation] Three consecutive triggers of valid improvement under 5%%; please read %s; wait 2 minutes; replying \"please wait\" extends the wait once by 10 minutes.", question_path)
-            state_log.warning("[human consultation] question=%s; original scene=%s", question_path, scene)
-            consultation = human.start_wait(consultation["request_id"])
-        if consultation["status"] == "waiting":
-            log.info("[human wait] request=%s, reusing deadline=%s", consultation["request_id"], consultation["deadline"])
-            consultation = human.wait_consultation(consultation["request_id"])
-        bundle_path = human.build_feedback_bundle(consultation["request_id"])
-        context.update(bundle_path=bundle_path, phase="feedback")
-        state.flush()
-        log.info("[human re-review] status=%s, full question/dialogue/evidence=%s", consultation["status"], bundle_path)
-
-    while True:
-        pending = human.pending_messages()
-        # Pending messages submitted while an enabled workflow was running stay visible
-        # even if its switch was subsequently disabled during checkpoint recovery.
-        ids = set(context.get("message_ids", [])) | {item["id"] for item in pending}
-        messages = [item for item in human.all_messages() if item["id"] in ids]
-        context["message_ids"] = [item["id"] for item in messages]
-        state.flush()
-        committed_path = context.get("decision_path")
-        if messages and not consultation and (pending or not bundle_path):
-            bundle_path = human.create_proactive_bundle(
-                state.iteration, scene, fail_reason, evidence_sources(work_dir, iter_dirs),
-                {"selection_status": selection, "previous_decision": committed_path,
-                 "consultation_bundle": context.get("bundle_path")}, messages)
-            context["bundle_path"] = bundle_path
-            state.flush()
-        decision_path = _run_tech_lead_decision(
-            log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs,
-            fail_reason, device_info_prompt, perf_diff, selection_context,
-            human_messages=messages, bundle_path=bundle_path, scene=scene)
-        human.mark_processed(context["message_ids"], decision_path)
-        if consultation:
-            human.complete_consultation(consultation["request_id"], decision_path)
-            consultation = None
-        context.update(phase="committed", decision_path=str(decision_path))
-        state.flush()
-        if not human.pending_messages():
-            return str(decision_path)
-        log.info("[human re-review] New feedback arrived while the Stage9 decision was being generated; re-reviewing within the same round before delivery")
+    decision_path = _run_tech_lead_decision(
+        log, roles_dir, work_dir, op_name, state, state_log, node_logs, iter_dirs,
+        fail_reason, device_info_prompt, perf_diff, selection_context, scene=scene)
+    context.update(phase="committed", decision_path=str(decision_path))
+    state.flush()
+    return str(decision_path)
 
 
 def _stage9_case_catalog(work_dir, iteration, scene):
@@ -2065,8 +1954,7 @@ def _validate_stage9_file_targets(work_dir, decision, *, allow_existing_creates=
 
 def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log, node_logs,
                             iter_dirs, fail_reason="", device_info_prompt="", perf_diff=None,
-                            selection_context=None, *, human_messages=None, bundle_path=None,
-                            consultation=None, scene=None):
+                            selection_context=None, *, scene=None):
     """
     Receives this round's Stage9 decision; the program merges history and saves experience.
     Supports being invoked at any fallback point (build_fail/precision_fail/score_zero/perf_optimize).
@@ -2174,12 +2062,6 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
     # ── Use the externally supplied perf_diff (already computed by the program after stage6)──
     perf_diff_hint = (perf_diff.get("comparison_text", "") + perf_diff.get("diff_text", "")
                       + perf_diff.get("regression_text", ""))
-    if consultation:
-        perf_diff_hint = "\nPerformance change computed by the program (consultation reference only): " + _json.dumps(
-            {key: value for key, value in perf_diff.items() if not key.endswith("_text")}, ensure_ascii=False) + "\n"
-        if question_path_found:
-            question_hint = file_hint(work_dir, question_path_found, "Development objection awaiting adjudication (consultation background)",
-                                      "Used only as question background this time; the adjudication is formed in the final re-review phase")
 
     profiling_guide_path_9 = os.path.join(os.path.dirname(roles_dir), "knowledge", "profiling_guide.md")
     profiling_guide_hint_9 = (
@@ -2206,8 +2088,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                     base_dir=Path(roles_dir).parent, base_label="project root") if scene == "evaluation_error" or performance_scene else "")
         + file_hint(work_dir, Path(work_dir) / 'impl', "Current code", "Verify the entry point and related implementation against this scene's question")
         + file_hint(work_dir, history_path, "Cross-round experience, performance rounds and modification ledger",
-                    ("Read-only: review historical directions and measurements related to this question; do not submit the ledger now" if consultation else
-                     "Read-only: read suggest_next, insights, ledger and rounds first; submit only the current round's ledger with this decision; the program merges history")) +
+                    "Read-only: read suggest_next, insights, ledger and rounds first; submit only the current round's ledger with this decision; the program merges history") +
         f"{device_info_prompt}\n"
         f"{fail_hint}"
         f"{patterns_hint}"
@@ -2227,11 +2108,11 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         + f"Stage9 current iteration: {state.iteration}\n"
         + decision_output_hint
     )
-    if performance_scene and not consultation:
+    if performance_scene:
         prompt += ("\nThis round's ledger_entry.case_analysis must cover each of the following case_ids one by one (copy verbatim, no abbreviation; "
                    "for each case write observation, explanation, evidence, next_action; unproven root causes must be marked as pending verification):\n"
                    + _json.dumps(performance_case_ids, ensure_ascii=False) + "\n")
-    if state.stage9_context.get("scope_review_error") and not consultation:
+    if state.stage9_context.get("scope_review_error"):
         prompt += ("\nThe pre-delivery check in Stage3 found the old plan lacks a clear file scope or has conflicts and was not executed; "
                    "please resubmit this round's complete decision and resolve the following problems:\n"
                    + state.stage9_context["scope_review_error"] + "\n")
@@ -2239,7 +2120,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
     if performance_scene:
         prompt += format_fusion_library_for_prompt(work_dir, "stage9")
     else:
-        prompt += file_hint(work_dir, fusion_library_path(work_dir), "Initial fusion candidate library (consult on demand only)", "Fix build or correctness first this time; when a human direction involves fusion methods, check probabilities and prerequisites")
+        prompt += file_hint(work_dir, fusion_library_path(work_dir), "Initial fusion candidate library (read as needed)", "Fix build or correctness first this time; if a repair involves fusion methods, check probabilities and prerequisites")
     prompt += format_evidence_for_prompt(work_dir)
     if performance_scene:
         prompt += format_selection_for_prompt(work_dir, comparison_context=selection_context)
@@ -2247,7 +2128,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
         event = state.stage9_context.get("semantic_event")
         if event:
             prompt += (f"\nProgram record: this is entry {event['entry_count']} into the {event['scene']} stagnation scene; "
-                       "this is the cumulative count across triggers, independent of the human consultation's three-count.\n")
+                       "this is the cumulative count across triggers; resuming the same round does not add an entry.\n")
             prompt += file_hint(work_dir, event["state_path"], "Semantic stagnation trigger and count record",
                                 "Verify the current iteration, comparison group, window and entry_count; resuming the same round does not double count")
     # Read the persisted window here too, so a Stage9 resume gets the same review
@@ -2285,68 +2166,44 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
     allow_empty = bool(selection_status.get("eligible") and selection_status.get("should_exit")
                        and selection_status.get("latest_iteration") == state.iteration
                        and fail_reason.startswith("perf_pass"))
-    if allow_empty and not consultation:
+    if allow_empty:
         prompt += "\nThe program has confirmed this round\'s semantic exit; suggest_next may be []; just complete the experience records.\n"
-    if not consultation:
-        prompt += human_prompt(work_dir, human_messages or [], bundle_path,
-                               ending_reason=state.stopped_by or ("semantic_stagnation" if allow_empty else None))
-    phase = "consultation" if consultation else ("feedback" if bundle_path else "decision")
-    contract_paths, contract_hint = {}, ""
-    if not consultation:
-        contract_paths, contract_hint = _write_stage9_plan_contract(
-            work_dir, request_dir, state.iteration, request_id, performance_case_ids,
-            allow_empty, case_catalog, perf_diff=perf_diff, has_question=bool(question_path_found))
-        prompt += "\nProgram-defined filling format (read first, then fill):\n" + contract_hint
-        prompt += file_hint(
-            work_dir, implementation_base, "Code base on which this round's suggestions will actually be implemented (read-only reference)",
-            "Verify case routing and functions to change here; changes still use impl/... relative paths as implemented. If this round restores the best version, do not invent modification locations from the regressed code")
+    phase = "decision"
+    contract_paths, contract_hint = _write_stage9_plan_contract(
+        work_dir, request_dir, state.iteration, request_id, performance_case_ids,
+        allow_empty, case_catalog, perf_diff=perf_diff, has_question=bool(question_path_found))
+    prompt += "\nProgram-defined filling format (read first, then fill):\n" + contract_hint
+    prompt += file_hint(
+        work_dir, implementation_base, "Code base on which this round's suggestions will actually be implemented (read-only reference)",
+        "Verify case routing and functions to change here; changes still use impl/... relative paths as implemented. If this round restores the best version, do not invent modification locations from the regressed code")
     atomic_write_text(role, build_scene_role(
-        roles_dir, scene, phase=phase, perf_diff=perf_diff,
-        has_question=bool(question_path_found), has_human=bool(human_messages)))
-    if consultation:
-        # A question is not a development directive and cannot mutate the ledger.
-        question_output = Path(consultation["directory"]) / "question.json"
-        # Retain version-bound implementation/fusion/selection evidence that follows
-        # the normal output lines; remove only the final-decision contract itself.
-        prompt = "\n".join(line for line in prompt.splitlines()
-                           if not line.startswith(("Stage9 output file:", "Stage9 request ID:", "Stage9 current iteration:"))
-                           and str(decision_path) not in line)
-        prompt += (f"\nStage9 consultation output file: {question_output}\n"
-                   f"Stage9 consultation request ID: {consultation['request_id']}\n"
-                   f"The three stagnation rounds recorded by the program: {consultation['trigger_iterations']}\n"
-                   "Output only the question this time; submitting a final decision or rewriting history is forbidden. Do not execute Stage3.\n"
-                   + file_hint(work_dir, consultation["evidence_manifest_path"], "Version snapshot and missing-item list of the consultation context",
-                               "Review the implementation, best scores, slow case trends and historical attempts by purpose and reading hint; cite concrete evidence paths in the question")
-                   + "Existing proactive feedback: " + _json.dumps(human_messages or [], ensure_ascii=False))
+        roles_dir, scene, perf_diff=perf_diff, has_question=bool(question_path_found)))
     request_record = {
         "iteration": state.iteration, "request_id": request_id, "fail_reason": fail_reason,
         "perf_diff": perf_diff, "question_path": question_path_found,
         "history_before_path": str(request_dir / "history_before.json"),
         "decision_path": str(decision_path), "allow_empty_suggestions": allow_empty,
-        "scene": scene, "phase": phase, "human_message_ids": [m["id"] for m in human_messages or []],
+        "scene": scene, "phase": phase,
         "performance_case_ids": performance_case_ids,
-        "plan_version": 2 if not consultation else None,
+        "plan_version": 2,
         "known_case_ids": known_case_ids,
         "implementation_base": str(implementation_base),
         **contract_paths,
-        "require_file_scope": not bool(consultation),
+        "require_file_scope": True,
         "correction_attempt": 0, "attempt_number": 1,
         "max_attempts": 3, "max_corrections": 2,
         "default_inputs": default_inputs, "missing_inputs": missing_inputs,
         "role_path": role, "prompt_path": str(request_dir / "prompt.md"),
-        "output_path": str(question_output if consultation else decision_path),
-        "human_bundle_path": bundle_path,
-        "consultation_id": consultation["request_id"] if consultation else state.stage9_context.get("consultation_id"),
+        "output_path": str(decision_path),
         "semantic_event": state.stage9_context.get("semantic_event"),
         "regression_action": load_regression_action(work_dir, state.iteration) if performance_scene else None,
     }
     atomic_write_json(str(request_dir / "request.json"), request_record)
     atomic_write_text(str(request_dir / "prompt.md"), prompt)
-    log.info("[Stage9 scene] iter=%s scene=%s phase=%s request=%s consultation=%s human_ids=%s; role=%s; prompt=%s; input list=%s",
+    log.info("[Stage9 scene] iter=%s scene=%s phase=%s request=%s; role=%s; prompt=%s; input list=%s",
              state.iteration, scene, phase, request_id,
-             consultation["request_id"] if consultation else state.stage9_context.get("consultation_id", "-"),
-             [item["id"] for item in human_messages or []], role, request_dir / "prompt.md", request_dir / "request.json")
-    output_path = question_output if consultation else decision_path
+             role, request_dir / "prompt.md", request_dir / "request.json")
+    output_path = decision_path
     log.info("[%s] launching tech_lead, phase=%s, output=%s", stage, phase, output_path)
     max_attempts = 3
     root_request_dir, root_request_id = request_dir, request_id
@@ -2384,13 +2241,6 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                 restore_report_input()
             if not agent_ok:
                 raise RuntimeError("Stage9 agent did not complete successfully")
-            if consultation:
-                output = _json.loads(question_output.read_text(encoding="utf-8-sig"))
-                question_status = consultation.get("context", {}).get("selection_status", selection_status)
-                document = render_question(output, consultation, question_status, work_dir)
-                save_history(work_dir, history_before)
-                atomic_write_text(consultation["question_path"], document)
-                return consultation["question_path"]
             try:
                 with decision_path.open("r", encoding="utf-8-sig") as decision_file:
                     decision = _json.load(decision_file)
@@ -2409,7 +2259,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                 try:
                     _h = merge_tech_lead_update(
                         history_before, decision, state.iteration, reason=fail_reason,
-                        allow_empty_suggestions=allow_empty, human_messages=human_messages,
+                        allow_empty_suggestions=allow_empty,
                         require_evaluation_summary=True, performance_case_ids=performance_case_ids,
                         require_file_scope=True, require_structured_plan=True,
                         known_case_ids=known_case_ids, validate_experience_fields=False)
@@ -2466,7 +2316,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                 decision_path = request_dir / "decision.json"
                 output_path = decision_path
                 role = str(request_dir / "n4_stage9_tech_lead_guide.md")
-                # Keep the full original scene/human context. Replace only the
+                # Keep the full original scene and evidence. Replace only the
                 # output contract, and provide the rejected version as evidence.
                 new_output_hint = file_hint(
                     work_dir, decision_path, "This round's Stage9 decision output (to be generated by you)",
@@ -2481,7 +2331,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
                 prompt += (
                     f"\n===== In-round Stage9 decision correction (correction {attempt + 1}/2, overall attempt {attempt + 2}/3) =====\n"
                     "The previous output failed the program's checks; it was not handed to Stage3 nor written into experience."
-                    "Fix the complete decision; do not output only a patch; keep the current iteration, original scene and all human feedback.\n"
+                    "Fix the complete decision; do not output only a patch; keep the current iteration, original scene and all evaluation evidence.\n"
                     + file_hint(work_dir, error_path, "Validation errors of the previous decision", "Address each full field path and case ID in errors; also recheck this round's complete schema; do not fix only the first item")
                     + file_hint(work_dir, previous_output, "Rejected original decision (if present)", "Read-only reference; it cannot be reused directly; this time write a new request ID and output file")
                     + f"Program rejection reason: {exc}\n"
@@ -2572,7 +2422,7 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
             except (OSError, ValueError, AttributeError):
                 pass
     # Performance knowledge refers to the measured immutable revision even if
-    # a late human re-review occurs after the best baseline has been restored.
+    # a resumed review occurs after the best baseline has been restored.
     current_evidence = ((selection_status.get("current") or {}) if performance_scene
                         and selection_status.get("latest_iteration") == state.iteration
                         else load_evidence(work_dir))
@@ -2643,12 +2493,6 @@ def _run_tech_lead_decision(log, roles_dir, work_dir, op_name, state, state_log,
     log_knowledge_write(log, state_log, label="history ledger", path=history_path, iteration=state.iteration,
                         environment=current_ledger["environment"], decision_path=decision_path,
                         detail=f"The program merged this round's ledger; keeping {len(_h['ledger'])} rounds of ledger")
-    if human_messages:
-        log.info("[human adjudication] iter=%s request=%s responses=%s P0_ids=%s; decision=%s; history=%s",
-                 state.iteration, request_id,
-                 [{"id": item["message_id"], "kind": item["kind"]} for item in decision["human_responses"]],
-                 [item["human_message_id"] for item in decision["suggest_next"] if item.get("source") == "human"],
-                 decision_path, history_path)
 
     history_log = logging.getLogger("triton-ascend-history")
     if history_log.handlers:
@@ -2703,8 +2547,6 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
     """
     stage = f"ITER{state.iteration}-Stage3-modify({reason})"
     role = os.path.join(roles_dir, "n1_stage3_fix_and_optimize.md")
-    _review_pending_humans(log, roles_dir, work_dir, op_name, state, state_log,
-                           node_logs, iter_dirs, device_info_prompt, selection_context)
     # Stage3 may be resumed directly from an old or edited history. Recheck the
     # current handoff instead of letting that route bypass Stage9 validation.
     def current_scope():
@@ -2751,12 +2593,6 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
                                 current_plan_ledger["stage9_decision_path"])
     elif reason == "perf_optimize":
         stamp_stage7_report(work_dir, state.iteration)
-    human = HumanReview(work_dir)
-    ids = set(state.stage9_context.get("message_ids", []))
-    human_directions = [item for item in human.all_messages()
-                        if item["id"] in ids and item["kind"] == "direction"
-                        and item.get("status") != "executed"]
-    receipt_path = Path(iter_dirs["develop"]) / "human_feedback.json"
     state.stage9_context.update(phase="developing", development_reason=reason)
 
     # Back up the current impl to operator_iter/iter{N}/ (for code tracing; not shown to the agent)
@@ -2787,7 +2623,6 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
     base_prompt += format_selection_for_prompt(work_dir, comparison_context=selection_context)
     base_prompt += regression_action_prompt(work_dir, state.iteration)
     base_prompt += development_prompt(work_dir, iter_dirs["develop"], 3)
-    base_prompt += development_human_prompt(work_dir, human_directions, receipt_path)
     if current_plan_ledger.get("stage9_decision_path"):
         base_prompt += file_hint(
             work_dir, current_plan_ledger["stage9_decision_path"], "Stage9's validated v2 task list for this round (original)",
@@ -2905,8 +2740,6 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
     log_io(log, stage, inputs, outputs)
 
     prompt += CANNBOT_CONSTRAINT
-    if human_directions and receipt_path.exists():
-        receipt_path.unlink()  # Only this generated receipt; never accept an old acknowledgement.
     previous_revisions = begin_development(work_dir, iter_dirs["develop"])
     ok = run_agent("cannbot", role, work_dir, prompt, node_log=node_logs["N1"])
     evidence = finalize_development(work_dir, iter_dirs["develop"], 3, agent_ok=ok,
@@ -2915,23 +2748,6 @@ def self_goto_stage3(log, roles_dir: str, work_dir: str, op_name: str, state: St
         log.warning(f"[{stage}] Scheme/self-test material does not yet satisfy the best-record conditions: {evidence.get('reason', '')}")
     if not ok:
         log.error(f"[{stage}] cannbot failed (returncode!=0)")
-        if human_directions:
-            raise RuntimeError("Stage3 failed; human P0 not yet executed; original round kept for resume")
-    if human_directions:
-        try:
-            receipts = validate_execution_receipt(receipt_path, human_directions)
-        except (OSError, ValueError) as exc:
-            raise RuntimeError("Stage3 lacks the implementation receipt for this round\'s human feedback; original round kept for resume") from exc
-        for receipt in receipts:
-            rationale_path = Path(iter_dirs["develop"]) / "fusion_scheme_rationale.md"
-            if receipt["message_id"] not in read_file_safe(str(rationale_path)):
-                raise RuntimeError("Stage3\'s scheme-selection rationale does not reference the corresponding human feedback ID; original round kept for resume")
-            if receipt["status"] == "implemented" and evidence.get("eligible"):
-                human.mark_executed([receipt["message_id"]], state.iteration, str(receipt_path))
-            else:
-                human.mark_unexecuted([receipt["message_id"]], receipt["details"] if receipt["status"] != "implemented"
-                                      else "The implementation self-reports modification, but this round\'s code binding/self-test evidence is incomplete; execution not yet confirmed")
-        log.info("[human P0] This round\'s execution receipt=%s; actual performance gains are still subject to the subsequent formal evaluation", receipt_path)
     state.stage9_context["phase"] = "delivered"
     state.flush()
 

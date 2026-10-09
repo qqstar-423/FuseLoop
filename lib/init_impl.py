@@ -406,7 +406,7 @@ def prepare_init_impl(source_impl, work_dir, task_dir, *, optimize_hint="", log=
         log.info("[emergency import] copied %s -> %s", origin, work / relative)
     if binding is None:
         log.warning("[emergency import] cannot confirm the version binding between the specified code and development material; the imported first-version material is for reference only and old self-tests are not proof of passing this time.")
-    log.info("[emergency import] old evaluations, history, best scores, exit counters, human feedback and unrelated round material are not inherited.")
+    log.info("[emergency import] old evaluations, history, best scores, exit counters and unrelated round material are not inherited.")
     return result
 
 

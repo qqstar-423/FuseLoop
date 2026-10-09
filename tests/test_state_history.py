@@ -1,6 +1,8 @@
 """Evaluation comparisons stay stable when Stage6 resumes an existing round."""
 
 from copy import deepcopy
+import json
+from pathlib import Path
 import tempfile
 import unittest
 
@@ -78,6 +80,50 @@ class StateHistoryTests(unittest.TestCase):
         previous = self.state.get_previous_eval()
         previous["speedup"] = 99.0
         self.assertEqual(self.state.history[0]["speedup"], 2.0)
+
+    def test_legacy_consultation_checkpoint_resumes_autonomous_review(self):
+        context = {
+            "iteration": 4, "scene": "stagnation", "fail_reason": "perf_optimize",
+            "perf_diff": {"has_regression": True, "avg_speedup_before": 1.2},
+            "semantic_event": {"event_key": "group:4:underperforming", "entry_count": 3},
+        }
+        path = Path(self.state._path)
+        legacy = json.loads(path.read_text(encoding="utf-8"))
+        legacy.update(iteration=4, current_stage="iter4_stage9",
+                      human_review_config={"consultation_enabled": True},
+                      stage9_context=dict(context, phase="consulting", message_ids=["old-message"],
+                                          bundle_path="human_review/old/bundle.json", consultation_id="old-request"))
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+        restored = State.load_or_create(self.temp.name)
+        self.assertEqual(restored.iteration, 4)
+        self.assertEqual(restored.current_stage, "iter4_stage9")
+        self.assertEqual(restored.stage9_context, dict(context, phase="reviewing"))
+        self.assertFalse(hasattr(restored, "human_review_config"))
+        restored.flush()
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        self.assertNotIn("human_review_config", persisted)
+        self.assertEqual(persisted["stage9_context"], dict(context, phase="reviewing"))
+        self.assertFalse((Path(self.temp.name) / "human_review").exists())
+
+    def test_legacy_interaction_fields_do_not_discard_pending_development(self):
+        context = {
+            "iteration": 3, "scene": "all_passed", "fail_reason": "perf_pass_optimize",
+            "perf_diff": {"has_improvement": True}, "phase": "developing",
+            "development_reason": "perf_pass_optimize",
+            "decision_path": "knowledge/stage9/iter3/accepted/decision.json",
+        }
+        path = Path(self.state._path)
+        legacy = json.loads(path.read_text(encoding="utf-8"))
+        legacy.update(iteration=3, current_stage="iter3_stage3",
+                      human_review_config={"proactive_enabled": True},
+                      stage9_context=dict(context, message_ids=["old-message"],
+                                          bundle_path="old-bundle", consultation_id="old-request"))
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+        restored = State.load_or_create(self.temp.name)
+        self.assertEqual(restored.current_stage, "iter3_stage3")
+        self.assertEqual(restored.stage9_context, context)
+        restored.flush()
+        self.assertEqual(State.load_or_create(self.temp.name).stage9_context, context)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import test_semantic_routing as semantic_routing_tests
 
@@ -12,9 +13,6 @@ class SemanticNoticeRoutingTests(unittest.TestCase):
         self.routing.setUp()
         self.addCleanup(self.routing.doCleanups)
         self.work = self.routing.work
-        self.routing.config["workflow"]["human_review"] = {
-            "proactive_enabled": False, "consultation_enabled": False,
-        }
 
     def events(self):
         return json.loads((self.work / "selection/semantic_events.json").read_text(encoding="utf-8"))
@@ -62,7 +60,7 @@ class SemanticNoticeRoutingTests(unittest.TestCase):
             self.assertIn("scenario 1: every case's speedup is >= 1", text)
             self.assertIn("x=1 consecutive valid performance iterations", text)
             self.assertIn("1 baseline sample plus 1 valid performance iterations within the same scene (2 samples in total); invalid rounds do not count", text)
-            self.assertIn("independent of the human consultation counter, and checkpoint resume does not double count", text)
+            self.assertIn("checkpoint resume does not double count", text)
             self.assertIn("iter1→iter2", text)
             self.assertIn("0.00% < 5.00%", text)
         self.assert_event_delivered(event)
@@ -72,7 +70,9 @@ class SemanticNoticeRoutingTests(unittest.TestCase):
             "passed_window": 4, "underperforming_window": 1,
         }
         self.routing.perfs = {1: (.8, 2.0), 2: (.81, 2.0), 3: (.82, 2.0), 4: (.83, 2.0)}
-        self.routing.run_workflow(max_iterations=4, file_logs=True)
+        with patch("builtins.input", side_effect=AssertionError("Interactive input is forbidden")), \
+                patch("time.sleep", side_effect=AssertionError("Workflow must not wait for input")):
+            self.routing.run_workflow(max_iterations=4, file_logs=True)
         data = self.events()
         self.assertEqual(data["counts"], {"passed": 0, "underperforming": 3})
         self.assertEqual([event["iteration"] for event in data["events"]], [2, 3, 4])
@@ -87,9 +87,15 @@ class SemanticNoticeRoutingTests(unittest.TestCase):
             self.assertIn("scenario 2: not every case's speedup is >= 1 (at least one case < 1)", text)
             self.assertIn("y=1 consecutive valid performance iterations", text)
             self.assertIn("1 baseline sample plus 1 valid performance iterations within the same scene (2 samples in total); invalid rounds do not count", text)
-            self.assertIn("independent of the human consultation counter, and checkpoint resume does not double count", text)
-        human = json.loads((self.work / "human_review/state.json").read_text(encoding="utf-8"))
-        self.assertEqual(human["stagnation"]["trigger_iterations"], [2, 3, 4])
+            self.assertIn("checkpoint resume does not double count", text)
+        self.assertFalse((self.work / "human_review").exists())
+        for iteration in range(1, 5):
+            for request in self.requests(iteration):
+                self.assertEqual(request["phase"], "decision")
+                self.assertFalse(any(key.startswith("human_") for key in request))
+        self.assertEqual(self.routing.fixture.events.count("stage3"), 4)
+        self.assertEqual(self.routing.fixture.events.count("stage10"), 1)
+        self.assertNotIn("Human feedback", self.routing.fixture.prompts["stage10"])
         self.assertEqual(self.routing.fixture.read_state()["stopped_by"], "max_iterations")
 
     def test_stage9_interruption_resume_keeps_event_and_does_not_repeat_banner(self):

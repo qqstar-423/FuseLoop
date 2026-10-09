@@ -84,7 +84,7 @@ The paper evaluates five fused operator tasks on an **Ascend 910B3 NPU**, using 
 
 This release integrates that runtime family. The method's target adaptation requirements above describe how to extend it to another NPU architecture. Compute units and on-chip memory resources are read and interpreted for the selected target.
 
-Follow [Experimental setup and reproduction](docs/experiment_setup.md) for runtime prerequisites, agent installation, development resources, evaluator setup, and the exact configuration fields. Edit [config.yaml](config.yaml) for the machine before running. The main controls are `fusion_selection.top_n`, `workflow.max_iterations`, `workflow.semantic_exit`, and `workflow.human_review`.
+Follow [Experimental setup and reproduction](docs/experiment_setup.md) for runtime prerequisites, agent installation, development resources, evaluator setup, and the exact configuration fields. Edit [config.yaml](config.yaml) for the machine before running. The main controls are `fusion_selection.top_n`, `workflow.max_iterations`, and `workflow.semantic_exit`.
 
 ## Run and resume
 
@@ -122,23 +122,6 @@ python3 orchestrator.py --task-dir /path/to/task \
 
 `--init-impl` creates a new work directory and imports the specified code, requirements, fusion library, and development artifacts. It begins at **Stage4 → Stage5 → Stage6**, evaluating that implementation before any revision. Startup verifies the task, hardware, and evidence and records hashes in `init_impl_manifest.json`. Evaluation history and selection records start fresh. Use `--work-dir` to resume the imported run; the two options are mutually exclusive.
 
-## Human feedback
-
-Submit directions or questions from another terminal while a run continues:
-
-```bash
-python3 tools/human_review.py --work-dir /path/to/work \
-  --text "Keep the current fusion plan and focus on the two slowest cases."
-python3 tools/human_review.py --work-dir /path/to/work \
-  --kind question --text "Which measurement supports this change?"
-python3 tools/human_review.py --work-dir /path/to/work --file /path/to/feedback.md
-python3 tools/human_review.py --work-dir /path/to/work --status
-```
-
-Stage9 turns substantive directions into numbered P0 tasks. Stage3 records their implementation status in `develop/iterN/human_feedback.json`. Questions receive answers, and the archive preserves the original feedback, evidence, decisions, and execution status.
-
-With consultation enabled, the third underperforming stagnation event generates a `questions_document.md` with options and a recommendation. The workflow waits two minutes; `please wait` grants one additional ten-minute interval. A substantive reply ends the wait. On timeout, the workflow follows the recommendation and records an automatic decision.
-
 ## Artifacts and tests
 
 | Location | Contents |
@@ -150,7 +133,7 @@ With consultation enabled, the third underperforming stagnation event generates 
 | `<work>/fusion/`, `develop/` | Initial ranking, implemented plans, revision rationale, and self-tests |
 | `<work>/build/`, `eval/`, `profile/`, `search/` | Per-iteration build, evaluation, analysis, and research records |
 | `<work>/selection/` | Best-result index, evidence bindings, and independent evaluated snapshots |
-| `<work>/knowledge/`, `human_review/` | Iteration history, reusable lessons, corrected advice, and feedback |
+| `<work>/knowledge/` | Iteration history, reusable lessons, and corrected advice |
 | `<work>/log/`, `FINAL_REPORT.md` | Execution logs, prompts, and final results |
 
 Run strict offline checks and local subprocess tests with the setup guide's Python dependencies installed:
@@ -160,6 +143,6 @@ python3 tools/run_jev_offline_tests.py
 python3 -m unittest discover -s tests -p 'test_agent_output_streams.py' -v
 ```
 
-The strict offline suite uses synthetic measurements and mocked services to test routing, fusion selection, evidence binding, comparisons, snapshots, stopping conditions, feedback, and recovery. It blocks network access, child processes, and real credential-file reads, and records subprocess tests as skipped. Results and tested source hashes are saved to `output/jev_tests/results.json`. The second command tests output streaming with local Python subprocesses; standard `unittest` discovery includes both groups.
+The strict offline suite uses synthetic measurements and mocked services to test routing, fusion selection, evidence binding, comparisons, snapshots, stopping conditions, knowledge records, and recovery. It blocks network access, child processes, and real credential-file reads, and records subprocess tests as skipped. Results and tested source hashes are saved to `output/jev_tests/results.json`. The second command tests output streaming with local Python subprocesses; standard `unittest` discovery includes both groups.
 
 Run the generated implementation's self-tests and formal evaluations on the target NPU to obtain its correctness and performance measurements.

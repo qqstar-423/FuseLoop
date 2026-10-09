@@ -71,33 +71,23 @@ remain common inputs. This selection never deletes any original artifacts.
     return _SCENE_INPUTS[scene]
 
 
-def build_scene_role(roles_dir, scene: str, *, phase: str = "decision",
-                     perf_diff=None, has_question: bool = False,
-                     has_human: bool = False) -> str:
-    """Return common + scene + phase rules without all six scene task lists.
+def build_scene_role(roles_dir, scene: str, *, perf_diff=None,
+                     has_question: bool = False) -> str:
+    """Return common, scene and decision rules for one autonomous review.
 
-Consultation produces question.json only. Feedback and decision use the final
-protocol. Performance knowledge is requested only for valid performance scenes
-when the matching program-computed improvement/regression flag is true.
+Performance knowledge is requested only for valid performance scenes when the
+matching program-computed improvement/regression flag is true. A development
+question adds the agent disagreement adjudication rules.
 """
     _check_scene(scene)
-    if phase not in {"decision", "consultation", "feedback"}:
-        raise ValueError(f"Unknown Stage9 phase: {phase}")
-    if phase == "consultation" and scene != "stagnation":
-        raise ValueError("Stage9 consultation requires the stagnation scene")
     root = Path(roles_dir)
     fragments = [root / "n4_stage9_tech_lead_guide.md", root / "stage9" / f"{scene}.md"]
     if scene in PERFORMANCE_SCENES:
         fragments.append(root / "stage9" / "performance_evidence.md")
-    if phase == "consultation":
-        fragments.append(root / "stage9" / "consultation.md")
-    else:
-        fragments.append(root / "stage9" / "decision.md")
-        if has_question:
-            fragments.append(root / "stage9" / "pitfall.md")
-        diff = perf_diff if isinstance(perf_diff, dict) else {}
-        if scene in PERFORMANCE_SCENES and (diff.get("has_improvement") or diff.get("has_regression")):
-            fragments.append(root / "stage9" / "patterns.md")
-        if has_human or phase == "feedback":
-            fragments.append(root / "stage9" / "human.md")
+    fragments.append(root / "stage9" / "decision.md")
+    if has_question:
+        fragments.append(root / "stage9" / "pitfall.md")
+    diff = perf_diff if isinstance(perf_diff, dict) else {}
+    if scene in PERFORMANCE_SCENES and (diff.get("has_improvement") or diff.get("has_regression")):
+        fragments.append(root / "stage9" / "patterns.md")
     return "\n\n".join(path.read_text(encoding="utf-8-sig").strip() for path in fragments) + "\n"

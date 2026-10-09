@@ -95,37 +95,12 @@ class Stage9ScenesTests(unittest.TestCase):
             self.assertIn("## Conditional Task: Adjudicate the Developer Node", role)
             self.assertIn("root_cause", role)
 
-    def test_consultation_never_requires_final_decision_even_if_experience_due(self):
-        role = build_scene_role(ROLES, "stagnation", phase="consultation",
-                                has_question=True, has_human=True,
-                                perf_diff={"has_regression": True})
-        self.assertIn("Current Stage: Generate Consultation Questions Only", role)
-        self.assertIn("recommended_option", role)
-        self.assertNotIn("Current Stage: Submit Final Decision", role)
-        self.assertNotIn("## Conditional Task: Record This Round's Performance Experience in Detail", role)
-        self.assertNotIn("## Conditional Task: Adjudicate the Developer Node", role)
-        self.assertNotIn("Required fields:", role)
-
-    def test_proactive_and_feedback_roles_preserve_p0_and_reply_identity(self):
-        for phase, has_human in (("decision", True), ("feedback", False)):
-            role = build_scene_role(ROLES, "precision", phase=phase, has_human=has_human)
-            self.assertIn("human_responses", role)
-            self.assertIn('source="human"', role)
-            self.assertIn("human_message_id", role)
-            self.assertIn("alternative", role)
-            self.assertIn("do not downgrade to P1/P2", role)
-            self.assertIn("no human opinion received", role)
-
-    def test_invalid_scene_or_phase_fails_before_role_loading(self):
+    def test_invalid_scene_fails_before_role_loading(self):
         for scene in ("other", "../compile"):
             with self.assertRaises(ValueError):
                 build_scene_role(ROLES, scene)
             with self.assertRaises(ValueError):
                 scene_input_keys(scene)
-        with self.assertRaises(ValueError):
-            build_scene_role(ROLES, "compile", phase="consultation")
-        with self.assertRaises(ValueError):
-            build_scene_role(ROLES, "stagnation", phase="unrecognized")
 
 
 if __name__ == "__main__":

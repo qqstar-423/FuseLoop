@@ -1,11 +1,28 @@
 import json
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .handoff import atomic_write_json
+
+
+_STAGE9_CONTEXT_FIELDS = frozenset({
+    "iteration", "fail_reason", "scene", "perf_diff", "phase", "semantic_event",
+    "scope_review_error", "decision_path", "development_reason",
+})
+_STAGE9_PHASES = frozenset({"reviewing", "committed", "developing", "delivered"})
+
+
+def _stage9_context(value):
+    """Restore autonomous review state without obsolete interaction bookkeeping."""
+    if not isinstance(value, dict):
+        return {}
+    context = {key: item for key, item in value.items() if key in _STAGE9_CONTEXT_FIELDS}
+    if context and context.get("phase") not in _STAGE9_PHASES:
+        context["phase"] = "reviewing"
+    return context
 
 
 @dataclass
@@ -20,7 +37,6 @@ class State:
     history: List[Dict[str, Any]] = field(default_factory=list)
     stopped_by: Optional[str] = None
     stage9_context: Dict[str, Any] = field(default_factory=dict)
-    human_review_config: Dict[str, Any] = field(default_factory=dict)
 
     _path: str = field(default="", repr=False)
 
@@ -45,8 +61,7 @@ class State:
                 last_eval=data.get("last_eval", {}),
                 history=data.get("history", []),
                 stopped_by=data.get("stopped_by"),
-                stage9_context=data.get("stage9_context", {}),
-                human_review_config=data.get("human_review_config", {}),
+                stage9_context=_stage9_context(data.get("stage9_context", {})),
             )
             st._path = state_path
             return st
@@ -68,7 +83,6 @@ class State:
             "history": self.history,
             "stopped_by": self.stopped_by,
             "stage9_context": self.stage9_context,
-            "human_review_config": self.human_review_config,
         }
         atomic_write_json(self._path, data)
 

@@ -24,13 +24,11 @@ class AdviceScopePromptTests(unittest.TestCase):
     def test_each_advice_displays_inspection_and_modification_separately(self):
         self.save_advice([
             {"priority": "P0", "action": "Check case20's load distribution; do not adjust the traversal order yet",
-             "reason": "verify the root cause first", "inspect_files": ["impl/c3.py"], "modify_files": [],
-             "source": "human", "human_message_id": "human-7"},
+             "reason": "verify the root cause first", "inspect_files": ["impl/c3.py"], "modify_files": []},
             {"priority": "P1", "action": "Adjust the fp32 tail block", "reason": "only affects c2",
              "inspect_files": ["impl/c2.py"], "modify_files": ["impl/c2.py"]},
         ])
         prompt = format_for_prompt(self.work)
-        self.assertIn("[human feedback human-7]", prompt)
         self.assertIn("Inspect files (no modification rights): impl/c3.py", prompt)
         self.assertIn("Modify files (still within this round's allowed scope): none, inspect only", prompt)
         self.assertIn("Modify files (still within this round's allowed scope): impl/c2.py", prompt)

@@ -8,7 +8,6 @@ import orchestrator
 from lib.stage9_scenes import classify_scene
 from lib.state import State
 from lib.history_manager import load_history
-from lib.human_review import HumanReview
 import test_semantic_routing as semantic
 
 
@@ -183,7 +182,7 @@ class Stage9SceneIntegrationTests(unittest.TestCase):
         request, role, _ = self.artifacts(3)
         self.assertEqual(request["scene"], "stagnation")
         self.assertIn("Current Scenario: Not All Cases Meet Target, Stagnation Review", role)
-        self.assertEqual(HumanReview(str(self.work)).state()["stagnation"]["count"], 1)
+        self.assertFalse((self.work / "human_review").exists())
 
     def test_actual_role_cannot_use_previous_iteration_stagnation(self):
         self.flow.run_workflow(max_iterations=1)

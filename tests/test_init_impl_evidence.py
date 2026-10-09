@@ -200,7 +200,7 @@ class ImportedEvidenceTests(unittest.TestCase):
         self.assertFalse(load_evidence(self.work)["eligible"])
         self.assertNotIn("Emergency-imported development material", format_evidence_for_prompt(self.work))
 
-    def test_optimize_hint_is_context_for_review_not_an_approved_human_task(self):
+    def test_optimize_hint_is_context_for_review_not_an_approved_task(self):
         self.manifest["optimize_hint"] = "Explore a smaller tile on the longest case."
         self.assertTrue(self.restore()["eligible"])
         prompt = format_evidence_for_prompt(self.work)

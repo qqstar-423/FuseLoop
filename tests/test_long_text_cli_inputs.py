@@ -1,6 +1,6 @@
 """File-backed user text reaches existing prompts/manifests without argv growth."""
 
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr
 import io
 import json
 from pathlib import Path
@@ -9,7 +9,6 @@ import unittest
 from unittest.mock import patch
 
 import orchestrator
-from tools import human_review
 import test_init_impl_routing as routing_fixture
 
 
@@ -104,30 +103,6 @@ class LongTextCLIInputsTests(unittest.TestCase):
     def test_directory_is_not_accepted_as_hint_file(self):
         message = self.parse_failure(["--optimize-hint-file", str(self.root)])
         self.assertIn("cannot read UTF-8 file", message)
-
-    def test_existing_human_file_input_delivers_all_text(self):
-        output = io.StringIO()
-        with patch.object(human_review, "submit_message", return_value={"message_id": "offline"}) as submit, \
-                redirect_stdout(output):
-            code = human_review.main(["--work-dir", str(self.root), "--file", str(self.text_file)])
-        self.assertEqual(code, 0)
-        self.assertEqual(submit.call_args.args[1], self.text)
-
-    def test_human_help_explains_file_input_for_long_opinions(self):
-        output = io.StringIO()
-        with redirect_stdout(output), self.assertRaises(SystemExit) as stopped:
-            human_review.main(["--help"])
-        self.assertEqual(stopped.exception.code, 0)
-        self.assertIn("use --file for long", output.getvalue())
-
-    def test_human_inline_and_file_inputs_remain_mutually_exclusive(self):
-        stderr = io.StringIO()
-        with redirect_stderr(stderr), patch.object(human_review, "submit_message") as submit, \
-                self.assertRaises(SystemExit) as stopped:
-            human_review.main(["--work-dir", str(self.root), "--message", self.text, "--file", str(self.text_file)])
-        self.assertEqual(stopped.exception.code, 2)
-        submit.assert_not_called()
-        self.assertNotIn(self.text, stderr.getvalue())
 
 
 if __name__ == "__main__":

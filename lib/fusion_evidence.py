@@ -456,7 +456,7 @@ def _imported_evidence_prompt(work_dir, result):
     text = ("\n\n## Emergency-imported development material\n"
             f"Source implementation: {context.get('source_impl_dir', '')}; "
             f"source development directory: {context.get('source_develop_dir', '')}.\n"
-            "This is a new work directory; old evaluations, best versions, the history ledger and human feedback were not inherited.\n")
+            "This is a new work directory; old evaluations, best versions and the history ledger were not inherited.\n")
     if result.get("eligible"):
         text += "The corresponding code and original development evidence were verified as consistent; this work must still re-run build, precision and performance evaluation before a best record can be produced.\n"
     else:

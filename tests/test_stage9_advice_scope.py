@@ -152,7 +152,7 @@ class Stage9AdviceScopeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "inspect_files"):
             validate_advice_file_scope(ledger, legacy, required=True)
         # Resume validation is deliberately independent of iteration, measured
-        # metrics, and human-message payloads already committed by the workflow.
+        # metrics, and task payloads already committed by the workflow.
         result = validate_advice_file_scope(ledger, self.output["suggest_next"], required=True)
         self.assertEqual(result, (ledger, self.output["suggest_next"]))
 

@@ -7,10 +7,6 @@
 workflow:
   max_iterations: 20
   recent_iterations_window: 5
-  human_review:
-    proactive_enabled: true
-    consultation_enabled: true
-    # Third stall escalation; wait 2 minutes; upon receiving a wait instruction, the wait may be extended once more by 10 minutes.
   semantic_exit:
     # x of Scenario 1: when every case in this round has speedup >= 1 and, across x consecutive valid iterations,
     # the cumulative improvement of the best avg_speedup is < 5%, end the optimization and deliver the best compliant implementation.
@@ -19,7 +15,7 @@ workflow:
     # the cumulative improvement of the best avg_speedup is < 5%, Stage9 re-reviews the plan instead of exiting directly / force-switching plans.
     underperforming_window: 3
     # Both require "one valid baseline + x/y valid results"; invalid evaluations do not count, and a change in compliance status resets the window.
-    # 5% is a fixed threshold; x/y are neither the number of scenario entries nor the number of stalls before the third human consultation.
+    # 5% is a fixed threshold.
 
 # Number of fusion plans selected by Jev probability in stage1.5 (1–10).
 fusion_selection:

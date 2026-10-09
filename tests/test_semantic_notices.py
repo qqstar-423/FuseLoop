@@ -1,4 +1,4 @@
-"""Audit counts are durable, scene-specific, and independent of human resets."""
+"""Audit counts are durable and scene-specific across checkpoint resumes."""
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -44,7 +44,7 @@ class SemanticNoticesTests(unittest.TestCase):
             self.assertIn(f"{symbol}={required} consecutive valid performance iterations", notice)
             self.assertIn(f"1 baseline sample plus {required} valid performance iterations within the same scene ({required + 1} samples in total)", notice)
             self.assertIn("invalid rounds do not count", notice)
-            self.assertIn("independent of the human consultation counter, and checkpoint resume does not double count", notice)
+            self.assertIn("checkpoint resume does not double count", notice)
             self.assertIn("iter1→iter4", notice)
             self.assertIn("avg_speedup 2→2.04", notice)
             self.assertIn("2.00% < 5.00%", notice)
@@ -64,16 +64,13 @@ class SemanticNoticesTests(unittest.TestCase):
         data = json.loads(Path(first["state_path"]).read_text(encoding="utf-8"))
         self.assertEqual(len(data["events"]), 1)
 
-    def test_lifetime_counts_are_per_scene_across_groups_and_human_reset(self):
-        first = self.emit(human_counter={"count": 3})
-        self.assertIn("Current human consultation trigger count=3/3", self.log.warning.call_args.args[0])
-        second = self.emit(5, human_counter={"count": 1})
+    def test_lifetime_counts_are_per_scene_across_groups(self):
+        first = self.emit()
+        second = self.emit(5)
         self.assertIn("entry 2 into this scene", self.log.warning.call_args.args[0])
-        self.assertIn("Current human consultation trigger count=1/3", self.log.warning.call_args.args[0])
         third = self.emit(5, status=self.status(5, group="new-hardware"))
         passed = self.emit(6, status=self.status(6, passed=True))
         self.assertEqual([first["entry_count"], second["entry_count"], third["entry_count"]], [1, 2, 3])
-        self.assertEqual(second["human_consultation_count"], 1)
         self.assertEqual(passed["entry_count"], 1)
 
     def test_invalid_stale_nontrigger_or_inconsistent_window_does_not_count(self):

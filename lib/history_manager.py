@@ -594,8 +594,6 @@ def _format_action_task(item: Dict[str, Any]) -> List[str]:
     marker = {"P0": "🔴", "P1": "🟡", "P2": "🟢"}.get(pri, "⚪")
     task_type = {"inspect": "inspect", "modify": "modify"}.get(item.get("task_type"), "unknown")
     title = f"### {marker} [{pri}] {item.get('task_id', '?')} · {task_type}: {item.get('action', '')}"
-    if item.get("source") == "human":
-        title += f" [human feedback {item.get('human_message_id', '?')}]"
     lines = [title, f"Reason: {item.get('reason', '')}"]
     if item.get("case_scope") == "operator":
         lines.append(f"Whole-operator/project task (not posing as one case's optimization): {item.get('operator_reason', '')}")
@@ -645,7 +643,7 @@ def format_for_prompt(work_dir: str, max_ledger: int = 10,
     if suggest:
         parts.append(
             "## ★ This round's modification directives (specified by tech_lead; execute by priority)\n"
-            "P0 must be completed first, including the latest human guidance; follow the order and constraints given by the Tech Lead and do not promote items yourself based on fusion involvement.\n"
+            "P0 must be completed first; follow the order and constraints given by the Tech Lead and do not promote items yourself based on fusion involvement.\n"
             "P1 comes next; P2 is a nice-to-have.\n"
             "suggest_next is the single list of this round's executable items. v2 tasks list target cases, routing evidence, per-file methods and acceptance points by task_id.\n"
             "Execute only the operations declared in changes; inspect grants no modification rights and does not restrict checking other relevant read-only evidence.\n"
@@ -662,8 +660,6 @@ def format_for_prompt(work_dir: str, max_ledger: int = 10,
                     reason = item.get("reason", "")
                     marker = {"P0": "🔴", "P1": "🟡", "P2": "🟢"}.get(pri, "⚪")
                     line = f"- {marker} [{pri}] {action}"
-                    if item.get("source") == "human":
-                        line += f" [human feedback {item.get('human_message_id', '?')}]"
                     if reason:
                         line += f" (reason: {reason})"
                     parts.append(line)

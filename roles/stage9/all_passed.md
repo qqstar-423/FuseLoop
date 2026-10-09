@@ -8,4 +8,4 @@ Read `eval/<iter>/perf_result.json`, the corresponding `eval/<iter>/prof_data/`,
 
 When comparing the method conditions in `fusion/fusion_library.json`, measured results prevail; multi-kernel schemes verified as effective may continue. Use the x window in `selection/state.json` and the best manifest in `selection/best.json` to understand the program's decision; do not declare exit yourself. The best code and reports are bound via `selection/records/<iter>-<fingerprint>/manifest.json`; do not mix versions.
 
-When the program explicitly exits semantically, complete this round's experience and human-opinion handling; otherwise give the next round's direction. If a human opinion cannot be executed before exit due to existing exit conditions or iteration limits, record the reason and hand it to Stage10; do not break the limits on the strength of a human opinion. This scenario does not trigger the failing-target stagnation consultation.
+When the program explicitly exits semantically, complete this round's experience records; otherwise give the next round's direction. Respect the program's exit conditions and iteration limits.

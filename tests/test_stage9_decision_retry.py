@@ -9,7 +9,6 @@ from unittest.mock import patch
 import orchestrator
 from lib.history_manager import load_history, save_history
 import test_semantic_routing as semantic_routing
-import test_human_routing as human_routing
 
 
 C2 = "impl/c2/test_operator.py"
@@ -402,7 +401,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         for output, request in zip(outputs, requests):
             self.assert_pattern_contract(output, "proven_pattern")
             self.assertEqual(self.read_json(output.parent / "history_before.json"), before)
-            for field in ("iteration", "scene", "performance_case_ids", "known_case_ids", "human_message_ids"):
+            for field in ("iteration", "scene", "performance_case_ids", "known_case_ids"):
                 self.assertEqual(request[field], requests[0][field])
         self.assertTrue(all(not (output.parent / "commit.json").exists() for output in outputs[:2]))
         self.assertTrue((outputs[2].parent / "commit.json").is_file())
@@ -615,7 +614,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         first_request = self.read_json(first_path.parent / "request.json")
         retry_request = self.read_json(retry_path.parent / "request.json")
         for key in ("iteration", "scene", "phase", "fail_reason", "performance_case_ids",
-                    "human_message_ids", "human_bundle_path", "known_case_ids", "plan_version"):
+                    "known_case_ids", "plan_version"):
             self.assertEqual(retry_request[key], first_request[key])
         for request, request_path in ((first_request, first_path), (retry_request, retry_path)):
             for key, filename in (("schema_path", "decision_schema.json"),
@@ -911,7 +910,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
     def test_exhausted_retry2_resumes_fresh_without_repeating_evaluation_or_experience(self):
         self.check_retry2_resume(interrupt_transport=False)
 
-    def test_stage3_resume_rechecks_legacy_advice_through_same_iteration_stage9(self):
+    def check_stage3_resume_rechecks_legacy_advice(self, *, legacy_metadata=False):
         original_agent = self.fixture.agent
 
         def interrupted(agent, role, work, prompt, **kwargs):
@@ -928,12 +927,21 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         history = load_history(str(self.work))
         original_decision = history["ledger"][-1]["stage9_decision_path"]
         rounds = deepcopy(history["rounds"])
-        history["ledger"][-1].pop("plan_version", None)
-        history["ledger"][-1].pop("action_plan", None)
+        if legacy_metadata:
+            # An old task must be reviewed under the current strict schema;
+            # obsolete interaction metadata cannot reactivate an input wait.
+            for task in history["suggest_next"] + history["ledger"][-1]["action_plan"]["tasks"]:
+                task.update(source="human", human_message_id="old-message")
+        else:
+            history["ledger"][-1].pop("plan_version", None)
+            history["ledger"][-1].pop("action_plan", None)
         save_history(str(self.work), history)
         seen_before = len(self.routing.seen)
         self.fixture.agent = original_agent
-        self.routing.run_workflow(file_logs=True)
+        with patch("builtins.input", side_effect=AssertionError("Interactive input is forbidden")), \
+                patch("time.sleep", side_effect=AssertionError("Workflow must not wait for input")):
+            self.routing.run_workflow(file_logs=True)
+        self.assertFalse((self.work / "human_review").exists())
         resumed = [(iteration, stage) for iteration, stage, _ in self.routing.seen[seen_before:]]
         self.assertEqual(resumed, [(1, "stage9"), (1, "stage3"), (1, "stage10")])
         self.assertEqual(self.fixture.events.count("stage6"), 1)
@@ -946,6 +954,12 @@ class Stage9DecisionRetryTests(unittest.TestCase):
                             for item in after["suggest_next"]))
         logs = (self.work / "log/workflow.log").read_text(encoding="utf-8")
         self.assertIn("[Stage3 delivery intercept]", logs)
+
+    def test_stage3_resume_rechecks_legacy_advice_through_same_iteration_stage9(self):
+        self.check_stage3_resume_rechecks_legacy_advice()
+
+    def test_stage3_resume_rechecks_obsolete_interaction_metadata_without_waiting(self):
+        self.check_stage3_resume_rechecks_legacy_advice(legacy_metadata=True)
 
     def local_scope(self, modify_files, readonly_files=None, inspect_files=None):
         return {
@@ -1063,11 +1077,7 @@ class Stage9DecisionRetryTests(unittest.TestCase):
         self.assertEqual(self.fixture.events.count("stage3"), 1)
         self.assertFalse((outputs[0].parent / "validation_error.json").exists())
 
-    def test_correction_keeps_human_direction_and_scene_context(self):
-        flow = human_routing.HumanRoutingTests(methodName="runTest")
-        flow.setUp()
-        self.addCleanup(flow.doCleanups)
-        message = flow.submit("Keep the fusion direction and tune the existing implementation")
+    def test_correction_keeps_autonomous_scene_context_and_finishes_without_waiting(self):
         seen = []
 
         def amend(output, payload, _iteration, prompt):
@@ -1075,25 +1085,27 @@ class Stage9DecisionRetryTests(unittest.TestCase):
             seen.append((output, request, prompt))
             if len(seen) == 1:
                 payload["ledger_entry"]["readonly_files"] = ["impl/synthetic_op.py"]
+            self.write(output, payload)
+            return True
 
-        flow.on_decision = amend
-        flow.run_flow(1)
+        self.routing.stage9_callback = amend
+        with patch("builtins.input", side_effect=AssertionError("Interactive input is forbidden")), \
+                patch("time.sleep", side_effect=AssertionError("Workflow must not wait for input")):
+            self.routing.run_workflow(max_iterations=1)
         self.assertEqual(len(seen), 2)
-        self.assertEqual(seen[0][1]["human_message_ids"], [message["id"]])
-        self.assertEqual(seen[1][1]["human_message_ids"], [message["id"]])
-        for _, request, prompt in seen:
+        for _, request, _ in seen:
             self.assertEqual(request["scene"], "all_passed")
-            self.assertEqual(request["phase"], "feedback")
-            self.assertIn(message["id"], prompt)
-            self.assertIn(message["text"], prompt)
-        history = load_history(str(flow.work))
-        p0 = [item for item in history["suggest_next"] if item.get("source") == "human"]
-        self.assertEqual(len(p0), 1)
-        self.assertEqual(p0[0]["priority"], "P0")
-        self.assertEqual(p0[0]["human_message_id"], message["id"])
-        self.assertEqual(flow.human.all_messages()[0]["status"], "executed")
-        self.assertIn(message["id"], flow.fixture.prompts["stage3"])
-        self.assertEqual(len(history["rounds"]), 1)
+            self.assertEqual(request["phase"], "decision")
+            self.assertFalse(any(key.startswith("human_") for key in request))
+        for field in ("iteration", "scene", "performance_case_ids", "known_case_ids"):
+            self.assertEqual(seen[0][1][field], seen[1][1][field])
+        self.assertTrue((seen[0][0].parent / "validation_error.json").is_file())
+        self.assertFalse((seen[0][0].parent / "commit.json").exists())
+        self.assertTrue((seen[1][0].parent / "commit.json").is_file())
+        self.assertEqual(len(load_history(str(self.work))["rounds"]), 1)
+        self.assertEqual(self.fixture.events.count("stage3"), 1)
+        self.assertEqual(self.fixture.events.count("stage10"), 1)
+        self.assertFalse((self.work / "human_review").exists())
 
 
 if __name__ == "__main__":

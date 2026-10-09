@@ -129,18 +129,16 @@ class HistoryIntegrityTests(unittest.TestCase):
         self.assertNotIn("current plan may modify", format_for_prompt(self.work))
         self.assertEqual(get_latest_fix_plan(self.work), "")
 
-    def test_historical_labels_do_not_overrule_latest_human_p0(self):
+    def test_historical_labels_do_not_overrule_latest_review_p0(self):
         history = load_history(self.work)
         history.update({
-            "suggest_next": [{"priority": "P0", "action": "recheck tail-block conditions", "reason": "conditions changed",
-                              "source": "human", "human_message_id": "human-3"}],
+            "suggest_next": [{"priority": "P0", "action": "recheck tail-block conditions", "reason": "conditions changed"}],
             "insights": ["❌ rejected: old shape tiling failed"],
             "worst_cases_tracker": {"case_1": "hardware limitation, to be verified"},
             "fusion_kernel_strategy": [{"iter": 1, "strategy": "partial fusion", "status": "pending verification"}],
         })
         save_history(self.work, history)
         prompt = format_for_prompt(self.work)
-        self.assertIn("[human feedback human-3]", prompt)
         self.assertIn("when conditions or evidence change, re-verify per the latest plan", prompt)
         self.assertIn("never justifies permanently skipping", prompt)
         self.assertIn("partial fusion", prompt)

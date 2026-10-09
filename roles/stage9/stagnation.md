@@ -6,4 +6,4 @@ Combined with the average, HAP, and failing cases in `eval/<iter>/perf_result.js
 
 When the average improvement is small but slow cases keep approaching 1, the current direction may continue. Keeping, locally optimizing, or changing all require evidence, target cases, and next-step verification; stagnation is not the same as a single-round regression of ≥5%, and the two knowledge record types must not be confused.
 
-The program decides which trigger this is, and whether this is the final decision, consultation-question generation only, or a follow-up after feedback. Complete only the designated stage below; waiting and counting are not executed by you.
+The program determines the stagnation window and routing. Submit a review decision with evidence-backed next-step tasks using the decision contract below.

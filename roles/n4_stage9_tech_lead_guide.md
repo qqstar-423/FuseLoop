@@ -26,4 +26,4 @@ Paths are relative to the current working directory; project resources are expli
 - `knowledge/proven_patterns.md`, `knowledge/regression_patterns.md`, `knowledge/tech_lead_pitfalls.md`: successful experience, regression lessons, and adjudicated misjudgments; reuse per the current problem's conditions, avoiding repeat mistakes. Do not fabricate content when files do not exist.
 - `knowledge/anti_cheat_reference.md` in the project root: anti-cheating rules; verify only against actual code, error codes, and reports; the absence of a report by itself does not prove cheating.
 
-The current scenario's materials and human feedback list full paths, purposes, and reading instructions in the prompt. Complete version evidence is retained for reference; by default read only the parts relevant to the current task.
+The current scenario's materials list full paths, purposes, and reading instructions in the prompt. Complete version evidence is retained for reference; by default read only the parts relevant to the current task.

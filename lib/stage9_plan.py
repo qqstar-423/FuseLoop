@@ -53,8 +53,7 @@ _TASK = _object(
      "case_scope": {"enum": ["cases", "operator"]},
      "target_cases": _array(_TEXT, unique=True), "operator_reason": _STRING,
      "case_bindings": _array(_BINDING), "changes": _array(_CHANGE, minimum=1),
-     "acceptance_checks": _array(_TEXT, minimum=1),
-     "source": _TEXT, "human_message_id": _TEXT},
+     "acceptance_checks": _array(_TEXT, minimum=1)},
     ("task_id", "priority", "task_type", "action", "reason", "case_scope", "target_cases",
      "operator_reason", "case_bindings", "changes", "acceptance_checks"))
 _LEDGER = _object(
@@ -82,7 +81,7 @@ _DECISION_SCHEMA = {
         "fusion_kernel_strategy": {"anyOf": [
             {"type": "object"}, _array({"type": "object"})]},
         "proven_pattern": {"type": "object"}, "regression_pattern": {"type": "object"},
-        "pitfall": {"type": "object"}, "human_responses": _array({"type": "object"}),
+        "pitfall": {"type": "object"},
     }, ("plan_version", "iteration", "request_id", "ledger_entry", "suggest_next")),
 }
 

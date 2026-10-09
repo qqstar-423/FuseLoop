@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 import unittest
 
-from lib.history_manager import load_history
+from lib.history_manager import load_history, save_history
 import test_fusion_routing as fusion
-import test_human_routing as human_routing
 import test_semantic_routing as semantic
 
 
@@ -338,104 +337,57 @@ class ProfileReportIntegrityTests(unittest.TestCase):
     def test_invalid_all_passed_decisions_cannot_leave_their_direct_report_writes(self):
         for has_accepted_report in (False, True):
             with self.subTest(previous_accepted=has_accepted_report):
-                flow = human_routing.HumanRoutingTests(methodName="runTest")
-                flow.setUp()
-                self.addCleanup(flow.doCleanups)
-                flow.routing.perfs = {1: (1.6,)}
+                flow = self.make_flow()
+                flow.perfs = {1: (1.6,)}
                 report = flow.work / "profile/iter1/bottleneck_analysis.md"
+                accepted_report = None
+                if has_accepted_report:
+                    original_agent = flow.fixture.agent
+
+                    def interrupted(agent_name, role, work, prompt, **kwargs):
+                        if fusion.ROLES[Path(role).name] == "stage3":
+                            raise RuntimeError("synthetic interruption before development")
+                        return original_agent(agent_name, role, work, prompt, **kwargs)
+
+                    flow.fixture.agent = interrupted
+                    with self.assertRaisesRegex(RuntimeError, "before development"):
+                        flow.run_workflow(max_iterations=1)
+                    accepted_report = report.read_bytes()
+                    self.assertIn(b"Stage9", accepted_report)
+                    # An old, incomplete scope must be reviewed autonomously
+                    # before Stage3 resumes. Preserve the accepted report while
+                    # checking whether replacement decisions are admissible.
+                    history = load_history(str(flow.work))
+                    history["ledger"][-1].pop("action_plan")
+                    save_history(str(flow.work), history)
+                    flow.fixture.agent = original_agent
                 outputs = []
-                accepted_report = []
 
                 def decision(output, payload, _iteration, _prompt):
                     outputs.append(output)
-                    if has_accepted_report and len(outputs) == 1:
-                        payload["ledger_entry"]["evaluation_summary"] = "ACCEPTED_BEFORE_REREVIEW"
-                        flow.submit("re-review first, then optimize the tile")
-                        return
                     if has_accepted_report:
-                        current = report.read_bytes()
-                        if not accepted_report:
-                            accepted_report.append(current)
-                        self.assertEqual(current, accepted_report[0])
+                        self.assertEqual(report.read_bytes(), accepted_report)
                     else:
                         self.assertFalse(report.exists())
                     report.write_text("UNACCEPTED_DIRECT_STAGE9_REPORT", encoding="utf-8")
                     payload["ledger_entry"]["readonly_files"] = ["impl/synthetic_op.py"]
+                    flow.write_json(output, payload)
+                    return True
 
-                flow.on_decision = decision
+                flow.stage9_callback = decision
                 with self.assertRaises(RuntimeError):
-                    flow.run_flow(1)
-                self.assertEqual(len(outputs), 4 if has_accepted_report else 3)
-                rejected = outputs[1:] if has_accepted_report else outputs
-                self.assertTrue(all((output.parent / "validation_error.json").exists() for output in rejected))
-                self.assertTrue(all(not (output.parent / "commit.json").exists() for output in rejected))
+                    flow.run_workflow(**({} if has_accepted_report else {"max_iterations": 1}))
+                self.assertEqual(len(outputs), 3)
+                self.assertTrue(all((output.parent / "validation_error.json").exists() for output in outputs))
+                self.assertTrue(all(not (output.parent / "commit.json").exists() for output in outputs))
                 self.assertNotIn("stage3", flow.fixture.events)
                 self.assertEqual(flow.fixture.events.count("stage6"), 1)
+                self.assertFalse((flow.work / "human_review").exists())
                 if has_accepted_report:
-                    self.assertEqual(report.read_bytes(), accepted_report[0])
-                    self.assertIn(b"ACCEPTED_BEFORE_REREVIEW", report.read_bytes())
+                    self.assertEqual(report.read_bytes(), accepted_report)
                     self.assertNotIn(b"UNACCEPTED_DIRECT_STAGE9_REPORT", report.read_bytes())
                 else:
                     self.assertFalse(report.exists())
-
-
-class HumanProfileReportRoutingTests(unittest.TestCase):
-    def test_same_iteration_human_review_updates_only_the_stage9_report(self):
-        for speeds, expected_source in (((1.6,), "Stage9"), ((0.8,), "Stage7")):
-            with self.subTest(source=expected_source):
-                flow = human_routing.HumanRoutingTests(methodName="runTest")
-                flow.setUp()
-                self.addCleanup(flow.doCleanups)
-                flow.routing.perfs = {1: speeds}
-                report = flow.work / "profile/iter1/bottleneck_analysis.md"
-                outputs = []
-                reports_before_decision = []
-                reports_seen_by_stage3 = []
-                first = flow.submit("keep the fusion scheme")
-                second = []
-
-                def decision(output, payload, _iteration, _prompt):
-                    outputs.append(output)
-                    reports_before_decision.append(
-                        report.read_text(encoding="utf-8") if report.exists() else None)
-                    review_number = len(outputs)
-                    payload["ledger_entry"]["evaluation_summary"] = f"ACCEPTED_REVIEW_{review_number}"
-                    payload["ledger_entry"]["case_analysis"][0]["observation"] = f"CASE_REVIEW_{review_number}"
-                    if review_number == 1:
-                        second.append(flow.submit("prioritize the slow cases' tile"))
-
-                def stage(stage_name, _iteration, _prompt):
-                    if stage_name == "stage3":
-                        reports_seen_by_stage3.append(report.read_text(encoding="utf-8"))
-
-                flow.on_decision = decision
-                flow.on_stage = stage
-                flow.run_flow(1)
-                self.assertEqual(len(outputs), 2)
-                self.assertTrue(all((output.parent / "commit.json").is_file() for output in outputs))
-                self.assertEqual(flow.decisions[-1][1], {first["id"], second[0]["id"]})
-                text = report.read_text(encoding="utf-8")
-                self.assertIn(expected_source, text)
-                self.assertEqual(reports_seen_by_stage3, [text])
-                self.assertEqual(list(report.parent.glob("*.md")), [report])
-                self.assertEqual(flow.fixture.events.count("stage6"), 1)
-                self.assertEqual(flow.fixture.events.count("stage3"), 1)
-                if expected_source == "Stage9":
-                    self.assertIsNone(reports_before_decision[0])
-                    self.assertIn("ACCEPTED_REVIEW_1", reports_before_decision[1])
-                    self.assertIn("ACCEPTED_REVIEW_2", text)
-                    self.assertIn("CASE_REVIEW_2", text)
-                    self.assertIn(outputs[1].relative_to(flow.work).as_posix(), text)
-                    for stale in ("ACCEPTED_REVIEW_1", "CASE_REVIEW_1",
-                                  outputs[0].relative_to(flow.work).as_posix()):
-                        self.assertNotIn(stale, text)
-                    self.assertFalse(any(stage in {"stage7", "stage8"}
-                                         for _, stage, _ in flow.routing.seen))
-                else:
-                    self.assertIn("The slow case is improving with local tile tuning.", text)
-                    self.assertEqual(reports_before_decision, [text, text])
-                    self.assertNotIn("ACCEPTED_REVIEW_", text)
-                    self.assertNotIn("CASE_REVIEW_", text)
 
 
 if __name__ == "__main__":

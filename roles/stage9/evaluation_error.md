@@ -4,4 +4,4 @@ First read the actual error code and report source in `eval/<iter>/perf_result.j
 
 For `no_npu_kernel_detected`, distinguish: if the CSV and code truly contain only chained ready-made torch/aclnn operators, require rewriting the core computation with `@triton.jit`; if a custom kernel exists but elapsed=0, first investigate the profiler, environment, or timing. Give a fix plan per the actual error, stating which conclusions are confirmed and which evidence still needs to be gathered.
 
-This scenario does not do ordinary slow-case tuning, does not summarize performance up/down from invalid results, and does not trigger stagnation consultation. Keep the necessary correctness and anti-cheating constraints.
+This scenario does not do ordinary slow-case tuning or summarize performance up/down from invalid results. Keep the necessary correctness and anti-cheating constraints.

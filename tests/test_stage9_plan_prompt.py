@@ -29,7 +29,6 @@ class Stage9PlanPromptTests(unittest.TestCase):
                         {"file": "task/golden.py", "operation": "inspect", "location": "reference",
                          "method": "confirm the boundary element definition; do not modify the reference implementation"}],
             "acceptance_checks": ["run the precision self-test for all given cases and keep the log", "compare against the repeated-call results"],
-            "source": "human", "human_message_id": "human-007",
         }
         self.history = {
             "suggest_next": [dict(self.task, inspect_files=["task/golden.py"], modify_files=["impl/c2.py"])],
@@ -45,8 +44,7 @@ class Stage9PlanPromptTests(unittest.TestCase):
         for expected in ("T7", "float32_case7", "impl/c2.py", "impl/dispatcher.py",
                          "dispatch.float32", "the input dtype selects c2", "kernel.tail",
                          "mask loads and write-backs by the number of valid elements", "[inspect, no modification] task/golden.py",
-                         "run the precision self-test for all given cases and keep the log", "compare against the repeated-call results",
-                         "[human feedback human-007]"):
+                         "run the precision self-test for all given cases and keep the log", "compare against the repeated-call results"):
             self.assertIn(expected, prompt)
         self.assertNotIn("Legacy task kept for review only", prompt)
 

@@ -6,4 +6,4 @@ Use `eval/<iter>/perf_result.json` to check the average, HAP, and the at most 6 
 
 For the few slow cases, first look at local causes such as shape tiling, tail blocks, and fixed overhead; only with evidence of a structural bottleneck should you compare the candidate conditions and probabilities in `fusion/fusion_library.json`. Decide whether to keep, locally optimize, or change direction next round, stating the target cases and verification method. Do not force a change of fusion scheme merely because it is not a single kernel.
 
-Maintain this round's actual fusion attempts and cross-round conclusions; record experience per the program's single-round up/down conditions. This scenario does not proactively ask for help, but incoming human opinions must be handled.
+Maintain this round's actual fusion attempts and cross-round conclusions; record experience per the program's single-round up/down conditions.

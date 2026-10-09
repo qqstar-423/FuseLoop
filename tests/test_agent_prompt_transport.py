@@ -173,7 +173,7 @@ class AgentPromptTransportTests(unittest.TestCase):
         return str(path)
 
     def test_kerminal_multi_megabyte_prompt_uses_exec_stdin_without_pty(self):
-        prompt = "Plenty of history and human P0s; all text must be preserved.\r\n" * 80000
+        prompt = "Plenty of history and reviewer P0s; all text must be preserved.\r\n" * 80000
         expected = (self.role.read_text(encoding="utf-8") + "\n\n---\n\n"
                     + prompt + runner.GLOBAL_CONSTRAINT).encode("utf-8")
         self.assertGreater(len(expected), 2 * 1024 * 1024)

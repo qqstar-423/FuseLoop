@@ -17,7 +17,7 @@ _OUTPUT_FIELDS = {
     "plan_version",
     "iteration", "request_id", "ledger_entry", "insights", "bottleneck_now",
     "suggest_next", "worst_cases_tracker", "fusion_kernel_strategy",
-    "proven_pattern", "regression_pattern", "pitfall", "human_responses",
+    "proven_pattern", "regression_pattern", "pitfall",
 }
 _LEDGER_FIELDS = {"direction", "modify_files", "readonly_files", "fix_plan",
                   "evaluation_summary", "case_analysis", "action_plan"}
@@ -63,7 +63,7 @@ def _paths_overlap(first, second):
 
 
 def validate_advice_file_scope(ledger, suggestions, *, required=False):
-    """Return normalized copies; no I/O, human validation or prose inference.
+    """Return normalized copies; no I/O or prose inference.
 
     ``required=True`` also rejects pre-contract suggestions at resume boundaries.
     Otherwise wholly legacy decisions pass through until explicitly upgraded.
@@ -201,7 +201,7 @@ def validate_stage9_request_conditions(output, *, perf_diff, performance_case_id
         raise Stage9ConditionValidationError(errors)
 
 
-def _collect_review_errors(output, iteration, allow_empty_suggestions, human_messages,
+def _collect_review_errors(output, iteration, allow_empty_suggestions,
                            performance_case_ids, validate_experience_fields):
     """Check review fields independently of whether the task plan can normalize."""
     errors = []
@@ -241,7 +241,7 @@ def _collect_review_errors(output, iteration, allow_empty_suggestions, human_mes
                         _nonempty_string(entry[name], f"{field}.{name}")
                     except ValueError as exc:
                         errors.append(str(exc))
-    checks = [lambda: validate_human_responses(output, human_messages or [])]
+    checks = []
     if validate_experience_fields:
         checks.extend((lambda: _validate_pattern(output, "proven_pattern", "why_it_worked"),
                        lambda: _validate_pattern(output, "regression_pattern", "why_it_failed"),
@@ -256,7 +256,7 @@ def _collect_review_errors(output, iteration, allow_empty_suggestions, human_mes
 
 def merge_tech_lead_update(base_history: dict, output: dict, iteration: int, *,
                            reason: str = "", allow_empty_suggestions: bool = False,
-                           human_messages=None, require_evaluation_summary=False,
+                           require_evaluation_summary=False,
                            performance_case_ids=None, require_file_scope=False,
                            require_structured_plan=False, known_case_ids=None,
                            validate_experience_fields=True) -> dict:
@@ -279,7 +279,7 @@ def merge_tech_lead_update(base_history: dict, output: dict, iteration: int, *,
     """
     if not isinstance(base_history, dict) or not isinstance(output, dict):
         raise ValueError("base_history and output must be objects")
-    # A malformed task must not conceal independent review/human errors until
+    # A malformed task must not conceal independent review errors until
     # the next attempt. No partially normalized output is accepted or merged.
     errors = []
     normalized = None
@@ -290,7 +290,7 @@ def merge_tech_lead_update(base_history: dict, output: dict, iteration: int, *,
         errors.extend(getattr(exc, "errors", [str(exc)]))
     if require_structured_plan or output.get("plan_version") == 2:
         errors.extend(_collect_review_errors(output, iteration, allow_empty_suggestions,
-                                             human_messages, performance_case_ids,
+                                             performance_case_ids,
                                              validate_experience_fields))
     if errors:
         raise Stage9DecisionValidationError(list(dict.fromkeys(errors)))
@@ -385,7 +385,6 @@ def merge_tech_lead_update(base_history: dict, output: dict, iteration: int, *,
         _validate_pattern(output, "proven_pattern", "why_it_worked")
         _validate_pattern(output, "regression_pattern", "why_it_failed")
         _validate_pitfall(output)
-    validate_human_responses(output, human_messages or [])
     ledger = base_history.get("ledger", [])
     if not isinstance(ledger, list) or any(not isinstance(entry, dict) for entry in ledger):
         raise ValueError("base_history.ledger must be a list of objects")
@@ -433,11 +432,6 @@ def merge_tech_lead_update(base_history: dict, output: dict, iteration: int, *,
     current.pop("case_analysis", None)
     current.pop("action_plan", None)
     current.update(deepcopy(ledger_update))
-    if output.get("human_responses"):
-        # Update only this iteration, retaining earlier decisions for other opinions.
-        responses = {item["message_id"]: item for item in current.get("human_responses", [])}
-        responses.update({item["message_id"]: deepcopy(item) for item in output["human_responses"]})
-        current["human_responses"] = list(responses.values())
     if reason.strip():
         current["reason"] = reason.strip().splitlines()[0]
 
@@ -446,57 +440,3 @@ def merge_tech_lead_update(base_history: dict, output: dict, iteration: int, *,
         if entry not in attempts:
             attempts.append(deepcopy(entry))
     return merged
-
-
-def validate_human_responses(output, messages):
-    """Require every supplied opinion to be accounted for, without model downgrades."""
-    expected = {item["id"]: item for item in messages}
-    responses = output.get("human_responses", [])
-    errors = []
-    if not isinstance(responses, list):
-        errors.append("human_responses must be a list")
-        responses = []
-    suggestions = output.get("suggest_next", [])
-    suggestions = [s for s in suggestions if isinstance(s, dict)] if isinstance(suggestions, list) else []
-    seen = set()
-    for index, response in enumerate(responses):
-        field = f"human_responses[{index}]"
-        if not isinstance(response, dict):
-            errors.append(f"{field}: human_responses entries must be objects")
-            continue
-        identity = response.get("message_id")
-        valid_identity = isinstance(identity, str) and identity in expected
-        if not valid_identity or identity in seen:
-            errors.append(f"{field}: human_responses must identify each supplied message exactly once")
-        if valid_identity:
-            seen.add(identity)
-        kind = response.get("kind")
-        if valid_identity:
-            original_kind = expected[identity].get("kind", "direction")
-            allowed = ("direction", "conflict") if original_kind == "direction" else (original_kind,)
-            if kind not in allowed:
-                errors.append(f"{field}: human direction cannot be silently reclassified or discarded")
-        try:
-            _nonempty_string(response.get("answer"), "human_responses.answer")
-        except ValueError as exc:
-            errors.append(f"{field}: {exc}")
-        if kind == "conflict":
-            try:
-                _nonempty_string(response.get("alternative"), "human_responses.alternative")
-            except ValueError as exc:
-                errors.append(f"{field}: {exc}")
-        matching = [s for s in suggestions if s.get("human_message_id") == identity]
-        if kind in ("direction", "conflict") and not any(
-                s.get("priority") == "P0" and s.get("source") == "human" for s in matching):
-            errors.append(f"{field}: human direction requires an explicit P0 with source=human and human_message_id")
-        if kind in ("question", "wait") and matching:
-            errors.append(f"{field}: questions and wait instructions cannot become human P0 directions")
-    if seen != set(expected):
-        errors.append(f"Stage9 must address every supplied human message: missing={sorted(set(expected) - seen)}")
-    for index, suggestion in enumerate(suggestions):
-        if suggestion.get("source") == "human" or suggestion.get("human_message_id"):
-            identity = suggestion.get("human_message_id")
-            if not isinstance(identity, str) or identity not in expected:
-                errors.append(f"suggest_next[{index}]: Stage9 cannot invent human approval or human message IDs")
-    if errors:
-        raise Stage9DecisionValidationError(errors)

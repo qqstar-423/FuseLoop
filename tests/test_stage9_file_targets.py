@@ -153,7 +153,7 @@ class Stage9FileTargetTests(unittest.TestCase):
 
     def test_program_owned_and_readonly_inputs_cannot_be_declared_writable(self):
         files = [f"{directory}/synthetic.json" for directory in (
-            "task", "example", "knowledge", "eval", "selection", "fusion", "human_review",
+            "task", "example", "knowledge", "eval", "selection", "fusion",
             "build", "profile", "search", "log", "operator_iter")]
         files.extend([".state.json", "ANALYSIS.md", "fusion_requirements.en.json", "device_info.json"])
         for relative in files:

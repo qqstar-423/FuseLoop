@@ -77,7 +77,7 @@ The content after `=== Historical Experience ===` in the prompt is updated by te
 7. **Performance trends**: look at both the average and slow-case improvement; a small average gain does not mean a direction is ineffective
 
 **Usage principles**:
-- First look at suggest_next (what to do, including the latest human P0), then insights (historical conditions and evidence), then FIX_DIRECTIVE (how to do it)
+- First look at suggest_next (what to do, including the latest P0 tasks), then insights (historical conditions and evidence), then FIX_DIRECTIVE (how to do it)
 - If suggest_next and FIX_DIRECTIVE conflict, suggest_next prevails (tech_lead has seen the whole picture)
 - Execute each item per `file/operation/location/method` in `changes`. Only `modify/create` allows modification/creation; `inspect` only checks; the program derives each item's `modify_files` and this round's `ledger.modify_files` from these operations — it is not another authorization that can be expanded. The global `readonly_files` applies to all tasks. Inspection items are not restricted from checking requirements, the dispatcher, and other relevant read-only evidence; paths are relative to `<work>`.
 - When `case_scope=cases`, verify each complete target number and the implementation files and routing location in `case_bindings` one by one; when `case_scope=operator`, handle the overall problem on engineering grounds, and do not extend it into optimization of other cases. Program validation passing does not mean the mapping and technical reasoning are necessarily correct.

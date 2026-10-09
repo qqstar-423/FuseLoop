@@ -147,13 +147,13 @@ class ProfileReportTests(unittest.TestCase):
         self.assertNotIn(b"Obsolete", first)
         self.write_stage9()
         self.assertEqual(report.read_bytes(), first)
-        self.decision["ledger_entry"]["evaluation_summary"] = "Summary after human re-review."
+        self.decision["ledger_entry"]["evaluation_summary"] = "Summary after corrected review."
         second_source = self.source.parent.parent / "request2/decision.json"
         second_source.parent.mkdir()
         second_source.write_text(json.dumps(self.decision, ensure_ascii=False), encoding="utf-8")
         write_stage9_report(self.work, 3, self.decision, second_source)
         content = report.read_text(encoding="utf-8")
-        self.assertIn("Summary after human re-review.", content)
+        self.assertIn("Summary after corrected review.", content)
         self.assertIn("request2/decision.json", content)
         self.assertNotIn("request1/decision.json", content)
         self.assertEqual(list(report.parent.iterdir()), [report])

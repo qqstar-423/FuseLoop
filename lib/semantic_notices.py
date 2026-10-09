@@ -1,7 +1,6 @@
 """Durable, once-per-evaluation notices for the two semantic window triggers.
 
-These counts are lifetime audit counts, independent of the human-consultation
-counter, which resets after a consultation or performance recovery.
+These lifetime audit counts retain one entry per evaluation across resumes.
 """
 from __future__ import annotations
 
@@ -40,7 +39,7 @@ def _trigger_scene(iteration: int, status: dict) -> str | None:
     return scene
 
 
-def log_semantic_trigger(work_dir, iteration, status, log, state_log, *, human_counter=None):
+def log_semantic_trigger(work_dir, iteration, status, log, state_log):
     """Persist and prominently log a fresh trigger; retries return the same count.
 
 Called by Stage6 and by Stage9 recovery. Invalid/old results do not create a file.
@@ -70,9 +69,6 @@ the same evaluation is loaded repeatedly. Both files receive the same message.
     event = {"event_key": event_key, "scene": scene, "iteration": iteration,
              "group_id": status["group_id"], "entry_count": count, "window": window,
              "created_at_utc": datetime.now(timezone.utc).isoformat(), "state_path": str(path)}
-    human_count = human_counter.get("count") if isinstance(human_counter, dict) else None
-    if scene == "underperforming" and isinstance(human_count, int) and not isinstance(human_count, bool):
-        event["human_consultation_count"] = human_count
     state["counts"][scene] = count
     state["events"].append(event)
     atomic_write_json(str(path), state)
@@ -94,9 +90,7 @@ the same evaluation is loaded repeatedly. Both files receive the same message.
              f"best avg_speedup {window['start_best_avg_speedup']:.6g}→{window['end_best_avg_speedup']:.6g}; "
              f"cumulative improvement={window['cumulative_improvement']:.2%} < {window['threshold']:.2%}.",
              action,
-             "Entries into this scene are counted over the workflow\'s lifetime; independent of the human consultation counter, and checkpoint resume does not double count."]
-    if "human_consultation_count" in event:
-        lines.append(f"Current human consultation trigger count={human_count}/3.")
+             "Entries into this scene are counted over the workflow\'s lifetime; checkpoint resume does not double count."]
     lines.extend([f"event={event_key}; auditable record={path}", "===== end of semantic window trigger record ====="])
     notice = "\n".join(lines)
     log.warning(notice)
